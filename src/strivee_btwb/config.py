@@ -1,0 +1,58 @@
+"""
+Runtime configuration loaded from environment variables / .env file.
+
+All values are module-level constants populated at import time.
+Add new settings here; never read os.getenv() outside this module.
+"""
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ── Vision ────────────────────────────────────────────────────────────────────
+
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2-vision")
+"""Ollama model tag used for vision parsing (must support image input)."""
+
+# ── BTWB credentials ──────────────────────────────────────────────────────────
+
+BTWB_EMAIL: str = os.getenv("BTWB_EMAIL", "")
+BTWB_PASSWORD: str = os.getenv("BTWB_PASSWORD", "")
+
+BTWB_TRACK_ID: str = os.getenv("BTWB_TRACK_ID", "")
+"""Personal track ID used to filter the calendar duplicate-check.
+   Visible in the BTWB planning URL as '?t=<id>' after clicking a day."""
+
+# ── ADB / capture ─────────────────────────────────────────────────────────────
+
+ANDROID_SERIAL: str | None = os.getenv("ANDROID_SERIAL") or None
+"""ADB device serial — leave empty to auto-select the only connected device."""
+
+MAX_SCROLLS: int = int(os.getenv("MAX_SCROLLS", "10"))
+"""Maximum scrolls per day; capture stops earlier when content ends."""
+
+SCROLL_DISTANCE: float = float(os.getenv("SCROLL_DISTANCE", "0.3"))
+"""Fraction of screen height scrolled per swipe (smaller → more overlap)."""
+
+CAPTURE_CROP_TOP: int = int(os.getenv("CAPTURE_CROP_TOP", "0"))
+"""Pixels to crop from the top of each frame (removes Strivee day-tab header)."""
+
+CAPTURE_CROP_BOTTOM: int = int(os.getenv("CAPTURE_CROP_BOTTOM", "0"))
+"""Pixels to crop from the bottom of each frame (removes nav bar)."""
+
+# ── Block filtering ───────────────────────────────────────────────────────────
+
+_excluded_raw = os.getenv("EXCLUDED_BLOCKS", "Hebdomadaire,GROUPE WHATS APP EMF,Warm-up")
+EXCLUDED_BLOCKS: list[str] = [b.strip() for b in _excluded_raw.split(",") if b.strip()]
+"""Block names (prefix-matched, case-insensitive) to drop from parsed results."""
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
+CAPTURES_DIR: Path = Path(os.getenv("CAPTURES_DIR", "captures"))
+"""Root directory for saved screenshots and parsed JSON caches."""
+
+FIXTURE_IMAGE_PATH: str | None = os.getenv("FIXTURE_IMAGE_PATH")
+"""Optional path to a static PNG used instead of live ADB capture (for testing)."""

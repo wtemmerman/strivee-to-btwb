@@ -1,0 +1,36 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*.pyo
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# uv
+.uv/
+
+# macOS
+.DS_Store
+
+# Secrets
+.env
+
+# Runtime captures (screenshots)
+captures/
+
+# Keep fixtures dir but ignore any accidental PNGs outside it
+*.png
+!fixtures/

@@ -1,0 +1,93 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "capture",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["capture", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "capture (no-scrcpy)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["capture", "--no-scrcpy", "--days", "Mon"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "analyse",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["analyse", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "analyse (single day)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["analyse", "--days", "Mon"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "preview",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["preview", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "post (confirm)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["post", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "post (auto-yes)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["post", "--yes", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "post (single day, auto-yes)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["post", "--yes", "--days", "Mon"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "post (headless)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["post", "--yes", "--headless", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "run (full pipeline)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["run", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "run (auto-yes)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["run", "--yes", "--days", "Mon,Tue,Wed,Thu,Fri,Sat"],
+      "console": "integratedTerminal"
+    }
+  ]
+}
