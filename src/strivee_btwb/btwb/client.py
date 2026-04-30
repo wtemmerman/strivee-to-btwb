@@ -18,8 +18,8 @@ import logging
 from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from . import config
-from .models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from ..core import config
+from ..core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 
 logger = logging.getLogger("btwb")
 

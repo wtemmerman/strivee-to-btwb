@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-strivee-btwb = "strivee_btwb.main:main"
+strivee-btwb = "strivee_btwb.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -53,7 +53,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"src/strivee_btwb/vision.py" = ["E501"]  # prompt strings must not be line-wrapped
+"src/strivee_btwb/vision/parser.py" = ["E501"]  # prompt strings must not be line-wrapped
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

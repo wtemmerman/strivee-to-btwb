@@ -8,7 +8,7 @@ Two steps applied in sequence:
 
 import re
 
-from .models import ProgrammingBlock
+from ..core.models import ProgrammingBlock
 
 # Level section header patterns (case-insensitive, start of line)
 _LEVEL_RE = re.compile(r"^(rx|inter\+?)\s*[-:]", re.MULTILINE | re.IGNORECASE)

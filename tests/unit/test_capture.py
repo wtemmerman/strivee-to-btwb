@@ -4,7 +4,8 @@ from datetime import date
 
 from PIL import Image
 
-from strivee_btwb.capture import _change_fraction, _screens_same, save_capture, stitch_vertical
+from strivee_btwb.capture import save_capture, stitch_vertical
+from strivee_btwb.capture.adb import _change_fraction, _screens_same
 
 # ---------------------------------------------------------------------------
 # _change_fraction / _screens_same

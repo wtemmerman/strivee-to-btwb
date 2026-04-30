@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from strivee_btwb.vision import _extract_json, _is_excluded, _sanitize_json_strings
+from strivee_btwb.vision.parser import _extract_json, _is_excluded, _sanitize_json_strings
 
 # ---------------------------------------------------------------------------
 # _sanitize_json_strings
@@ -72,7 +72,7 @@ def test_extract_json_raises_on_no_object():
 
 
 def test_is_excluded_matching_prefix(monkeypatch):
-    import strivee_btwb.config as cfg
+    import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Warm-up", "Hebdomadaire"])
     assert _is_excluded("Warm-up part 2")
@@ -80,7 +80,7 @@ def test_is_excluded_matching_prefix(monkeypatch):
 
 
 def test_is_excluded_non_matching(monkeypatch):
-    import strivee_btwb.config as cfg
+    import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Warm-up"])
     assert not _is_excluded("Back Squat")
@@ -88,7 +88,7 @@ def test_is_excluded_non_matching(monkeypatch):
 
 
 def test_is_excluded_empty_list(monkeypatch):
-    import strivee_btwb.config as cfg
+    import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
     assert not _is_excluded("Anything")

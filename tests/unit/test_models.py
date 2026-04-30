@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from strivee_btwb.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 
 
 def test_programming_block_fields():

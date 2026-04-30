@@ -1,7 +1,7 @@
 """Unit tests for WOD extraction and coaching-note stripping."""
 
-from strivee_btwb.models import ProgrammingBlock
-from strivee_btwb.wod import _extract_rx, _strip_coaching, prepare_block
+from strivee_btwb.core.models import ProgrammingBlock
+from strivee_btwb.processing.wod import _extract_rx, _strip_coaching, prepare_block
 
 # ---------------------------------------------------------------------------
 # _extract_rx

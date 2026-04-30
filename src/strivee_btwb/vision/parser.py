@@ -16,8 +16,8 @@ import ollama
 from json_repair import repair_json
 from PIL import Image
 
-from . import config
-from .models import DayProgramming, ProgrammingBlock
+from ..core import config
+from ..core.models import DayProgramming, ProgrammingBlock
 
 logger = logging.getLogger("vision")
 

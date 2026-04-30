@@ -23,7 +23,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-from . import config
+from ..core import config
 
 logger = logging.getLogger("capture")
 
