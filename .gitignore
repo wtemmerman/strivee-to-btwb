@@ -32,6 +32,7 @@ env/
 captures/
 parsed/
 
-# Keep fixtures dir but ignore any accidental PNGs outside it
+# Keep fixtures and docs screenshots, ignore any accidental PNGs elsewhere
 *.png
-!fixtures/
+!fixtures/**/*.png
+!docs/screenshots/*.png

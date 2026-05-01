@@ -44,9 +44,12 @@ Android phone (Strivee app)
 
 Connects to the Android phone via ADB, launches Strivee, navigates to each day tab, and scrolls down capturing screenshots. Frames are stitched into one image per day.
 
-**Example capture** (`captures/2026-04-27/strivee_20260429_134753_Mon.png`):
+<details>
+<summary>Example capture — Monday 2026-04-27</summary>
 
-> _Screenshot of the Strivee app showing Monday's programming blocks (Squat Snatch, Overhead Squat, Gymnastics, WOD)._
+![Monday capture](docs/screenshots/capture_monday.png)
+
+</details>
 
 ### Step 2 — Analyse
 
@@ -83,9 +86,12 @@ Loads the cached JSON, applies Rx-level extraction (keeps only the Rx section wh
 
 Opens a Playwright browser session, logs into BTWB, and submits each block via the planning form. Blocks already present on BTWB for that date are skipped automatically (duplicate detection via the weekly calendar).
 
-**Result on BTWB:**
+<details>
+<summary>Result on BTWB</summary>
 
-> _Add a screenshot of the BTWB calendar/planning page here showing the created workouts._
+![BTWB calendar](docs/screenshots/btwb_calendar.png)
+
+</details>
 
 ---
 
@@ -227,3 +233,29 @@ tests/
 | `captures/<week>/` | Raw ADB screenshots (PNG) |
 | `parsed/<week>/` | Vision-parsed JSON cache |
 | `htmlcov/` | Coverage HTML report |
+
+---
+
+## Design Decisions
+
+### Approach history
+
+| Approach | Result |
+|---|---|
+| **Qwen2.5-VL (vision-only)** | Accurate but slow and VRAM-heavy (~15 GB at 8k context) |
+| **OCR + LLM** | Fast but accuracy was poor — OCR errors compounded into the LLM input and produced unreliable block extraction |
+| **Qwen3-VL (vision-only)** | ✅ Current — faster than Qwen2.5-VL, ~11 GB at 32k context, same accuracy |
+
+**Hard constraint:** no cloud APIs (zero cost). Every model must run locally via Ollama.
+
+Cloud vision APIs (Claude, GPT-4o) were never tested — they would give better accuracy but introduce per-run cost and a network dependency, which is a non-starter for a weekly personal automation.
+
+### Why deterministic WOD extraction
+
+Once the vision model produces a JSON block, all further processing — Rx-level selection, coaching-note stripping — is done with plain regex in `processing/wod.py`. No second LLM call.
+
+This keeps the pipeline predictable: given the same JSON, `prepare_block()` always produces the same output. Failures are reproducible and easy to unit-test.
+
+### Planned experiment: LLM-assisted BTWB formatting
+
+The current BTWB posting step submits block content as-is. Some blocks (e.g. running sessions, swim workouts) don't map cleanly to BTWB's workout format and occasionally fail to generate a preview. A possible improvement is to pass the block content through a local LLM before submission to reformat it into a structure BTWB's AI parser handles better. This would be an optional post-processing step, keeping the deterministic path as the default.
