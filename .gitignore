@@ -28,8 +28,9 @@ env/
 # Secrets
 .env
 
-# Runtime captures (screenshots)
+# Runtime data (screenshots and parsed JSON cache)
 captures/
+parsed/
 
 # Keep fixtures dir but ignore any accidental PNGs outside it
 *.png

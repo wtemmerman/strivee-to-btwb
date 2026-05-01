@@ -14,7 +14,7 @@ load_dotenv()
 
 # ── Vision ────────────────────────────────────────────────────────────────────
 
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2-vision")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3vl:8b")
 """Ollama model tag used for vision parsing (must support image input)."""
 
 # ── BTWB credentials ──────────────────────────────────────────────────────────
@@ -52,7 +52,10 @@ EXCLUDED_BLOCKS: list[str] = [b.strip() for b in _excluded_raw.split(",") if b.s
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 CAPTURES_DIR: Path = Path(os.getenv("CAPTURES_DIR", "captures"))
-"""Root directory for saved screenshots and parsed JSON caches."""
+"""Root directory for raw ADB screenshots (PNG files, one sub-folder per week)."""
+
+PARSED_DIR: Path = Path(os.getenv("PARSED_DIR", "parsed"))
+"""Root directory for vision-parsed JSON cache (one sub-folder per week)."""
 
 FIXTURE_IMAGE_PATH: str | None = os.getenv("FIXTURE_IMAGE_PATH")
 """Optional path to a static PNG used instead of live ADB capture (for testing)."""

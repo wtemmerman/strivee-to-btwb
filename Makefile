@@ -1,4 +1,4 @@
-.PHONY: install dev-install test test-cov test-watch lint format start docker-up docker-down docker-logs help setup-python
+.PHONY: install dev-install test test-cov test-watch lint format start help setup-python
 
 help:
 	@echo "Available Commands"
@@ -16,7 +16,7 @@ help:
 	@echo ""
 	@echo "Quality:"
 	@echo "  make lint           - Run linting checks"
-	@echo "  make format         - Format code with black"
+	@echo "  make format         - Format code"
 	@echo ""
 	@echo "Cleaning:"
 	@echo "  make clean          - Remove __pycache__ and .pyc files"
@@ -34,27 +34,27 @@ dev-install: setup-python
 	uv sync --extra dev
 
 start:
-	python main.py
+	uv run strivee-btwb
 
 test:
-	pytest tests/ -v
+	uv run pytest tests/ -v
 
 test-cov:
-	pytest tests/ --cov=app --cov-report=html --cov-report=term-missing
+	uv run pytest tests/ --cov=strivee_btwb --cov-report=html --cov-report=term-missing
 	@echo "Coverage report generated: htmlcov/index.html"
 
 test-watch:
-	pytest-watch tests/ -- -v
+	uv run pytest-watch tests/ -- -v
 
 lint:
 	@echo "Running ruff lint..."
-	ruff check src tests
+	uv run ruff check src tests
 
 format:
 	@echo "Formatting with ruff..."
-	ruff format src tests
+	uv run ruff format src tests
 	@echo "Organizing imports with ruff..."
-	ruff check --select I --fix src tests
+	uv run ruff check --select I --fix src tests
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -r {} +

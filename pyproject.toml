@@ -65,3 +65,6 @@ indent-style = "space"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+
+[tool.coverage.run]
+omit = ["src/strivee_btwb/__main__.py"]

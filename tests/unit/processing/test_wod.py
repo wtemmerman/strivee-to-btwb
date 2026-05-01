@@ -58,6 +58,13 @@ def test_strip_coaching_removes_all_caps_shout():
     assert "DÉPART" not in result
 
 
+def test_strip_coaching_removes_pure_ascii_caps_shout():
+    content = "3x5 @ 80%\nSTART THE WORKOUT NOW AND GO FAST!\nRest 2 min"
+    result = _strip_coaching(content)
+    assert "START" not in result
+    assert "3x5" in result
+
+
 def test_strip_coaching_keeps_short_uppercase():
     content = "WOD\n5 Rounds"
     result = _strip_coaching(content)

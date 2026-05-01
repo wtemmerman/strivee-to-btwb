@@ -93,17 +93,26 @@ def _fill_and_plan(page: Page, block: ProgrammingBlock, last_block: bool) -> Non
 
 def _fetch_existing_block_names(page: Page, date_str: str) -> set[str]:
     """Return workout titles already planned for this date on BTWB."""
+    # bring_to_front prevents macOS background-tab JS throttling when the
+    # terminal has focus (e.g. user just typed at the confirmation prompt)
+    page.bring_to_front()
     year, month, day = date_str.split("-")
     page.goto(
         f"{_BASE}/plan/calendar/week/{int(year)}/{int(month)}/{int(day)}",
         wait_until="domcontentloaded",
     )
-    # Ensure the personal track checkbox is checked so workouts appear on the calendar
+    # Ensure the personal track checkbox is checked so workouts appear on the calendar.
+    # wait_for(attached) is required — the checkbox is injected by JS after domcontentloaded,
+    # so count() would return 0 and the click would be silently skipped without this wait.
     if config.BTWB_TRACK_ID:
         track_cb = page.locator(f"#plan_track_{config.BTWB_TRACK_ID}")
-        if track_cb.count() and not track_cb.is_checked():
+        track_cb.wait_for(state="attached", timeout=_TIMEOUT)
+        if not track_cb.is_checked():
             track_cb.click()
-        page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
+    # Wait for the calendar day containers to be injected by JS, then wait for
+    # networkidle so any AJAX workout loads inside those containers also finish.
+    page.wait_for_selector("[data-date]", timeout=_TIMEOUT)
+    page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
     # Find workouts for this specific date via the data-date container
     titles: list[str] = page.evaluate(f"""
         () => {{

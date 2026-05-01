@@ -52,8 +52,8 @@ def parse_days(raw: str | None) -> list[str]:
 
 
 def save_day(day: DayProgramming, ws: date) -> Path:
-    """Persist a parsed day as JSON inside the per-week captures sub-directory."""
-    out = config.CAPTURES_DIR / ws.isoformat()
+    """Persist a parsed day as JSON inside the per-week parsed sub-directory."""
+    out = config.PARSED_DIR / ws.isoformat()
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"parsed_{day.date.isoformat()}_{day.day_label}.json"
     path.write_text(
@@ -71,8 +71,8 @@ def save_day(day: DayProgramming, ws: date) -> Path:
 
 
 def load_days(days: list[str], ws: date) -> WeeklyProgramming:
-    """Load cached per-day JSON files from the per-week captures directory."""
-    folder = config.CAPTURES_DIR / ws.isoformat()
+    """Load cached per-day JSON files from the per-week parsed directory."""
+    folder = config.PARSED_DIR / ws.isoformat()
     parsed = []
     for label in days:
         matches = sorted(folder.glob(f"parsed_*_{label}.json"))
