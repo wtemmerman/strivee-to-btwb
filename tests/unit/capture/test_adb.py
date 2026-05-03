@@ -70,11 +70,16 @@ def test_stitch_vertical_single_image():
     assert result is img
 
 
-def test_stitch_vertical_multiple_images():
+def test_stitch_vertical_multiple_images(monkeypatch):
+    import strivee_btwb.core.config as cfg
+    monkeypatch.setattr(cfg, "SCROLL_DISTANCE", 0.4)
+    # Three solid-color frames with no matching overlap → falls back to expected_overlap.
+    # h=50, SCROLL_DISTANCE=0.4 → expected_overlap=30 → new content per frame = 20px.
+    # Total: 50 + 20 + 20 = 90
     imgs = [_solid((i * 50, 0, 0), width=100, height=50) for i in range(3)]
     result = stitch_vertical(imgs)
     assert result.width == 100
-    assert result.height == 150
+    assert result.height == 90
 
 
 def test_stitch_vertical_different_widths():
