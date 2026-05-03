@@ -18,6 +18,8 @@ env/
 .pytest_cache/
 .mypy_cache/
 .cache/
+.coverage
+htmlcov/
 
 # uv
 .uv/
