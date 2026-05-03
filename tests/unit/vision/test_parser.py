@@ -68,8 +68,15 @@ def test_extract_json_uses_repair_json_as_last_resort():
     assert "blocks" in result
 
 
+def test_extract_json_bare_array():
+    raw = '[{"name": "WOD", "content": "21-15-9"}, {"name": "Strength", "content": "5x5"}]'
+    result = json.loads(_extract_json(raw))
+    assert isinstance(result, list)
+    assert result[0]["name"] == "WOD"
+
+
 def test_extract_json_raises_on_no_object():
-    with pytest.raises(ValueError, match="No JSON object found"):
+    with pytest.raises(ValueError, match="No JSON value found"):
         _extract_json("just some text with no JSON")
 
 
@@ -154,6 +161,51 @@ def test_extract_day_programming_drops_excluded_blocks(monkeypatch):
 
     assert len(result.blocks) == 1
     assert result.blocks[0].name == "WOD"
+
+
+def test_extract_day_programming_name_as_key_format(monkeypatch):
+    """Model returns {"BlockName": "content"} instead of {"blocks": [...]}."""
+    from datetime import date
+
+    from PIL import Image
+
+    from strivee_btwb.vision.parser import extract_day_programming
+
+    fake_response = {
+        "message": {
+            "content": '{"Back Squat": "5x5 @ 80%", "WOD": "21-15-9 Thrusters"}'
+        }
+    }
+    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    img = Image.new("RGB", (100, 200), (255, 255, 255))
+    result = extract_day_programming([img], "Fri", date(2026, 4, 25))
+
+    assert len(result.blocks) == 2
+    assert result.blocks[0].name == "Back Squat"
+    assert result.blocks[0].content == "5x5 @ 80%"
+
+
+def test_extract_day_programming_empty_vision_response_returns_zero_blocks(monkeypatch):
+    """Model returns empty string — should not raise, just return 0 blocks."""
+    from datetime import date
+
+    from PIL import Image
+
+    from strivee_btwb.vision.parser import extract_day_programming
+
+    monkeypatch.setattr(
+        "strivee_btwb.vision.parser.ollama.chat",
+        lambda **_: {"message": {"content": ""}},
+    )
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    img = Image.new("RGB", (100, 200), (255, 255, 255))
+    result = extract_day_programming([img], "Wed", date(2026, 4, 23))
+
+    assert result.day_label == "Wed"
+    assert result.blocks == []
 
 
 def test_extract_day_programming_raises_on_unparseable_response(monkeypatch):

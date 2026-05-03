@@ -376,6 +376,7 @@ def test_do_capture_success(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg, "MAX_SCROLLS", 2)
     monkeypatch.setattr("strivee_btwb.pipeline.launch_scrcpy", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
 
     dummy = Image.new("RGB", (10, 10))
@@ -405,6 +406,7 @@ def test_do_capture_exits_when_no_days_saved(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
     monkeypatch.setattr(cfg, "MAX_SCROLLS", 1)
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
     monkeypatch.setattr(
         "strivee_btwb.pipeline.capture_day_screenshots",

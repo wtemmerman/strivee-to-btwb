@@ -21,24 +21,27 @@ from ..core.models import DayProgramming, ProgrammingBlock
 
 logger = logging.getLogger("vision")
 
-_DAY_PROMPT_TEMPLATE = """You are a CrossFit programming parser. The {count} image(s) show the {day_label} programming from the Strivee app — each image is one scroll position, from top to bottom.
+_DAY_PROMPT_TEMPLATE = """OUTPUT FORMAT — follow exactly, no exceptions:
+{{"blocks": [{{"name": "Back Squat", "content": "5x5 @ 80%"}}, {{"name": "WOD", "content": "..."}}]}}
 
-Extract every programming block visible across all images. Blocks have names like "Back Squat", "WOD", "Accessory", etc.
+Your response must be ONLY that JSON object. No explanation, no markdown, no code fences, no text before or after.
 
-Return ONLY a raw JSON object — no markdown, no code fences, no text before or after the JSON:
-{{
-  "blocks": [
-    {{"name": "Back Squat", "content": "5x5 @ 80%"}},
-    {{"name": "WOD", "content": "..."}}
-  ]
-}}
+Task: extract every CrossFit programming block from the {count} Strivee screenshot(s) for {day_label} (each image is one scroll position, top to bottom).
 
 Rules:
-- Copy the exact text visible in the images — do not invent or paraphrase
-- Preserve rep schemes, percentages, weights, timing, line breaks exactly as shown
-- Each block name appears only once — merge content if a block continues across scroll positions
-- Ignore UI chrome (status bar, navigation bar, video thumbnails)
+- Copy the exact text visible — do not invent or paraphrase
+- Preserve rep schemes, percentages, weights, timing, and line breaks exactly as shown
+- Each block name appears once — merge content if a block continues across scroll positions
+- Ignore UI chrome (status bar, nav bar, video thumbnails)
 - SKIP any block whose name starts with: {excluded}"""
+
+_REFORMAT_PROMPT_TEMPLATE = """Convert the CrossFit programming text below into this exact JSON format.
+Your response must be ONLY the JSON — no explanation, no markdown, no code fences.
+
+{{"blocks": [{{"name": "block name", "content": "full block text"}}]}}
+
+Text to convert:
+{text}"""
 
 
 def _to_bytes(image: Image.Image) -> bytes:
@@ -76,23 +79,38 @@ def _sanitize_json_strings(s: str) -> str:
 
 
 def _extract_json(text: str) -> str:
-    """Extract and repair the first JSON object from raw model output.
+    """Extract and repair the first JSON object or array from raw model output.
 
     Handles markdown code fences, leading prose, unescaped control characters,
+    bare JSON arrays (model returned [{...}] instead of {"blocks": [...]}),
     and the LLM habit of prematurely closing the blocks array between items.
-    Raises ValueError if no JSON object can be found.
+    Raises ValueError if no JSON value can be found.
     """
     stripped = text.strip()
     if "```" in stripped:
         stripped = stripped.split("```", 1)[-1]
         stripped = stripped.rsplit("```", 1)[0]
-        if stripped and not stripped.lstrip().startswith("{"):
+        if stripped and not stripped.lstrip()[0:1] in ("{", "["):
             stripped = stripped.split("\n", 1)[-1]
 
-    start = stripped.find("{")
+    arr_start = stripped.find("[")
+    obj_start = stripped.find("{")
+
+    # Prefer whichever delimiter appears first; fall back to the other
+    if arr_start != -1 and (obj_start == -1 or arr_start < obj_start):
+        arr_end = stripped.rfind("]")
+        if arr_end > arr_start:
+            json_str = _sanitize_json_strings(stripped[arr_start : arr_end + 1])
+            try:
+                json.loads(json_str)
+                return json_str
+            except json.JSONDecodeError:
+                return repair_json(json_str, ensure_ascii=False)
+
+    start = obj_start
     end = stripped.rfind("}")
     if start == -1 or end <= start:
-        raise ValueError(f"No JSON object found in model response. First 400 chars:\n{text[:400]}")
+        raise ValueError(f"No JSON value found in model response. First 400 chars:\n{text[:400]}")
 
     json_str = _sanitize_json_strings(stripped[start : end + 1])
 
@@ -151,6 +169,7 @@ def extract_day_programming(
     logger.info("Parsing %s (%d image(s)) with %s", day_label, len(images), model)
     response = ollama.chat(
         model=model,
+        think=False,  # suppress qwen3 thinking tokens that produce empty visible output
         messages=[
             {
                 "role": "user",
@@ -161,18 +180,55 @@ def extract_day_programming(
     )
 
     raw = response["message"]["content"]
-    try:
-        json_str = _extract_json(raw)
-        data = json.loads(json_str)
-    except (ValueError, json.JSONDecodeError) as e:
-        raise ValueError(
-            f"Vision parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
-        ) from e
+    logger.debug("%s: raw vision response:\n%s", day_label, raw)
+    data = None
+    if not raw.strip():
+        logger.warning("%s: vision model returned empty response — skipping reformat", day_label)
+    else:
+        try:
+            json_str = _extract_json(raw)
+            data = json.loads(json_str)
+        except (ValueError, json.JSONDecodeError):
+            # Model returned plain text instead of JSON (common with thinking models).
+            # Send the extracted text back without images for a fast reformat pass.
+            logger.warning("%s: no JSON in vision response — retrying as text reformat", day_label)
+            reformat_prompt = _REFORMAT_PROMPT_TEMPLATE.format(text=raw)
+            reformat_response = ollama.chat(
+                model=model,
+                think=False,
+                messages=[{"role": "user", "content": reformat_prompt}],
+            )
+            raw2 = reformat_response["message"]["content"]
+            logger.debug("%s: reformat response:\n%s", day_label, raw2)
+            try:
+                json_str = _extract_json(raw2)
+                data = json.loads(json_str)
+            except (ValueError, json.JSONDecodeError) as e:
+                raise ValueError(
+                    f"Vision parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
+                ) from e
 
+    if data is None:
+        data = {}
+    if isinstance(data, list):
+        data = {"blocks": data}
+    # Normalise wrong top-level key
+    if not data.get("blocks"):
+        list_vals = [v for v in data.values() if isinstance(v, list)]
+        if list_vals:
+            # e.g. {"converted_data": [{...}]} — use first list
+            data = {"blocks": list_vals[0]}
+        elif data and all(isinstance(v, str) for v in data.values()):
+            # e.g. {"Block Name": "content"} — model used name-as-key format
+            data = {"blocks": [{"name": k, "content": v} for k, v in data.items()]}
+    all_blocks = data.get("blocks", [])
     blocks = [
         ProgrammingBlock(name=b["name"], content=b["content"])
-        for b in data.get("blocks", [])
+        for b in all_blocks
         if not _is_excluded(b.get("name", ""))
     ]
+    excluded_count = len(all_blocks) - len(blocks)
+    if excluded_count:
+        logger.debug("%s: %d block(s) dropped by exclusion filter", day_label, excluded_count)
     logger.info("%s: %d block(s) extracted", day_label, len(blocks))
     return DayProgramming(date=target_date, day_label=day_label, blocks=blocks)

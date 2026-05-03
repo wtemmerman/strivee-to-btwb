@@ -53,7 +53,7 @@ Connects to the Android phone via ADB, launches Strivee, navigates to each day t
 
 ### Step 2 — Analyse
 
-Sends each day's stitched screenshot to a local Ollama vision model (`qwen3vl:8b`). The model extracts every programming block by name and content and returns structured JSON.
+Sends each day's stitched screenshot to a local Ollama vision model (`qwen3-vl:8b`). The model extracts every programming block by name and content and returns structured JSON. If the primary model returns no blocks (e.g. due to thinking tokens consuming all compute), the pipeline automatically retries with a configurable fallback model (`qwen2.5vl:7B`) before giving up.
 
 **Example output** (`parsed/2026-04-27/parsed_2026-04-27_Mon.json`):
 
@@ -106,10 +106,11 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 | USB debugging | Enabled on the Android device |
 | scrcpy _(optional)_ | Visual mirror during capture — `brew install scrcpy` |
 
-Pull the vision model once:
+Pull the vision models once:
 
 ```bash
-ollama pull qwen3vl:8b
+ollama pull qwen3-vl:8b       # primary
+ollama pull qwen2.5vl:7B      # fallback (used when primary returns 0 blocks)
 ```
 
 ---
@@ -131,7 +132,8 @@ cp .env.example .env
 Copy `.env.example` to `.env` and fill in the required values:
 
 ```env
-OLLAMA_MODEL=qwen3vl:8b
+OLLAMA_MODEL=qwen3-vl:8b
+OLLAMA_FALLBACK_MODEL=qwen2.5vl:7B   # retried automatically when primary returns 0 blocks
 
 BTWB_EMAIL=your@email.com
 BTWB_PASSWORD=yourpassword
@@ -174,19 +176,31 @@ uv run strivee-btwb preview
 uv run strivee-btwb post
 ```
 
-Common flags available on all commands:
+### Flags available on all commands
 
 ```bash
---days Mon,Tue,Wed    # process specific days only
---debug               # verbose logging
+--days Mon,Tue,Wed        # process specific days only
+--week 2026-04-20         # target a specific week (any date in the week); defaults to current week
+--debug                   # verbose logging
 ```
 
-Additional flags:
+### Additional flags
 
 ```bash
-capture --no-scrcpy   # skip launching the screen mirror
-post    --yes         # skip interactive confirmation
-post    --headless    # run browser without a visible window
+capture --no-scrcpy       # skip launching the screen mirror
+post    --yes             # skip interactive confirmation
+post    --headless        # run browser without a visible window
+```
+
+### Examples
+
+```bash
+# Re-run the full pipeline on a past week for testing
+uv run strivee-btwb run --week 2026-04-20 --yes
+
+# Analyse and post a specific day from a previous week
+uv run strivee-btwb analyse --week 2026-04-20 --days Mon
+uv run strivee-btwb post    --week 2026-04-20 --days Mon --yes
 ```
 
 ---
@@ -244,11 +258,21 @@ tests/
 |---|---|
 | **Qwen2.5-VL (vision-only)** | Accurate but slow and VRAM-heavy (~15 GB at 8k context) |
 | **OCR + LLM** | Fast but accuracy was poor — OCR errors compounded into the LLM input and produced unreliable block extraction |
-| **Qwen3-VL (vision-only)** | ✅ Current — faster than Qwen2.5-VL, ~11 GB at 32k context, same accuracy |
+| **Qwen3-VL (vision-only)** | ✅ Current primary — faster than Qwen2.5-VL, ~11 GB at 32k context, same accuracy |
 
 **Hard constraint:** no cloud APIs (zero cost). Every model must run locally via Ollama.
 
 Cloud vision APIs (Claude, GPT-4o) were never tested — they would give better accuracy but introduce per-run cost and a network dependency, which is a non-starter for a weekly personal automation.
+
+### Primary → fallback model chain
+
+Qwen3-VL has a "thinking" mode that, on some days with dense content, spends all available compute on internal reasoning tokens and returns an empty response. To make the pipeline resilient without switching models entirely, `analyse` implements a two-stage retry:
+
+1. Run the primary model (`OLLAMA_MODEL`, default `qwen3-vl:8b`) with `think=False` to suppress thinking tokens.
+2. If the result contains **0 blocks**, automatically retry with `OLLAMA_FALLBACK_MODEL` (default `qwen2.5vl:7B`).
+3. If the fallback also returns 0 blocks, log a warning and skip that day.
+
+The fallback is optional — leave `OLLAMA_FALLBACK_MODEL` unset to disable it.
 
 ### Why deterministic WOD extraction
 

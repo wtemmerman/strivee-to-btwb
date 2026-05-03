@@ -17,6 +17,9 @@ load_dotenv()
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3vl:8b")
 """Ollama model tag used for vision parsing (must support image input)."""
 
+OLLAMA_FALLBACK_MODEL: str | None = os.getenv("OLLAMA_FALLBACK_MODEL") or None
+"""Fallback model tried when the primary returns zero blocks. Set to empty to disable."""
+
 # ── BTWB credentials ──────────────────────────────────────────────────────────
 
 BTWB_EMAIL: str = os.getenv("BTWB_EMAIL", "")

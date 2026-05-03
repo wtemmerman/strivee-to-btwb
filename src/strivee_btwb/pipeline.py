@@ -18,6 +18,7 @@ from .capture import (
     capture_day_screenshots,
     launch_scrcpy,
     launch_strivee,
+    navigate_to_week,
     save_capture,
     scroll_to_top,
     stitch_vertical,
@@ -35,13 +36,14 @@ WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 # ── Date helpers ──────────────────────────────────────────────────────────────
 
 
-def week_start() -> date:
-    today = date.today()
-    return today - timedelta(days=today.weekday())
+def week_start(anchor: date | None = None) -> date:
+    """Return the Monday of the week containing *anchor* (defaults to today)."""
+    d = anchor or date.today()
+    return d - timedelta(days=d.weekday())
 
 
-def short_to_date(day_short: str) -> date:
-    return week_start() + timedelta(days=WEEKDAYS.index(day_short))
+def short_to_date(day_short: str, ws: date | None = None) -> date:
+    return (ws or week_start()) + timedelta(days=WEEKDAYS.index(day_short))
 
 
 def parse_days(raw: str | None) -> list[str]:
@@ -173,9 +175,9 @@ def log_preview(week: WeeklyProgramming) -> None:
 # ── Steps ─────────────────────────────────────────────────────────────────────
 
 
-def do_capture(days: list[str], no_scrcpy: bool) -> None:
+def do_capture(days: list[str], no_scrcpy: bool, ws: date | None = None) -> None:
     serial = config.ANDROID_SERIAL
-    ws = week_start()
+    ws = ws or week_start()
     scrcpy_proc = None
 
     if not no_scrcpy:
@@ -193,6 +195,8 @@ def do_capture(days: list[str], no_scrcpy: bool) -> None:
         if scrcpy_proc:
             scrcpy_proc.terminate()
         sys.exit(1)
+
+    navigate_to_week(ws, serial)
 
     logger.info("Capturing %d day(s): %s", len(days), ", ".join(days))
     saved = 0
@@ -216,8 +220,8 @@ def do_capture(days: list[str], no_scrcpy: bool) -> None:
     logger.info("Capture done (%d/%d days)", saved, len(days))
 
 
-def do_analyse(days: list[str]) -> None:
-    ws = week_start()
+def do_analyse(days: list[str], ws: date | None = None) -> None:
+    ws = ws or week_start()
     day_images = load_captures(days, ws)
     if not day_images:
         logger.error(
@@ -233,21 +237,33 @@ def do_analyse(days: list[str]) -> None:
             day_prog = extract_day_programming(
                 images=frames,
                 day_label=day_short,
-                target_date=short_to_date(day_short),
+                target_date=short_to_date(day_short, ws),
             )
+            if not day_prog.blocks and config.OLLAMA_FALLBACK_MODEL:
+                logger.warning(
+                    "%s: no blocks from primary model — retrying with fallback '%s'",
+                    day_short,
+                    config.OLLAMA_FALLBACK_MODEL,
+                )
+                day_prog = extract_day_programming(
+                    images=frames,
+                    day_label=day_short,
+                    target_date=short_to_date(day_short, ws),
+                    model=config.OLLAMA_FALLBACK_MODEL,
+                )
             if day_prog.blocks:
                 path = save_day(day_prog, ws)
                 logger.info("%s cached -> %s", day_short, path.name)
             else:
-                logger.warning("%s: no blocks found (rest day?)", day_short)
+                logger.warning("%s: no blocks found after fallback — skipping", day_short)
         except Exception as e:
             logger.error("%s: analysis failed — %s", day_short, e)
 
     logger.info("Analysis done")
 
 
-def do_preview(days: list[str]) -> None:
-    week = load_days(days, week_start())
+def do_preview(days: list[str], ws: date | None = None) -> None:
+    week = load_days(days, ws or week_start())
     if not week.days:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
@@ -257,8 +273,8 @@ def do_preview(days: list[str]) -> None:
     log_preview(week)
 
 
-def do_post(days: list[str], yes: bool, headless: bool) -> None:
-    week = load_days(days, week_start())
+def do_post(days: list[str], yes: bool, headless: bool, ws: date | None = None) -> None:
+    week = load_days(days, ws or week_start())
     if not week.days:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
