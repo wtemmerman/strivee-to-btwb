@@ -1,3 +1,3 @@
-from .wod import prepare_block
+from .llm_format import format_for_btwb
 
-__all__ = ["prepare_block"]
+__all__ = ["format_for_btwb"]

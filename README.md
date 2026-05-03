@@ -4,7 +4,7 @@ Automates the weekly transfer of CrossFit programming from the **Strivee** Andro
 
 ## Coverage
 
-![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen?style=flat&logo=pytest)
+![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen?style=flat&logo=pytest)
 
 > Run `make test-cov` to regenerate with an HTML report in `htmlcov/`.
 
@@ -80,7 +80,7 @@ Sends each day's stitched screenshot to a local Ollama vision model (`qwen3-vl:8
 
 ### Step 3 — Preview
 
-Loads the cached JSON, applies Rx-level extraction (keeps only the Rx section when Inter/Inter+ sections exist) and strips coaching notes. Prints the full content that will be posted to BTWB for review.
+Loads the cached JSON, runs the same LLM formatting as the post step, and prints the result for review. What you see is exactly what will be submitted to BTWB.
 
 ### Step 4 — Post
 
@@ -106,11 +106,12 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 | USB debugging | Enabled on the Android device |
 | scrcpy _(optional)_ | Visual mirror during capture — `brew install scrcpy` |
 
-Pull the vision models once:
+Pull the models once:
 
 ```bash
-ollama pull qwen3-vl:8b       # primary
-ollama pull qwen2.5vl:7B      # fallback (used when primary returns 0 blocks)
+ollama pull qwen3-vl:8b       # vision — analyse step
+ollama pull qwen2.5vl:7B      # vision fallback (used when primary returns 0 blocks)
+ollama pull qwen3.5:2b        # text — preview and post formatting
 ```
 
 ---
@@ -132,8 +133,9 @@ cp .env.example .env
 Copy `.env.example` to `.env` and fill in the required values:
 
 ```env
-OLLAMA_MODEL=qwen3-vl:8b
+OLLAMA_MODEL=qwen3-vl:8b             # vision model for analyse step
 OLLAMA_FALLBACK_MODEL=qwen2.5vl:7B   # retried automatically when primary returns 0 blocks
+OLLAMA_FORMAT_MODEL=qwen3.5:2b       # small text model for preview/post formatting
 
 BTWB_EMAIL=your@email.com
 BTWB_PASSWORD=yourpassword
@@ -221,7 +223,7 @@ src/strivee_btwb/
   core/           config, logging setup, data models
   capture/        ADB screenshot capture (adb.py)
   vision/         Ollama vision parsing (parser.py)
-  processing/     WOD text transformation — Rx extraction, coaching strip (wod.py)
+  processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
   btwb/           BTWB Playwright automation (client.py)
   pipeline.py     step orchestration and cache I/O
   cli.py          argparse wiring
@@ -274,12 +276,14 @@ Qwen3-VL has a "thinking" mode that, on some days with dense content, spends all
 
 The fallback is optional — leave `OLLAMA_FALLBACK_MODEL` unset to disable it.
 
-### Why deterministic WOD extraction
+### LLM-based BTWB formatting
 
-Once the vision model produces a JSON block, all further processing — Rx-level selection, coaching-note stripping — is done with plain regex in `processing/wod.py`. No second LLM call.
+After vision parsing, each block's raw content is sent to a small local text model (`OLLAMA_FORMAT_MODEL`, default `qwen3.5:2b`) before preview and post. The model:
 
-This keeps the pipeline predictable: given the same JSON, `prepare_block()` always produces the same output. Failures are reproducible and easy to unit-test.
+1. Keeps only the RX / top-performance section when multiple athlete levels are present (RX, Inter+, Inter, etc.)
+2. Strips coaching notes, technique cues, objectives, and motivational text
+3. Removes Strivee UI artifacts (score labels, media counts, etc.)
 
-### Planned experiment: LLM-assisted BTWB formatting
+A regex-based approach was tried first but proved too fragile — coaches use inconsistent formatting, emoji after level headers, mixed French/English, and new patterns appear every week. The LLM handles all of these naturally.
 
-The current BTWB posting step submits block content as-is. Some blocks (e.g. running sessions, swim workouts) don't map cleanly to BTWB's workout format and occasionally fail to generate a preview. A possible improvement is to pass the block content through a local LLM before submission to reformat it into a structure BTWB's AI parser handles better. This would be an optional post-processing step, keeping the deterministic path as the default.
+If the model returns an empty response the original block content is kept unchanged, so the pipeline never silently drops content.

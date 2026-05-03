@@ -13,6 +13,8 @@ from pathlib import Path
 
 from PIL import Image
 
+import ollama
+
 from .btwb import AuthenticationError, post_week
 from .capture import (
     capture_day_screenshots,
@@ -25,7 +27,7 @@ from .capture import (
 )
 from .core import config
 from .core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
-from .processing import prepare_block
+from .processing import format_for_btwb
 from .vision import extract_day_programming
 
 logger = logging.getLogger(__name__)
@@ -113,14 +115,23 @@ def load_captures(days: list[str], ws: date) -> dict[str, list[Image.Image]]:
 # ── Week processing ───────────────────────────────────────────────────────────
 
 
-def prepare_week(week: WeeklyProgramming) -> WeeklyProgramming:
-    """Apply Rx extraction and coaching-note stripping to every block."""
+def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
+    """Apply LLM-based Rx extraction and BTWB formatting to every block."""
     days = []
-    for day in week.days:
-        blocks = [prepare_block(b) for b in day.blocks]
-        blocks = [b for b in blocks if b.content.strip()]
-        if blocks:
-            days.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=blocks))
+    try:
+        for day in week.days:
+            logger.info("Formatting %s with LLM…", day.day_label)
+            blocks = [format_for_btwb(b) for b in day.blocks]
+            blocks = [b for b in blocks if b.content.strip()]
+            if blocks:
+                days.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=blocks))
+    except KeyboardInterrupt:
+        logger.info("Interrupted — unloading format model from Ollama…")
+        try:
+            ollama.generate(model=config.OLLAMA_FORMAT_MODEL, keep_alive=0)
+        except Exception:
+            pass
+        raise
     return WeeklyProgramming(week_start=week.week_start, days=days)
 
 
@@ -268,7 +279,7 @@ def do_preview(days: list[str], ws: date | None = None) -> None:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
     week = clean_week(week)
-    week = prepare_week(week)
+    week = llm_format_week(week)
     log_summary(week)
     log_preview(week)
 
@@ -279,7 +290,7 @@ def do_post(days: list[str], yes: bool, headless: bool, ws: date | None = None) 
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
     week = clean_week(week)
-    week = prepare_week(week)
+    week = llm_format_week(week)
     log_summary(week)
 
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:

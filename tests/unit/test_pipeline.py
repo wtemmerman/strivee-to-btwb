@@ -21,7 +21,6 @@ from strivee_btwb.pipeline import (
     load_days,
     log_preview,
     log_summary,
-    prepare_week,
     save_day,
     short_to_date,
     week_start,
@@ -213,48 +212,6 @@ def test_clean_week_merge_is_case_insensitive():
     assert len(result.days[0].blocks) == 1
 
 
-# ── prepare_week ──────────────────────────────────────────────────────────────
-
-
-def test_prepare_week_strips_coaching_prefix():
-    week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(
-                name="Back Squat",
-                content="5x5 @ 80%\nObjectif: monter en charge",
-            )
-        ])
-    )
-    result = prepare_week(week)
-    assert "Objectif" not in result.days[0].blocks[0].content
-    assert "5x5" in result.days[0].blocks[0].content
-
-
-def test_prepare_week_drops_day_when_all_content_stripped():
-    week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(name="Notes", content="Objectif: rest today")
-        ])
-    )
-    result = prepare_week(week)
-    assert result.days == []
-
-
-def test_prepare_week_extracts_rx_section():
-    week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(
-                name="WOD",
-                content="RX:\n21-15-9 Thrusters\nINTER:\n15-12-9 Thrusters",
-            )
-        ])
-    )
-    result = prepare_week(week)
-    content = result.days[0].blocks[0].content
-    assert "21-15-9" in content
-    assert "15-12-9" not in content
-
-
 # ── week_start / short_to_date ────────────────────────────────────────────────
 
 
@@ -297,10 +254,11 @@ def test_log_preview_logs_block_content(caplog):
 # ── do_preview ────────────────────────────────────────────────────────────────
 
 
-def test_do_preview_success(monkeypatch, tmp_path):
+def test_do_preview_success(monkeypatch):
     import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
     do_preview(["Mon", "Tue"])
 
 
@@ -428,6 +386,7 @@ def test_do_post_success(monkeypatch):
 
     mock_post = MagicMock(return_value=[{"block": "Squat Snatch", "ok": True}])
     monkeypatch.setattr("strivee_btwb.pipeline.post_week", mock_post)
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
 
     do_post(["Mon"], yes=True, headless=True)
     mock_post.assert_called_once()
@@ -460,6 +419,7 @@ def test_do_post_exits_when_no_days_approved(monkeypatch):
     monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
     monkeypatch.setattr(cfg, "BTWB_EMAIL", "x")
     monkeypatch.setattr(cfg, "BTWB_PASSWORD", "x")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
 
     # Simulate user saying "n" to all days
     monkeypatch.setattr("builtins.input", lambda _: "n")
