@@ -27,6 +27,7 @@ from strivee_btwb.capture.adb import (
     take_screenshot,
 )
 
+
 # ---------------------------------------------------------------------------
 # _change_fraction / _screens_same
 # ---------------------------------------------------------------------------
@@ -70,16 +71,12 @@ def test_stitch_vertical_single_image():
     assert result is img
 
 
-def test_stitch_vertical_multiple_images(monkeypatch):
-    import strivee_btwb.core.config as cfg
-    monkeypatch.setattr(cfg, "SCROLL_DISTANCE", 0.4)
-    # Three solid-color frames with no matching overlap → falls back to expected_overlap.
-    # h=50, SCROLL_DISTANCE=0.4 → expected_overlap=30 → new content per frame = 20px.
-    # Total: 50 + 20 + 20 = 90
+def test_stitch_vertical_multiple_images():
+    # Plain concat: 3 frames of height 50 → total 150
     imgs = [_solid((i * 50, 0, 0), width=100, height=50) for i in range(3)]
     result = stitch_vertical(imgs)
     assert result.width == 100
-    assert result.height == 90
+    assert result.height == 150
 
 
 def test_stitch_vertical_different_widths():
@@ -315,12 +312,22 @@ def test_tap_calls_adb(monkeypatch):
 
 
 def test_navigate_to_day_returns_true_when_found(monkeypatch):
-    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: _UI_XML)
-    monkeypatch.setattr("strivee_btwb.capture.adb._tap", lambda *_, **__: None)
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 550)
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
+    tapped = []
+    monkeypatch.setattr("strivee_btwb.capture.adb._tap", lambda x, y, *_, **__: tapped.append((x, y)))
     assert navigate_to_day("Mon") is True
+    # Mon is index 0 → x = int((0 + 0.5) * 1080 / 7) = 77, y = 550 - 50 = 500
+    assert tapped == [(77, 500)]
 
 
 def test_navigate_to_day_tries_french_fallback(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)  # force fallback path
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     no_match_xml = """<?xml version="1.0"?><hierarchy><node text="Lun" bounds="[0,100][270,200]"/></hierarchy>"""
     monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: no_match_xml)
     monkeypatch.setattr("strivee_btwb.capture.adb._tap", lambda *_, **__: None)
@@ -328,6 +335,14 @@ def test_navigate_to_day_tries_french_fallback(monkeypatch):
 
 
 def test_navigate_to_day_returns_false_when_not_found(monkeypatch):
+    assert navigate_to_day("Invalid") is False
+
+
+def test_navigate_to_day_returns_false_when_ui_fallback_finds_nothing(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)  # force fallback path
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     empty_xml = """<?xml version="1.0"?><hierarchy><node text="Other" bounds="[0,0][100,100]"/></hierarchy>"""
     monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: empty_xml)
     assert navigate_to_day("Sun") is False

@@ -207,14 +207,21 @@ def do_capture(days: list[str], no_scrcpy: bool, ws: date | None = None) -> None
             scrcpy_proc.terminate()
         sys.exit(1)
 
+    scroll_to_top(serial)  # also waits for the app to fully render after launch
     navigate_to_week(ws, serial)
+
+    debug_dir = None
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        debug_dir = config.CAPTURES_DIR / ws.isoformat() / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug("Raw frames will be saved to %s", debug_dir)
 
     logger.info("Capturing %d day(s): %s", len(days), ", ".join(days))
     saved = 0
     for day in days:
         try:
             scroll_to_top(serial)
-            frames = capture_day_screenshots(day, serial, config.MAX_SCROLLS)
+            frames = capture_day_screenshots(day, serial, config.MAX_SCROLLS, debug_dir=debug_dir)
             path = save_capture(stitch_vertical(frames), label=day, week_start=ws)
             logger.info("%s saved -> %s (%d frame(s))", day, path.name, len(frames))
             saved += 1

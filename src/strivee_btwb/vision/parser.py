@@ -33,7 +33,8 @@ Rules:
 - Preserve rep schemes, percentages, weights, timing, and line breaks exactly as shown
 - Each block name appears once — merge content if a block continues across scroll positions
 - Ignore UI chrome (status bar, nav bar, video thumbnails)
-- SKIP any block whose name starts with: {excluded}"""
+- SKIP any block whose name starts with: {excluded}
+- If you see the text "Inviter un ami à rejoindre Strivee" anywhere in the image, stop — ignore everything below that line"""
 
 _REFORMAT_PROMPT_TEMPLATE = """Convert the CrossFit programming text below into this exact JSON format.
 Your response must be ONLY the JSON — no explanation, no markdown, no code fences.

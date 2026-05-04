@@ -259,7 +259,7 @@ def test_do_preview_success(monkeypatch):
 
     monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
     monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
-    do_preview(["Mon", "Tue"])
+    do_preview(["Mon", "Tue"], ws=FIXTURE_WEEK)
 
 
 def test_do_preview_exits_when_no_cache(monkeypatch, tmp_path):
@@ -289,7 +289,7 @@ def test_do_analyse_success(monkeypatch, tmp_path):
         "strivee_btwb.pipeline.extract_day_programming",
         lambda **_: fake_day,
     )
-    do_analyse(["Mon"])
+    do_analyse(["Mon"], ws=FIXTURE_WEEK)
     assert any((folder).glob("parsed_*_Mon.json"))
 
 
@@ -318,7 +318,7 @@ def test_do_analyse_logs_warning_on_empty_blocks(monkeypatch, tmp_path, caplog):
         lambda **_: empty_day,
     )
     with caplog.at_level(logging.WARNING):
-        do_analyse(["Mon"])
+        do_analyse(["Mon"], ws=FIXTURE_WEEK)
     assert "no blocks" in caplog.text.lower()
 
 
@@ -388,7 +388,7 @@ def test_do_post_success(monkeypatch):
     monkeypatch.setattr("strivee_btwb.pipeline.post_week", mock_post)
     monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
 
-    do_post(["Mon"], yes=True, headless=True)
+    do_post(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
     mock_post.assert_called_once()
 
 

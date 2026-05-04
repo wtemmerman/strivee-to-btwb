@@ -4,7 +4,7 @@ Automates the weekly transfer of CrossFit programming from the **Strivee** Andro
 
 ## Coverage
 
-![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen?style=flat&logo=pytest)
+![Coverage](https://img.shields.io/badge/coverage-84%25-brightgreen?style=flat&logo=pytest)
 
 > Run `make test-cov` to regenerate with an HTML report in `htmlcov/`.
 

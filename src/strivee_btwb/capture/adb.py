@@ -241,9 +241,27 @@ def _tap(x: int, y: int, serial: str | None = None) -> None:
 def navigate_to_day(day_short: str, serial: str | None = None) -> bool:
     """Tap the day tab in Strivee's agenda view.
 
-    Tries the English abbreviation first, then the French one.
-    Returns True if the element was found and tapped, False otherwise.
+    Primary: geometric tap — the week header spans the full screen width with
+    7 equally-spaced day columns; Mon is index 0, Sun is index 6.
+    Requires CAPTURE_CROP_TOP to be configured (it sets the Y position just
+    inside the header). Falls back to UI element detection when not configured.
     """
+    try:
+        day_index = _WEEKDAYS_EN.index(day_short)
+    except ValueError:
+        logger.warning("Unknown day '%s'", day_short)
+        return False
+
+    w, h = _device_size(serial)
+
+    if config.CAPTURE_CROP_TOP > 0:
+        x = int((day_index + 0.5) * w / 7)
+        y = config.CAPTURE_CROP_TOP - 50
+        logger.debug("Tapping %s at (%d, %d) via geometry", day_short, x, y)
+        _tap(x, y, serial)
+        return True
+
+    # Fallback: UI element detection (used when CAPTURE_CROP_TOP is not set)
     xml = _ui_dump(serial)
     center = _find_element_center(xml, day_short)
     if center is None:
@@ -251,7 +269,7 @@ def navigate_to_day(day_short: str, serial: str | None = None) -> bool:
         if fr:
             center = _find_element_center(xml, fr)
     if center is None:
-        logger.warning("Day tab '%s' not found in UI — capturing current screen", day_short)
+        logger.warning("Day tab '%s' not found in UI", day_short)
         return False
     _tap(center[0], center[1], serial)
     return True
@@ -275,13 +293,16 @@ def capture_day_screenshots(
     day_short: str,
     serial: str | None = None,
     max_scrolls: int = 10,
+    debug_dir: Path | None = None,
 ) -> list[Image.Image]:
     """Navigate to *day_short*, then scroll down capturing frames until content ends.
 
-    Returns one cropped image per unique scroll position. Full-resolution frames
-    are used internally for scroll detection only; a frame is dropped when the
-    pixel-change fraction falls below half the expected scroll distance, meaning
-    we hit the bottom mid-scroll and would capture redundant overlap.
+    Returns one cropped image per unique scroll position. The frame is always
+    appended when content has moved — including the final partial scroll at the
+    bottom — so no content is missed. The stitcher removes overlap automatically.
+
+    When *debug_dir* is set, each raw uncropped frame is saved there as
+    ``<day>_raw_<N>.png`` so the full device output can be inspected.
     """
     navigate_to_day(day_short, serial)
     time.sleep(0.5)
@@ -289,95 +310,49 @@ def capture_day_screenshots(
     near_bottom_threshold = config.SCROLL_DISTANCE * 0.5
 
     prev = take_screenshot(serial)
-    images = [_crop_frame(prev)]
+    cropped = _crop_frame(prev)
+    if debug_dir:
+        prev.save(debug_dir / f"{day_short}_raw_0.png")
+        cropped.save(debug_dir / f"{day_short}_crop_0.png")
+    images = [cropped]
 
-    for _ in range(max_scrolls):
+    for i in range(max_scrolls):
         swipe_up(serial)
         curr = take_screenshot(serial)
         fraction = _change_fraction(prev, curr)
         if fraction < 0.01:
             break  # absolute bottom — nothing moved
+        cropped = _crop_frame(curr)
+        if debug_dir:
+            curr.save(debug_dir / f"{day_short}_raw_{i + 1}.png")
+            cropped.save(debug_dir / f"{day_short}_crop_{i + 1}.png")
+        images.append(cropped)
         if fraction < near_bottom_threshold:
             logger.debug("%s: near bottom (%.0f%% changed) — stopping", day_short, fraction * 100)
             break
-        images.append(_crop_frame(curr))
         prev = curr
 
     return images
 
 
-def _overlap_matches(prev: Image.Image, curr: Image.Image, overlap: int) -> bool:
-    """Verify a candidate overlap by comparing strips at the start, middle, and near
-    the end of the proposed overlap zone.
-
-    Checking the very start (curr_y=0) is the most discriminating: it compares
-    the true top of curr against prev at position h-overlap, which changes colour
-    quickly when the candidate is wrong. The near-end check catches cases where
-    the start happens to be the same colour for several wrong candidates.
-    """
-    if overlap <= 0:
-        return False
-    h = prev.height
-    for curr_y in (0, overlap // 2, max(0, overlap - 5)):
-        prev_y = h - overlap + curr_y
-        if curr_y + 5 > curr.height or prev_y < 0 or prev_y + 5 > h:
-            return False
-        ref = curr.crop((0, curr_y, curr.width, curr_y + 5)).convert("L")
-        cand = prev.crop((0, prev_y, prev.width, prev_y + 5)).convert("L")
-        diff = ImageChops.difference(ref, cand)
-        bbox = diff.getbbox()
-        if bbox and (bbox[2] - bbox[0]) >= ref.width * 0.05:
-            return False
-    return True
-
-
-def _find_overlap_px(prev: Image.Image, curr: Image.Image) -> int:
-    """Return the number of pixels that overlap between the bottom of prev and the top of curr.
-
-    If the overlap is N pixels then curr[0:N] == prev[h-N:h]. Searches from the
-    expected scroll amount outward and uses multi-strip verification to avoid false
-    matches in uniform-color regions. Falls back to the expected scroll amount if
-    no verified match is found.
-    """
-    h = prev.height
-    expected_overlap = h - int(h * config.SCROLL_DISTANCE)
-    margin = max(60, int(h * 0.12))
-    lo = max(0, expected_overlap - margin)
-    hi = min(h - 5, expected_overlap + margin)
-
-    candidates = sorted(range(lo, hi + 1), key=lambda x: abs(x - expected_overlap))
-    for overlap in candidates:
-        if _overlap_matches(prev, curr, overlap):
-            return overlap
-
-    return expected_overlap
-
 
 def stitch_vertical(images: list[Image.Image]) -> Image.Image:
-    """Concatenate images vertically, stripping inter-frame overlap.
+    """Concatenate cropped frames vertically without overlap removal.
 
-    Instead of naively stacking full frames (which repeats content), this function
-    finds the exact pixel overlap between each consecutive pair and only pastes
-    the new content from each subsequent frame.
+    Consecutive frames share some content due to the scroll, but the vision
+    model handles deduplication when extracting blocks from the tall image.
     """
     if len(images) == 1:
         return images[0]
 
-    strips: list[Image.Image] = [images[0]]
-    for prev, curr in zip(images, images[1:]):
-        overlap = _find_overlap_px(prev, curr)
-        new_part = curr.crop((0, overlap, curr.width, curr.height))
-        if new_part.height > 0:
-            strips.append(new_part)
-        logger.debug("stitch: overlap %d px → new content %d px", overlap, new_part.height)
-
-    w = max(s.width for s in strips)
-    h = sum(s.height for s in strips)
+    w = max(img.width for img in images)
+    h = sum(img.height for img in images)
     out = Image.new("RGB", (w, h), (255, 255, 255))
     y = 0
-    for strip in strips:
-        out.paste(strip, (0, y))
-        y += strip.height
+    for img in images:
+        out.paste(img, (0, y))
+        y += img.height
+    logger.debug("stitch: %d frames → %dx%d px", len(images), w, h)
     return out
 
 

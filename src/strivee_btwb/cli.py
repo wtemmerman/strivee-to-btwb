@@ -25,7 +25,11 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Transfer Strivee CrossFit programming to BTWB",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG-level logging; during capture, also saves raw uncropped frames to captures/<week>/debug/",
+    )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
     sub.required = True
 
