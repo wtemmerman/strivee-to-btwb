@@ -24,7 +24,8 @@ def _make_week(blocks: list[ProgrammingBlock] | None = None) -> WeeklyProgrammin
             DayProgramming(
                 date=date(2026, 4, 27),
                 day_label="Mon",
-                blocks=blocks or [
+                blocks=blocks
+                or [
                     ProgrammingBlock(name="Back Squat", content="5x5 @ 80%"),
                     ProgrammingBlock(name="WOD", content="21-15-9\nThrusters"),
                 ],
@@ -108,6 +109,7 @@ def test_login_raises_on_auth_failure():
 
 def test_fetch_existing_block_names_returns_set(monkeypatch):
     import strivee_btwb.core.config as cfg
+
     monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "")
     page = MagicMock()
     page.evaluate.return_value = ["Back Squat", "WOD"]
@@ -118,6 +120,7 @@ def test_fetch_existing_block_names_returns_set(monkeypatch):
 
 def test_fetch_existing_block_names_empty(monkeypatch):
     import strivee_btwb.core.config as cfg
+
     monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "")
     page = MagicMock()
     page.evaluate.return_value = []
@@ -127,6 +130,7 @@ def test_fetch_existing_block_names_empty(monkeypatch):
 
 def test_fetch_existing_block_names_with_track_id(monkeypatch):
     import strivee_btwb.core.config as cfg
+
     monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "42")
     page = MagicMock()
     page.evaluate.return_value = ["WOD"]
@@ -155,6 +159,7 @@ def test_post_day_skips_already_posted_blocks():
 
 def test_post_day_returns_empty_when_all_already_posted(monkeypatch):
     import strivee_btwb.core.config as cfg
+
     monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "")
     page = MagicMock()
     page.evaluate.return_value = ["Back Squat"]

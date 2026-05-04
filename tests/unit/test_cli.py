@@ -1,7 +1,7 @@
 """Unit tests for CLI argument parsing."""
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -73,8 +73,10 @@ def test_parser_requires_subcommand():
 
 
 def _run_main(argv: list[str]) -> None:
-    with patch.object(sys, "argv", ["strivee-btwb"] + argv), \
-         patch("strivee_btwb.cli.log") as mock_log:
+    with (
+        patch.object(sys, "argv", ["strivee-btwb", *argv]),
+        patch("strivee_btwb.cli.log") as mock_log,
+    ):
         mock_log.setup.return_value = None
         main()
 
@@ -106,10 +108,12 @@ def test_main_post_calls_do_post(monkeypatch):
 
 
 def test_main_run_calls_all_steps(monkeypatch):
-    with patch("strivee_btwb.cli.do_capture") as mc, \
-         patch("strivee_btwb.cli.do_analyse") as ma, \
-         patch("strivee_btwb.cli.do_preview") as mp, \
-         patch("strivee_btwb.cli.do_post") as mpost:
+    with (
+        patch("strivee_btwb.cli.do_capture") as mc,
+        patch("strivee_btwb.cli.do_analyse") as ma,
+        patch("strivee_btwb.cli.do_preview") as mp,
+        patch("strivee_btwb.cli.do_post") as mpost,
+    ):
         _run_main(["run", "--yes"])
         mc.assert_called_once()
         ma.assert_called_once()

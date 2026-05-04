@@ -2,12 +2,11 @@
 Android device capture via ADB.
 
 Primary flow per day:
-  1. launch_scrcpy()          — open scrcpy for visual feedback (optional)
-  2. launch_strivee()         — open the Strivee app on the device
-  3. scroll_to_top()          — reset scroll position
-  4. capture_day_screenshots() — tap day tab, scroll down capturing frames
-  5. stitch_vertical()        — combine frames into one tall image
-  6. save_capture()           — persist PNG to the per-week captures directory
+  1. launch_scrcpy()     — open scrcpy for visual feedback (optional)
+  2. launch_strivee()    — open the Strivee app on the device
+  3. scroll_to_top()     — reset scroll position
+  4. navigate_to_week()  — swipe to the target week
+  5. capture_day_as_text() — tap day tab, scroll down, collect UI text dump
 
 ADB must be on PATH and USB debugging enabled on the device.
 """
@@ -18,8 +17,7 @@ import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date, timedelta
 
 from PIL import Image, ImageChops
 
@@ -115,25 +113,39 @@ def take_screenshot(serial: str | None = None) -> Image.Image:
     return Image.open(io.BytesIO(result.stdout)).convert("RGB")
 
 
-def swipe_up(serial: str | None = None, distance_fraction: float | None = None) -> None:
+def swipe_up(
+    serial: str | None = None,
+    distance_fraction: float | None = None,
+    duration_ms: int = 350,
+) -> None:
     """Swipe upward (scroll content down) by a fraction of the screen height."""
     frac = distance_fraction if distance_fraction is not None else config.SCROLL_DISTANCE
     w, h = _device_size(serial)
     cx = w // 2
     y_start = int(h * 0.75)
     y_end = int(h * 0.75 - h * frac)
-    _adb(["shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), "350"], serial)
+    _adb(
+        ["shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), str(duration_ms)],
+        serial,
+    )
     time.sleep(0.8)
 
 
-def swipe_down(serial: str | None = None, distance_fraction: float | None = None) -> None:
+def swipe_down(
+    serial: str | None = None,
+    distance_fraction: float | None = None,
+    duration_ms: int = 350,
+) -> None:
     """Swipe downward (scroll content up) by a fraction of the screen height."""
     frac = distance_fraction if distance_fraction is not None else config.SCROLL_DISTANCE
     w, h = _device_size(serial)
     cx = w // 2
     y_start = int(h * 0.25)
     y_end = int(h * 0.25 + h * frac)
-    _adb(["shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), "350"], serial)
+    _adb(
+        ["shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), str(duration_ms)],
+        serial,
+    )
     time.sleep(0.8)
 
 
@@ -215,6 +227,15 @@ def _ui_dump(serial: str | None = None) -> str:
     return result.stdout.decode(errors="replace")
 
 
+def _texts_from_dump(xml_str: str) -> list[str]:
+    """Extract non-empty text values from a UI automator XML dump in tree order."""
+    try:
+        root = ET.fromstring(xml_str)
+    except ET.ParseError:
+        return []
+    return [node.get("text", "").strip() for node in root.iter() if node.get("text", "").strip()]
+
+
 def _find_element_center(xml_str: str, text: str) -> tuple[int, int] | None:
     """Return the screen centre of the first UI element whose label starts with *text*."""
     try:
@@ -276,102 +297,42 @@ def navigate_to_day(day_short: str, serial: str | None = None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Multi-scroll capture
+# Multi-scroll text capture
 # ---------------------------------------------------------------------------
 
 
-def _crop_frame(img: Image.Image) -> Image.Image:
-    """Crop a frame for vision analysis, removing header and nav bar if configured."""
-    top = config.CAPTURE_CROP_TOP
-    bottom = config.CAPTURE_CROP_BOTTOM
-    if top or bottom:
-        return img.crop((0, top, img.width, img.height - bottom if bottom else img.height))
-    return img
-
-
-def capture_day_screenshots(
+def capture_day_as_text(
     day_short: str,
     serial: str | None = None,
     max_scrolls: int = 10,
-    debug_dir: Path | None = None,
-) -> list[Image.Image]:
-    """Navigate to *day_short*, then scroll down capturing frames until content ends.
+) -> str:
+    """Extract all visible programming text for a day via Android accessibility tree.
 
-    Returns one cropped image per unique scroll position. The frame is always
-    appended when content has moved — including the final partial scroll at the
-    bottom — so no content is missed. The stitcher removes overlap automatically.
-
-    When *debug_dir* is set, each raw uncropped frame is saved there as
-    ``<day>_raw_<N>.png`` so the full device output can be inspected.
+    Navigates to the day tab, scrolls from top to bottom, and collects unique
+    text elements from the UI dump at each position. Returns deduplicated lines
+    in appearance order — no screenshots, no stitching, no overlap possible.
     """
     navigate_to_day(day_short, serial)
     time.sleep(0.5)
+    scroll_to_top(serial)
 
-    near_bottom_threshold = config.SCROLL_DISTANCE * 0.5
+    _, h_device = _device_size(serial)
+    content_px = h_device - config.CAPTURE_CROP_TOP - config.CAPTURE_CROP_BOTTOM
+    scroll_fraction = content_px / h_device
 
-    prev = take_screenshot(serial)
-    cropped = _crop_frame(prev)
-    if debug_dir:
-        prev.save(debug_dir / f"{day_short}_raw_0.png")
-        cropped.save(debug_dir / f"{day_short}_crop_0.png")
-    images = [cropped]
+    seen: set[str] = set()
+    lines: list[str] = []
 
-    for i in range(max_scrolls):
-        swipe_up(serial)
+    for _ in range(max_scrolls + 1):
+        for text in _texts_from_dump(_ui_dump(serial)):
+            if text not in seen:
+                seen.add(text)
+                lines.append(text)
+        prev = take_screenshot(serial)
+        swipe_up(serial, distance_fraction=scroll_fraction, duration_ms=800)
         curr = take_screenshot(serial)
-        fraction = _change_fraction(prev, curr)
-        if fraction < 0.01:
-            break  # absolute bottom — nothing moved
-        cropped = _crop_frame(curr)
-        if debug_dir:
-            curr.save(debug_dir / f"{day_short}_raw_{i + 1}.png")
-            cropped.save(debug_dir / f"{day_short}_crop_{i + 1}.png")
-        images.append(cropped)
-        if fraction < near_bottom_threshold:
-            logger.debug("%s: near bottom (%.0f%% changed) — stopping", day_short, fraction * 100)
+        if _screens_same(prev, curr):
             break
-        prev = curr
 
-    return images
-
-
-
-def stitch_vertical(images: list[Image.Image]) -> Image.Image:
-    """Concatenate cropped frames vertically without overlap removal.
-
-    Consecutive frames share some content due to the scroll, but the vision
-    model handles deduplication when extracting blocks from the tall image.
-    """
-    if len(images) == 1:
-        return images[0]
-
-    w = max(img.width for img in images)
-    h = sum(img.height for img in images)
-    out = Image.new("RGB", (w, h), (255, 255, 255))
-    y = 0
-    for img in images:
-        out.paste(img, (0, y))
-        y += img.height
-    logger.debug("stitch: %d frames → %dx%d px", len(images), w, h)
-    return out
-
-
-def save_capture(
-    image: Image.Image,
-    label: str = "",
-    week_start: date | None = None,
-    output_dir: Path | None = None,
-) -> Path:
-    """Save a capture PNG and return its path.
-
-    When *week_start* is provided the file is placed in a per-week subdirectory:
-    ``<CAPTURES_DIR>/<week_start>/<filename>``.
-    """
-    base = output_dir or config.CAPTURES_DIR
-    out = base / week_start.isoformat() if week_start else base
-    out.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f"_{label}" if label else ""
-    path = out / f"strivee_{ts}{suffix}.png"
-    image.save(path)
-    return path
+    logger.debug("%s: UI dump collected %d text elements", day_short, len(lines))
+    return "\n".join(lines)

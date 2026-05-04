@@ -17,7 +17,9 @@ def _mock_response(text: str) -> MagicMock:
 @patch("strivee_btwb.processing.llm_format.ollama.chat")
 def test_format_for_btwb_returns_llm_content(mock_chat):
     mock_chat.return_value = _mock_response("AMRAP 05:00\nMax sets of 5 Ring Muscle-up Unbroken")
-    block = ProgrammingBlock(name="Gymnastics", content="AMRAP 05:00\nMax sets of 5\nINTER+\nMax sets of 3")
+    block = ProgrammingBlock(
+        name="Gymnastics", content="AMRAP 05:00\nMax sets of 5\nINTER+\nMax sets of 3"
+    )
     result = format_for_btwb(block)
     assert result.name == "Gymnastics"
     assert result.content == "AMRAP 05:00\nMax sets of 5 Ring Muscle-up Unbroken"
@@ -26,6 +28,7 @@ def test_format_for_btwb_returns_llm_content(mock_chat):
 @patch("strivee_btwb.processing.llm_format.ollama.chat")
 def test_format_for_btwb_falls_back_to_original_on_empty(mock_chat, monkeypatch):
     import strivee_btwb.core.config as cfg
+
     monkeypatch.setattr(cfg, "OLLAMA_FORMAT_MODEL", "test-model")
     mock_chat.return_value = _mock_response("   ")
     block = ProgrammingBlock(name="Squat", content="5x5 @ 80%\nObjectif : stay tight")
@@ -45,6 +48,7 @@ def test_format_for_btwb_falls_back_to_regex_on_exception(mock_chat):
 @patch("strivee_btwb.processing.llm_format.ollama.chat")
 def test_format_for_btwb_uses_configured_model(mock_chat, monkeypatch):
     import strivee_btwb.core.config as cfg
+
     monkeypatch.setattr(cfg, "OLLAMA_FORMAT_MODEL", "my-model")
     mock_chat.return_value = _mock_response("For time:\n21 Pull-ups")
     block = ProgrammingBlock(name="WOD", content="For time:\n21 Pull-ups")

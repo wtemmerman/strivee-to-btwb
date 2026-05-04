@@ -47,6 +47,34 @@ def _login(page: Page, email: str, password: str) -> None:
         )
 
 
+def _add_instruction(page: Page, block: ProgrammingBlock) -> None:
+    """Open the Instructions tab and submit the coaching note for a planned block.
+
+    Skipped silently when block.instruction is empty or the tab is not found
+    (e.g. older BTWB page variants).
+    """
+    if not block.instruction:
+        return
+    try:
+        tab = page.locator("[data-bs-target='#athlete-instructions']")
+        tab.wait_for(state="visible", timeout=5_000)
+        tab.click()
+
+        panel = page.locator("#athlete-instructions")
+        panel.wait_for(state="visible", timeout=_TIMEOUT)
+
+        panel.locator("input[name='track_event_instruction[title]']").fill(block.name)
+        panel.locator("textarea[name='track_event_instruction[body]']").fill(block.instruction)
+
+        save_btn = panel.locator("button:has-text('Enregistrer la note'):not([disabled])")
+        save_btn.wait_for(state="visible", timeout=_TIMEOUT)
+        save_btn.click()
+        page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
+        logger.info("Instruction saved for block '%s'", block.name)
+    except PlaywrightTimeoutError:
+        logger.warning("Block '%s' — instruction tab not found or timed out, skipping", block.name)
+
+
 def _fill_and_plan(page: Page, block: ProgrammingBlock, last_block: bool) -> None:
     """Fill the workout description, submit, wait for preview, then click Planifier."""
     # Select the first track (Piste) if not already pre-selected by the URL
@@ -80,13 +108,16 @@ def _fill_and_plan(page: Page, block: ProgrammingBlock, last_block: bool) -> Non
 
     plan_button.click()
 
+    # "+" button appearing signals the workout was saved and the page is ready
+    plus_button = page.locator(
+        "button.btn-outline-grey-200[data-bs-toggle='dropdown']:not([disabled])"
+    ).first
+    plus_button.wait_for(state="visible", timeout=_TIMEOUT)
+
+    _add_instruction(page, block)
+
     if last_block:
         page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
-    else:
-        # "+" button appearing signals the save completed and UI is ready for the next block
-        page.locator(
-            "button.btn-outline-grey-200[data-bs-toggle='dropdown']:not([disabled])"
-        ).first.wait_for(state="visible", timeout=_TIMEOUT)
 
     logger.info("Block '%s' saved", block.name)
 

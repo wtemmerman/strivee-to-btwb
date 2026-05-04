@@ -4,7 +4,7 @@ Automates the weekly transfer of CrossFit programming from the **Strivee** Andro
 
 ## Coverage
 
-![Coverage](https://img.shields.io/badge/coverage-84%25-brightgreen?style=flat&logo=pytest)
+![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen?style=flat&logo=pytest)
 
 > Run `make test-cov` to regenerate with an HTML report in `htmlcov/`.
 
@@ -23,37 +23,30 @@ The pipeline runs in four independent steps, each caching its output so any step
 ```
 Android phone (Strivee app)
         │
-        │  ADB over USB
+        │  ADB over USB — UI accessibility text dump
         ▼
-  1. capture   → captures/<week>/strivee_<ts>_<day>.png
+  1. capture   → captures/<week>/strivee_<ts>_<day>.txt
         │
-        │  Ollama vision model (local, no API cost)
+        │  Ollama text model (local, no API cost)
         ▼
   2. analyse   → parsed/<week>/parsed_<date>_<day>.json
         │
-        │  Rx extraction + coaching-note stripping
+        │  LLM formatting for BTWB (small local model)
         ▼
   3. preview   → terminal log (review before posting)
         │
         │  Playwright browser automation
         ▼
-  4. post      → workouts created on BTWB
+  4. post      → workouts + coaching notes created on BTWB
 ```
 
 ### Step 1 — Capture
 
-Connects to the Android phone via ADB, launches Strivee, navigates to each day tab, and scrolls down capturing screenshots. Frames are stitched into one image per day.
-
-<details>
-<summary>Example capture — Monday 2026-04-27</summary>
-
-![Monday capture](docs/screenshots/capture_monday.png)
-
-</details>
+Connects to the Android phone via ADB, launches Strivee, navigates to each day tab, and uses `adb shell uiautomator dump` at each scroll position to extract all visible text from Android's accessibility tree. Text elements are deduplicated across scroll positions. Saves one `.txt` file per day — no screenshots, no stitching, no overlap possible.
 
 ### Step 2 — Analyse
 
-Sends each day's stitched screenshot to a local Ollama vision model (`qwen3-vl:8b`). The model extracts every programming block by name and content and returns structured JSON. If the primary model returns no blocks (e.g. due to thinking tokens consuming all compute), the pipeline automatically retries with a configurable fallback model (`qwen2.5vl:7B`) before giving up.
+Sends each day's text dump to a local Ollama text model (`qwen3:8b`). The model extracts every programming block by name, content (workout prescription), and instruction (coaching notes) and returns structured JSON. The output JSON has three fields per block: `name`, `content`, `instruction`.
 
 **Example output** (`parsed/2026-04-27/parsed_2026-04-27_Mon.json`):
 
@@ -64,15 +57,13 @@ Sends each day's stitched screenshot to a local Ollama vision model (`qwen3-vl:8
   "blocks": [
     {
       "name": "Squat Snatch",
-      "content": "EMOMx 8 sets:\nSet 1 à 4: 2 Squat Snatch @70-73% of your 1RM\nSet 5 à 8: 1 Squat Snatch @75-83% of your 1RM"
+      "content": "EMOMx 8 sets:\nSet 1 à 4: 2 Squat Snatch @70-73% of your 1RM\nSet 5 à 8: 1 Squat Snatch @75-83% of your 1RM",
+      "instruction": "Objectif: focus on positions"
     },
     {
-      "name": "Gymnastic Ring Muscle-up",
-      "content": "RX:\nEvery 2min x 4 sets:\n10/7 Cal Echo Bike @85%+\nMax Ring Muscle-up Unbroken"
-    },
-    {
-      "name": "ITW Gymnastic X Odd objectif",
-      "content": "Rx -\n2 Rounds for time:\n25 Dumbbell snatch #22,5/15\n25 Chest to bar pull-up\n25 Box jump over\nTime CAP: 10:00"
+      "name": "WOD",
+      "content": "AMRAP 12:00\n10 Thrusters #43/29kg\n10 Pull-ups",
+      "instruction": ""
     }
   ]
 }
@@ -84,7 +75,7 @@ Loads the cached JSON, runs the same LLM formatting as the post step, and prints
 
 ### Step 4 — Post
 
-Opens a Playwright browser session, logs into BTWB, and submits each block via the planning form. Blocks already present on BTWB for that date are skipped automatically (duplicate detection via the weekly calendar).
+Opens a Playwright browser session, logs into BTWB, and submits each block via the planning form. Blocks already present on BTWB for that date are skipped automatically (duplicate detection via the weekly calendar). The `instruction` field is posted to BTWB's dedicated coaching note field.
 
 <details>
 <summary>Result on BTWB</summary>
@@ -101,7 +92,7 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 |---|---|
 | Python 3.13+ | Managed by `uv` |
 | [uv](https://docs.astral.sh/uv/) | Package and environment manager |
-| [Ollama](https://ollama.com) | Local vision model runtime |
+| [Ollama](https://ollama.com) | Local text model runtime |
 | ADB | `brew install android-platform-tools` |
 | USB debugging | Enabled on the Android device |
 | scrcpy _(optional)_ | Visual mirror during capture — `brew install scrcpy` |
@@ -109,9 +100,8 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 Pull the models once:
 
 ```bash
-ollama pull qwen3-vl:8b       # vision — analyse step
-ollama pull qwen2.5vl:7B      # vision fallback (used when primary returns 0 blocks)
-ollama pull qwen3.5:2b        # text — preview and post formatting
+ollama pull qwen3:8b          # text — analyse step
+ollama pull qwen3:1.7b        # text — preview and post formatting
 ```
 
 ---
@@ -133,22 +123,14 @@ cp .env.example .env
 Copy `.env.example` to `.env` and fill in the required values:
 
 ```env
-OLLAMA_MODEL=qwen3-vl:8b             # vision model for analyse step
-OLLAMA_FALLBACK_MODEL=qwen2.5vl:7B   # retried automatically when primary returns 0 blocks
-OLLAMA_FORMAT_MODEL=qwen3.5:2b       # small text model for preview/post formatting
+OLLAMA_TEXT_MODEL=qwen3:8b         # text model for analyse step
+OLLAMA_FORMAT_MODEL=qwen3:1.7b     # small text model for preview/post formatting
 
 BTWB_EMAIL=your@email.com
 BTWB_PASSWORD=yourpassword
 BTWB_TRACK_ID=156552        # visible in BTWB calendar URL: ?t=<id>
 
-MAX_SCROLLS=10
-SCROLL_DISTANCE=0.42
-
-# Crop the Strivee header and nav bar from each frame (tune to your device)
-CAPTURE_CROP_TOP=550
-CAPTURE_CROP_BOTTOM=250
-
-# Blocks to skip (case-insensitive prefix match)
+# Blocks to skip (case-insensitive substring match)
 EXCLUDED_BLOCKS=Hebdomadaire,GROUPE WHATS APP EMF,Warm-up
 ```
 
@@ -165,10 +147,10 @@ uv run strivee-btwb run --yes
 Or step by step:
 
 ```bash
-# Step 1 — capture all days (Mon–Sat by default)
+# Step 1 — capture all days (Mon–Sat by default) via UI text dump
 uv run strivee-btwb capture
 
-# Step 2 — analyse with vision model
+# Step 2 — analyse with text model
 uv run strivee-btwb analyse
 
 # Step 3 — preview what will be posted
@@ -221,8 +203,8 @@ make format           # ruff format + import sort
 ```
 src/strivee_btwb/
   core/           config, logging setup, data models
-  capture/        ADB screenshot capture (adb.py)
-  vision/         Ollama vision parsing (parser.py)
+  capture/        ADB UI accessibility text dump (adb.py)
+  vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
   btwb/           BTWB Playwright automation (client.py)
   pipeline.py     step orchestration and cache I/O
@@ -232,7 +214,7 @@ src/strivee_btwb/
 tests/
   unit/
     core/           model tests
-    capture/        image helpers, crop, UI element detection
+    capture/        UI text helpers, element detection, capture_day_as_text
     vision/         JSON extraction, mock Ollama tests
     processing/     Rx extraction, coaching strip
     btwb/           dry-run posting
@@ -246,8 +228,8 @@ tests/
 
 | Directory | Contents |
 |---|---|
-| `captures/<week>/` | Raw ADB screenshots (PNG) |
-| `parsed/<week>/` | Vision-parsed JSON cache |
+| `captures/<week>/` | UI text dumps (.txt) |
+| `parsed/<week>/` | Text-parsed JSON cache |
 | `htmlcov/` | Coverage HTML report |
 
 ---
@@ -258,32 +240,26 @@ tests/
 
 | Approach | Result |
 |---|---|
-| **Qwen2.5-VL (vision-only)** | Accurate but slow and VRAM-heavy (~15 GB at 8k context) |
-| **OCR + LLM** | Fast but accuracy was poor — OCR errors compounded into the LLM input and produced unreliable block extraction |
-| **Qwen3-VL (vision-only)** | ✅ Current primary — faster than Qwen2.5-VL, ~11 GB at 32k context, same accuracy |
+| **Qwen2.5-VL (vision)** | Accurate but slow and VRAM-heavy (~15 GB at 8k context) |
+| **OCR + LLM** | Fast but poor accuracy — OCR errors compounded into unreliable extraction |
+| **Qwen3-VL (vision)** | Better than Qwen2.5-VL but overlap in stitched screenshots caused duplicate content |
+| **ADB UI text dump + Qwen3:8b** | Current — zero overlap possible, faster than vision, no VRAM for image processing |
 
 **Hard constraint:** no cloud APIs (zero cost). Every model must run locally via Ollama.
 
 Cloud vision APIs (Claude, GPT-4o) were never tested — they would give better accuracy but introduce per-run cost and a network dependency, which is a non-starter for a weekly personal automation.
 
-### Primary → fallback model chain
+### Text model approach
 
-Qwen3-VL has a "thinking" mode that, on some days with dense content, spends all available compute on internal reasoning tokens and returns an empty response. To make the pipeline resilient without switching models entirely, `analyse` implements a two-stage retry:
-
-1. Run the primary model (`OLLAMA_MODEL`, default `qwen3-vl:8b`) with `think=False` to suppress thinking tokens.
-2. If the result contains **0 blocks**, automatically retry with `OLLAMA_FALLBACK_MODEL` (default `qwen2.5vl:7B`).
-3. If the fallback also returns 0 blocks, log a warning and skip that day.
-
-The fallback is optional — leave `OLLAMA_FALLBACK_MODEL` unset to disable it.
+The text model (`qwen3:8b`) receives the raw accessibility-tree text for one day and returns structured JSON. It uses `think=False` to suppress thinking tokens and ensure the visible output is always the JSON response directly.
 
 ### LLM-based BTWB formatting
 
-After vision parsing, each block's raw content is sent to a small local text model (`OLLAMA_FORMAT_MODEL`, default `qwen3.5:2b`) before preview and post. The model:
+After text parsing, each block's `content` (prescription only) is sent to a small local text model (`OLLAMA_FORMAT_MODEL`, default `qwen3:1.7b`) before preview and post. Since the text parser already separates content from `instruction` (coaching notes), the formatting model works on already-clean prescription text. The model:
 
 1. Keeps only the RX / top-performance section when multiple athlete levels are present (RX, Inter+, Inter, etc.)
-2. Strips coaching notes, technique cues, objectives, and motivational text
-3. Removes Strivee UI artifacts (score labels, media counts, etc.)
+2. Removes Strivee UI artifacts (score labels, media counts, etc.)
 
-A regex-based approach was tried first but proved too fragile — coaches use inconsistent formatting, emoji after level headers, mixed French/English, and new patterns appear every week. The LLM handles all of these naturally.
+The `instruction` field is posted directly to BTWB's dedicated coaching note field without further transformation.
 
 If the model returns an empty response the original block content is kept unchanged, so the pipeline never silently drops content.

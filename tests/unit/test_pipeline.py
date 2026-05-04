@@ -2,13 +2,11 @@
 
 import json
 import logging
-import sys
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-from PIL import Image
 
 from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from strivee_btwb.pipeline import (
@@ -17,11 +15,12 @@ from strivee_btwb.pipeline import (
     do_capture,
     do_post,
     do_preview,
-    load_captures,
     load_days,
+    load_text_captures,
     log_preview,
     log_summary,
     save_day,
+    save_text_capture,
     short_to_date,
     week_start,
 )
@@ -47,11 +46,6 @@ def _make_day(
 
 def _make_week(*days: DayProgramming) -> WeeklyProgramming:
     return WeeklyProgramming(week_start=FIXTURE_WEEK, days=list(days))
-
-
-def _solid_png(path: Path, width: int = 10, height: int = 10) -> Path:
-    Image.new("RGB", (width, height), (200, 200, 200)).save(path)
-    return path
 
 
 # ── save_day / load_days ──────────────────────────────────────────────────────
@@ -110,59 +104,17 @@ def test_load_days_warns_on_missing(tmp_path, monkeypatch, caplog):
     assert "Mon" in caplog.text
 
 
-# ── load_captures ─────────────────────────────────────────────────────────────
-
-
-def test_load_captures_reads_png(tmp_path, monkeypatch):
-    import strivee_btwb.core.config as cfg
-
-    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
-    folder = tmp_path / FIXTURE_WEEK.isoformat()
-    folder.mkdir()
-    _solid_png(folder / "strivee_20260427_120000_Mon.png")
-
-    result = load_captures(["Mon"], FIXTURE_WEEK)
-
-    assert "Mon" in result
-    assert len(result["Mon"]) == 1
-    assert isinstance(result["Mon"][0], Image.Image)
-
-
-def test_load_captures_picks_latest_when_multiple(tmp_path, monkeypatch):
-    import strivee_btwb.core.config as cfg
-
-    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
-    folder = tmp_path / FIXTURE_WEEK.isoformat()
-    folder.mkdir()
-    _solid_png(folder / "strivee_20260427_110000_Mon.png")
-    _solid_png(folder / "strivee_20260427_120000_Mon.png")
-
-    result = load_captures(["Mon"], FIXTURE_WEEK)
-    assert len(result["Mon"]) == 1
-
-
-def test_load_captures_warns_on_missing(tmp_path, monkeypatch, caplog):
-    import strivee_btwb.core.config as cfg
-
-    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
-    (tmp_path / FIXTURE_WEEK.isoformat()).mkdir()
-
-    with caplog.at_level(logging.WARNING):
-        result = load_captures(["Mon"], FIXTURE_WEEK)
-
-    assert result == {}
-    assert "Mon" in caplog.text
-
-
 # ── clean_week ────────────────────────────────────────────────────────────────
 
 
 def test_clean_week_removes_empty_blocks():
     week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(name="Back Squat", content="5x5"),
-            ProgrammingBlock(name="Empty", content="   "),
-        ])
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="Back Squat", content="5x5"),
+                ProgrammingBlock(name="Empty", content="   "),
+            ]
+        )
     )
     result = clean_week(week)
     assert len(result.days[0].blocks) == 1
@@ -171,10 +123,12 @@ def test_clean_week_removes_empty_blocks():
 
 def test_clean_week_merges_consecutive_same_name():
     week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(name="WOD", content="Part A"),
-            ProgrammingBlock(name="WOD", content="Part B"),
-        ])
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="WOD", content="Part A"),
+                ProgrammingBlock(name="WOD", content="Part B"),
+            ]
+        )
     )
     result = clean_week(week)
     assert len(result.days[0].blocks) == 1
@@ -184,29 +138,31 @@ def test_clean_week_merges_consecutive_same_name():
 
 def test_clean_week_does_not_merge_different_names():
     week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(name="Strength", content="5x5"),
-            ProgrammingBlock(name="WOD", content="21-15-9"),
-        ])
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="Strength", content="5x5"),
+                ProgrammingBlock(name="WOD", content="21-15-9"),
+            ]
+        )
     )
     result = clean_week(week)
     assert len(result.days[0].blocks) == 2
 
 
 def test_clean_week_drops_day_when_all_blocks_empty():
-    week = _make_week(
-        _make_day(blocks=[ProgrammingBlock(name="Rest", content="  ")])
-    )
+    week = _make_week(_make_day(blocks=[ProgrammingBlock(name="Rest", content="  ")]))
     result = clean_week(week)
     assert result.days == []
 
 
 def test_clean_week_merge_is_case_insensitive():
     week = _make_week(
-        _make_day(blocks=[
-            ProgrammingBlock(name="wod", content="Part A"),
-            ProgrammingBlock(name="WOD", content="Part B"),
-        ])
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="wod", content="Part A"),
+                ProgrammingBlock(name="WOD", content="Part B"),
+            ]
+        )
     )
     result = clean_week(week)
     assert len(result.days[0].blocks) == 1
@@ -276,17 +232,18 @@ def test_do_preview_exits_when_no_cache(monkeypatch, tmp_path):
 
 def test_do_analyse_success(monkeypatch, tmp_path):
     import strivee_btwb.core.config as cfg
-    from PIL import Image
 
     monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
     monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
     folder = tmp_path / FIXTURE_WEEK.isoformat()
     folder.mkdir()
-    _solid_png(folder / "strivee_20260427_120000_Mon.png")
+    (folder / "strivee_20260427_120000_Mon.txt").write_text(
+        "EMF 60 : Snatch\nBuild to 1RM", encoding="utf-8"
+    )
 
     fake_day = _make_day()
     monkeypatch.setattr(
-        "strivee_btwb.pipeline.extract_day_programming",
+        "strivee_btwb.pipeline.extract_day_programming_from_text",
         lambda **_: fake_day,
     )
     do_analyse(["Mon"], ws=FIXTURE_WEEK)
@@ -310,11 +267,11 @@ def test_do_analyse_logs_warning_on_empty_blocks(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
     folder = tmp_path / FIXTURE_WEEK.isoformat()
     folder.mkdir()
-    _solid_png(folder / "strivee_20260427_120000_Mon.png")
+    (folder / "strivee_20260427_120000_Mon.txt").write_text("some text", encoding="utf-8")
 
     empty_day = DayProgramming(date=date(2026, 4, 27), day_label="Mon", blocks=[])
     monkeypatch.setattr(
-        "strivee_btwb.pipeline.extract_day_programming",
+        "strivee_btwb.pipeline.extract_day_programming_from_text",
         lambda **_: empty_day,
     )
     with caplog.at_level(logging.WARNING):
@@ -327,7 +284,6 @@ def test_do_analyse_logs_warning_on_empty_blocks(monkeypatch, tmp_path, caplog):
 
 def test_do_capture_success(monkeypatch, tmp_path):
     import strivee_btwb.core.config as cfg
-    from PIL import Image
 
     monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
     monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
@@ -336,23 +292,25 @@ def test_do_capture_success(monkeypatch, tmp_path):
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
-
-    dummy = Image.new("RGB", (10, 10))
     monkeypatch.setattr(
-        "strivee_btwb.pipeline.capture_day_screenshots", lambda *a, **k: [dummy]
+        "strivee_btwb.pipeline.capture_day_as_text",
+        lambda *a, **k: "EMF 60 : Snatch\nBuild to 1RM",
     )
-    monkeypatch.setattr("strivee_btwb.pipeline.stitch_vertical", lambda imgs: imgs[0])
-    saved_path = tmp_path / "strivee_Mon.png"
-    monkeypatch.setattr("strivee_btwb.pipeline.save_capture", lambda *a, **k: saved_path)
 
-    do_capture(["Mon"], no_scrcpy=True)
+    do_capture(["Mon"], no_scrcpy=True, ws=FIXTURE_WEEK)
+
+    # text file should be created
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    assert any(folder.glob("strivee_*_Mon.txt"))
 
 
 def test_do_capture_exits_when_strivee_fails(monkeypatch, tmp_path):
     import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
-    monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock(side_effect=RuntimeError("no device")))
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.launch_strivee", MagicMock(side_effect=RuntimeError("no device"))
+    )
     with pytest.raises(SystemExit):
         do_capture(["Mon"], no_scrcpy=True)
 
@@ -367,7 +325,7 @@ def test_do_capture_exits_when_no_days_saved(monkeypatch, tmp_path):
     monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
     monkeypatch.setattr(
-        "strivee_btwb.pipeline.capture_day_screenshots",
+        "strivee_btwb.pipeline.capture_day_as_text",
         MagicMock(side_effect=RuntimeError("adb error")),
     )
     with pytest.raises(SystemExit):
@@ -425,3 +383,276 @@ def test_do_post_exits_when_no_days_approved(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _: "n")
     with pytest.raises(SystemExit):
         do_post(["Mon"], yes=False, headless=True)
+
+
+# ── save_text_capture / load_text_captures ────────────────────────────────────
+
+
+def test_save_text_capture_creates_file(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    path = save_text_capture("some workout text", label="Mon", ws=FIXTURE_WEEK)
+    assert path.exists()
+    assert path.suffix == ".txt"
+    assert "Mon" in path.name
+    assert path.read_text() == "some workout text"
+
+
+def test_save_text_capture_creates_week_subfolder(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    path = save_text_capture("text", label="Tue", ws=FIXTURE_WEEK)
+    assert path.parent.name == FIXTURE_WEEK.isoformat()
+
+
+def test_load_text_captures_reads_txt(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    (folder / "strivee_20260427_120000_Mon.txt").write_text("workout text", encoding="utf-8")
+
+    result = load_text_captures(["Mon"], FIXTURE_WEEK)
+    assert "Mon" in result
+    assert result["Mon"] == "workout text"
+
+
+def test_load_text_captures_picks_latest(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    (folder / "strivee_20260427_110000_Mon.txt").write_text("old text", encoding="utf-8")
+    (folder / "strivee_20260427_120000_Mon.txt").write_text("new text", encoding="utf-8")
+
+    result = load_text_captures(["Mon"], FIXTURE_WEEK)
+    assert result["Mon"] == "new text"
+
+
+def test_load_text_captures_missing_day_not_in_result(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    (tmp_path / FIXTURE_WEEK.isoformat()).mkdir()
+
+    result = load_text_captures(["Mon"], FIXTURE_WEEK)
+    assert "Mon" not in result
+
+
+# ── do_capture additional paths ───────────────────────────────────────────────
+
+
+def test_do_capture_scrcpy_not_found_logs_warning(monkeypatch, tmp_path, caplog):
+    """FileNotFoundError from scrcpy is caught and logged as a warning."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
+    monkeypatch.setattr(cfg, "MAX_SCROLLS", 1)
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.launch_scrcpy",
+        MagicMock(side_effect=FileNotFoundError("scrcpy not found")),
+    )
+    monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.capture_day_as_text",
+        lambda *a, **k: "some text",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        do_capture(["Mon"], no_scrcpy=False, ws=FIXTURE_WEEK)
+
+    assert "scrcpy" in caplog.text.lower()
+
+
+def test_do_capture_terminates_scrcpy_after_success(monkeypatch, tmp_path):
+    """scrcpy process is terminated even on success."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
+    monkeypatch.setattr(cfg, "MAX_SCROLLS", 1)
+
+    mock_proc = MagicMock()
+    monkeypatch.setattr("strivee_btwb.pipeline.launch_scrcpy", MagicMock(return_value=mock_proc))
+    monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.capture_day_as_text",
+        lambda *a, **k: "some text",
+    )
+
+    do_capture(["Mon"], no_scrcpy=False, ws=FIXTURE_WEEK)
+    mock_proc.terminate.assert_called_once()
+
+
+# ── do_analyse additional paths ───────────────────────────────────────────────
+
+
+def test_do_analyse_fallback_model_used_on_empty_blocks(monkeypatch, tmp_path):
+    """When primary returns no blocks and fallback model is set, fallback is tried."""
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.core.models import DayProgramming
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "OLLAMA_FALLBACK_TEXT_MODEL", "qwen3:fallback")
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    (folder / "strivee_20260427_120000_Mon.txt").write_text("some text", encoding="utf-8")
+
+    call_count = {"n": 0}
+    fake_day_empty = DayProgramming(date=date(2026, 4, 27), day_label="Mon", blocks=[])
+    fake_day_full = _make_day()
+
+    def fake_extract(**kwargs):
+        call_count["n"] += 1
+        # First call (primary) → empty; second call (fallback) → full
+        return fake_day_empty if call_count["n"] == 1 else fake_day_full
+
+    monkeypatch.setattr("strivee_btwb.pipeline.extract_day_programming_from_text", fake_extract)
+    do_analyse(["Mon"], ws=FIXTURE_WEEK)
+    assert call_count["n"] == 2
+    assert any((folder).glob("parsed_*_Mon.json"))
+
+
+def test_do_analyse_logs_error_on_exception(monkeypatch, tmp_path, caplog):
+    """Exceptions in analysis are caught and logged without raising."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    (folder / "strivee_20260427_120000_Mon.txt").write_text("some text", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.extract_day_programming_from_text",
+        MagicMock(side_effect=ValueError("model error")),
+    )
+    with caplog.at_level(logging.ERROR):
+        do_analyse(["Mon"], ws=FIXTURE_WEEK)
+    assert "analysis failed" in caplog.text.lower()
+
+
+# ── do_post additional paths ──────────────────────────────────────────────────
+
+
+def test_do_post_exits_on_auth_error(monkeypatch):
+    """AuthenticationError from post_week causes sys.exit(1)."""
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.btwb import AuthenticationError
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x@x.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "pw")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.post_week",
+        MagicMock(side_effect=AuthenticationError("bad creds")),
+    )
+    with pytest.raises(SystemExit):
+        do_post(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_do_post_exits_on_generic_exception(monkeypatch):
+    """Any unexpected exception from post_week causes sys.exit(1)."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x@x.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "pw")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.post_week",
+        MagicMock(side_effect=RuntimeError("network error")),
+    )
+    with pytest.raises(SystemExit):
+        do_post(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_do_post_approves_all_on_yes_input(monkeypatch):
+    """When yes=False and user types 'y', all days are approved."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x@x.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "pw")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+
+    mock_post = MagicMock(return_value=[])
+    monkeypatch.setattr("strivee_btwb.pipeline.post_week", mock_post)
+
+    # First input is "y" → approve all days
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    do_post(["Mon"], yes=False, headless=True, ws=FIXTURE_WEEK)
+    mock_post.assert_called_once()
+
+
+def test_do_post_per_day_approval_loop(monkeypatch):
+    """When 'n' is given to 'all', then 'y' to a single day, that day is posted."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x@x.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "pw")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+
+    mock_post = MagicMock(return_value=[])
+    monkeypatch.setattr("strivee_btwb.pipeline.post_week", mock_post)
+
+    # "n" to "Post all?", then "y" for Mon specifically
+    responses = iter(["n", "y"])
+    monkeypatch.setattr("builtins.input", lambda _: next(responses))
+    do_post(["Mon"], yes=False, headless=True, ws=FIXTURE_WEEK)
+    mock_post.assert_called_once()
+
+
+def test_do_post_per_day_approval_no_days_approved(monkeypatch):
+    """When 'n' to all and 'n' to each day, exits with SystemExit."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x@x.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "pw")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+
+    # "n" to "Post all?", then "n" for each day
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    with pytest.raises(SystemExit):
+        do_post(["Mon"], yes=False, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_do_post_exits_without_credentials_patched(monkeypatch):
+    """Empty credentials cause sys.exit before posting."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "")
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+    with pytest.raises(SystemExit):
+        do_post(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_do_capture_terminates_scrcpy_when_strivee_fails(monkeypatch, tmp_path):
+    """scrcpy process is terminated when strivee fails to launch."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
+    mock_proc = MagicMock()
+    monkeypatch.setattr("strivee_btwb.pipeline.launch_scrcpy", MagicMock(return_value=mock_proc))
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.launch_strivee",
+        MagicMock(side_effect=RuntimeError("no device")),
+    )
+    with pytest.raises(SystemExit):
+        do_capture(["Mon"], no_scrcpy=False, ws=FIXTURE_WEEK)
+    mock_proc.terminate.assert_called_once()

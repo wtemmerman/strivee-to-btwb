@@ -54,6 +54,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/strivee_btwb/vision/parser.py" = ["E501"]  # prompt strings must not be line-wrapped
+"src/strivee_btwb/processing/llm_format.py" = ["E501"]  # prompt strings must not be line-wrapped
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

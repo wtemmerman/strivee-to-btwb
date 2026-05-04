@@ -28,7 +28,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable DEBUG-level logging; during capture, also saves raw uncropped frames to captures/<week>/debug/",
+        help="Enable DEBUG-level logging; during capture, also saves raw uncropped frames"
+        " to captures/<week>/debug/",
     )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
     sub.required = True

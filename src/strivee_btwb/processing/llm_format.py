@@ -263,7 +263,7 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
         result = response["message"]["content"].strip()
         if result:
             logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
-            return ProgrammingBlock(name=block.name, content=result)
+            return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)
         logger.warning("[%s] LLM returned empty — returning original content", block.name)
     except Exception as exc:
         logger.warning("[%s] LLM format error (%s) — returning original content", block.name, exc)

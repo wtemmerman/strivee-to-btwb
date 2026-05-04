@@ -75,6 +75,15 @@ def test_extract_json_bare_array():
     assert result[0]["name"] == "WOD"
 
 
+def test_extract_json_bare_array_needs_repair():
+    """Bare array with invalid JSON triggers repair_json fallback (lines 140-141)."""
+    # Array starts first, but has broken syntax → falls through to repair_json
+    raw = '[{"name": "WOD", "content": "21-15-9}'  # unclosed object in array
+    # repair_json may return a list or dict depending on heuristics — just ensure it parses
+    result = json.loads(_extract_json(raw))
+    assert result is not None
+
+
 def test_extract_json_raises_on_no_object():
     with pytest.raises(ValueError, match="No JSON value found"):
         _extract_json("just some text with no JSON")
@@ -109,91 +118,63 @@ def test_is_excluded_empty_list(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# extract_day_programming (ollama mocked — no model required)
+# extract_day_programming_from_text (ollama mocked — no model required)
 # ---------------------------------------------------------------------------
 
 
-def test_extract_day_programming_parses_mocked_response(monkeypatch):
+def test_extract_from_text_parses_mocked_response(monkeypatch):
     from datetime import date
 
-    from PIL import Image
-
-    from strivee_btwb.vision.parser import extract_day_programming
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     fake_response = {
         "message": {
-            "content": '{"blocks": [{"name": "Back Squat", "content": "5x5 @ 80%"}, '
-                       '{"name": "WOD", "content": "21-15-9 Thrusters"}]}'
+            "content": (
+                '{"blocks": [{"name": "EMF 60 : Snatch", "content": "Build to 1RM",'
+                ' "instruction": "Objectif: focus"},'
+                ' {"name": "WOD", "content": "AMRAP 12:00", "instruction": ""}]}'
+            )
         }
     }
     monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
 
-    img = Image.new("RGB", (100, 200), (255, 255, 255))
-    result = extract_day_programming([img], "Mon", date(2026, 4, 27))
+    result = extract_day_programming_from_text("some text", "Mon", date(2026, 4, 27))
 
     assert result.day_label == "Mon"
-    assert result.date == date(2026, 4, 27)
     assert len(result.blocks) == 2
-    assert result.blocks[0].name == "Back Squat"
-    assert result.blocks[1].name == "WOD"
+    assert result.blocks[0].name == "EMF 60 : Snatch"
+    assert result.blocks[0].instruction == "Objectif: focus"
+    assert result.blocks[1].instruction == ""
 
 
-def test_extract_day_programming_drops_excluded_blocks(monkeypatch):
+def test_extract_from_text_drops_excluded_blocks(monkeypatch):
     from datetime import date
 
-    from PIL import Image
-
     import strivee_btwb.core.config as cfg
-    from strivee_btwb.vision.parser import extract_day_programming
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     fake_response = {
         "message": {
-            "content": '{"blocks": [{"name": "Warm-up", "content": "5 min"}, '
-                       '{"name": "WOD", "content": "21-15-9"}]}'
+            "content": (
+                '{"blocks": [{"name": "🔥 Warm-up 🔥", "content": "5 min", "instruction": ""},'
+                ' {"name": "WOD", "content": "21-15-9", "instruction": ""}]}'
+            )
         }
     }
     monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Warm-up"])
 
-    img = Image.new("RGB", (100, 200), (255, 255, 255))
-    result = extract_day_programming([img], "Mon", date(2026, 4, 27))
+    result = extract_day_programming_from_text("some text", "Mon", date(2026, 4, 27))
 
     assert len(result.blocks) == 1
     assert result.blocks[0].name == "WOD"
 
 
-def test_extract_day_programming_name_as_key_format(monkeypatch):
-    """Model returns {"BlockName": "content"} instead of {"blocks": [...]}."""
+def test_extract_from_text_empty_response_returns_zero_blocks(monkeypatch):
     from datetime import date
 
-    from PIL import Image
-
-    from strivee_btwb.vision.parser import extract_day_programming
-
-    fake_response = {
-        "message": {
-            "content": '{"Back Squat": "5x5 @ 80%", "WOD": "21-15-9 Thrusters"}'
-        }
-    }
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
-    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
-
-    img = Image.new("RGB", (100, 200), (255, 255, 255))
-    result = extract_day_programming([img], "Fri", date(2026, 4, 25))
-
-    assert len(result.blocks) == 2
-    assert result.blocks[0].name == "Back Squat"
-    assert result.blocks[0].content == "5x5 @ 80%"
-
-
-def test_extract_day_programming_empty_vision_response_returns_zero_blocks(monkeypatch):
-    """Model returns empty string — should not raise, just return 0 blocks."""
-    from datetime import date
-
-    from PIL import Image
-
-    from strivee_btwb.vision.parser import extract_day_programming
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     monkeypatch.setattr(
         "strivee_btwb.vision.parser.ollama.chat",
@@ -201,26 +182,99 @@ def test_extract_day_programming_empty_vision_response_returns_zero_blocks(monke
     )
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
 
-    img = Image.new("RGB", (100, 200), (255, 255, 255))
-    result = extract_day_programming([img], "Wed", date(2026, 4, 23))
-
-    assert result.day_label == "Wed"
+    result = extract_day_programming_from_text("some text", "Tue", date(2026, 4, 28))
     assert result.blocks == []
 
 
-def test_extract_day_programming_raises_on_unparseable_response(monkeypatch):
+def test_extract_from_text_raises_on_unparseable_response(monkeypatch):
     from datetime import date
 
     import pytest
-    from PIL import Image
 
-    from strivee_btwb.vision.parser import extract_day_programming
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     monkeypatch.setattr(
         "strivee_btwb.vision.parser.ollama.chat",
-        lambda **_: {"message": {"content": "sorry, I cannot parse this image"}},
+        lambda **_: {"message": {"content": "sorry, I cannot parse this"}},
     )
+    with pytest.raises(ValueError, match="Text parsing failed"):
+        extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
 
-    img = Image.new("RGB", (100, 200), (255, 255, 255))
-    with pytest.raises(ValueError, match="Vision parsing failed"):
-        extract_day_programming([img], "Mon", date(2026, 4, 27))
+
+def test_extract_from_text_normalises_list_response(monkeypatch):
+    """Model returns a bare list instead of {"blocks": [...]}."""
+    from datetime import date
+
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    fake_response = {
+        "message": {"content": '[{"name": "WOD", "content": "AMRAP 12", "instruction": ""}]'}
+    }
+    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
+    assert len(result.blocks) == 1
+    assert result.blocks[0].name == "WOD"
+
+
+def test_extract_from_text_normalises_name_as_key_format(monkeypatch):
+    """Model returns {"BlockName": "content"} instead of {"blocks": [...]}."""
+    from datetime import date
+
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    fake_response = {"message": {"content": '{"Back Squat": "5x5 @ 80%", "WOD": "21-15-9"}'}}
+    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text("text", "Fri", date(2026, 4, 25))
+    assert len(result.blocks) == 2
+    assert result.blocks[0].name == "Back Squat"
+
+
+def test_extract_from_text_normalises_wrapped_list_format(monkeypatch):
+    """Model returns {"converted_data": [...]} — list_vals path (line 231)."""
+    from datetime import date
+
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    fake_response = {
+        "message": {
+            "content": (
+                '{"converted_data": [{"name": "WOD", "content": "AMRAP 12", "instruction": ""}]}'
+            )
+        }
+    }
+    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
+    assert len(result.blocks) == 1
+    assert result.blocks[0].name == "WOD"
+
+
+def test_extract_from_text_excluded_blocks_logged(monkeypatch, caplog):
+    """Excluded blocks count is logged at DEBUG level."""
+    import logging
+    from datetime import date
+
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    fake_response = {
+        "message": {
+            "content": '{"blocks": [{"name": "Warm-up", "content": "5 min", "instruction": ""}, '
+            '{"name": "WOD", "content": "21-15-9", "instruction": ""}]}'
+        }
+    }
+    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Warm-up"])
+
+    with caplog.at_level(logging.DEBUG, logger="vision"):
+        result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
+
+    assert len(result.blocks) == 1
+    assert any(
+        "dropped" in r.message.lower() or "exclusion" in r.message.lower() for r in caplog.records
+    )

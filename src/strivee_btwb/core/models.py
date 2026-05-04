@@ -10,6 +10,7 @@ class ProgrammingBlock:
 
     name: str
     content: str
+    instruction: str = ""  # coach notes / intent, kept separate from the prescription
 
 
 @dataclass

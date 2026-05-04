@@ -5,11 +5,11 @@ import sys
 
 _RESET = "\033[0m"
 _LEVEL_COLORS = {
-    logging.DEBUG:    "\033[2m",      # dim
-    logging.INFO:     "\033[0m",      # normal (no color change)
-    logging.WARNING:  "\033[33m",     # yellow
-    logging.ERROR:    "\033[31m",     # red
-    logging.CRITICAL: "\033[1;31m",   # bold red
+    logging.DEBUG: "\033[2m",  # dim
+    logging.INFO: "\033[0m",  # normal (no color change)
+    logging.WARNING: "\033[33m",  # yellow
+    logging.ERROR: "\033[31m",  # red
+    logging.CRITICAL: "\033[1;31m",  # bold red
 }
 
 

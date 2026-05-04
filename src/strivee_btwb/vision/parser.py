@@ -1,55 +1,88 @@
 """
-Vision parsing: send screenshots to an Ollama vision model and extract
-structured CrossFit programming data.
+Text parsing: send accessibility-tree text to a local Ollama text model and
+extract structured CrossFit programming data.
 
-The model receives one or more scroll-position images per day and returns a
-JSON object listing every programming block. Raw LLM output is sanitised and
-repaired before parsing so that common formatting quirks don't cause failures.
+The model receives the raw text lines collected from Android's UI automator dump
+for one day and returns a JSON object listing every programming block. Raw LLM
+output is sanitised and repaired before parsing so that common formatting quirks
+don't cause failures.
 """
 
-import io
 import json
 import logging
 import re
 
 import ollama
 from json_repair import repair_json
-from PIL import Image
 
 from ..core import config
 from ..core.models import DayProgramming, ProgrammingBlock
 
 logger = logging.getLogger("vision")
 
-_DAY_PROMPT_TEMPLATE = """OUTPUT FORMAT — follow exactly, no exceptions:
-{{"blocks": [{{"name": "Back Squat", "content": "5x5 @ 80%"}}, {{"name": "WOD", "content": "..."}}]}}
+_TEXT_PROMPT_TEMPLATE = """Extract every CrossFit programming block from the Strivee accessibility text below for {day_label}.
 
-Your response must be ONLY that JSON object. No explanation, no markdown, no code fences, no text before or after.
+OUTPUT FORMAT — follow exactly, no exceptions:
+{{"blocks": [{{"name": "BLOCK_TITLE", "content": "PRESCRIPTION_HERE", "instruction": "COACHING_NOTES_HERE"}}]}}
 
-Task: extract every CrossFit programming block from the {count} Strivee screenshot(s) for {day_label} (each image is one scroll position, top to bottom).
+Your response must be ONLY that JSON object — no explanation, no markdown, no code fences, no text before or after.
+NEVER use "BLOCK_TITLE", "PRESCRIPTION_HERE", or "COACHING_NOTES_HERE" literally — those are placeholders.
 
-Rules:
-- Copy the exact text visible — do not invent or paraphrase
-- Preserve rep schemes, percentages, weights, timing, and line breaks exactly as shown
-- Each block name appears once — merge content if a block continues across scroll positions
-- Ignore UI chrome (status bar, nav bar, video thumbnails)
-- SKIP any block whose name starts with: {excluded}
-- If you see the text "Inviter un ami à rejoindre Strivee" anywhere in the image, stop — ignore everything below that line"""
+━━━ IDENTIFYING BLOCKS ━━━
+A Strivee block title ALWAYS matches one of these two patterns:
+  • Starts with "EMF"  →  e.g. "EMF 60 : Snatch", "EMF RX - Optional RUN", "EMF Rx : Pull-up"
+  • Starts with an emoji followed by a sport/category name  →  e.g. "🏊🏼‍♂️Swim Workout"
 
-_REFORMAT_PROMPT_TEMPLATE = """Convert the CrossFit programming text below into this exact JSON format.
-Your response must be ONLY the JSON — no explanation, no markdown, no code fences.
+Everything between a block title and the next block title (or end of text) belongs to that block.
 
-{{"blocks": [{{"name": "block name", "content": "full block text"}}]}}
+NOT block titles — these are sub-section headers WITHIN the current block, keep their text as part of the block content:
+  • Lines ending with " -"  (e.g. "Warm-up -", "Main Part -", "Cooldown -", "Rest 3 min jogging between sets -")
+  • Lines starting with "📌"  (e.g. "📌Échauffement", "📌Session")
+  • Any other short label that does not match the EMF / emoji-category patterns above
 
-Text to convert:
+━━━ CONTENT (prescription only) ━━━
+"content" = the minimal statement of what to DO, copied exactly:
+  • Conditioning (AMRAP/EMOM/For Time/Run/Swim sets): time domain + movements + distances + reps + weights
+    — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
+  • Strength (Build to / Find / Work to): ONLY the single goal sentence
+    e.g. "Build to a 1RM Squat Snatch for the day"  ← that one line is the entire content
+  • Do NOT include percentages-as-progressions, coaching explanations, or Objectif text in content
+
+━━━ INSTRUCTION (everything else) ━━━
+"instruction" = all coaching, guidance, and context — NOT the core prescription.
+These markers ALWAYS begin an instruction section; move the marker line AND everything after it to instruction:
+  • "Objectif"
+  • "Gamme suggéré"
+  • "Tentatives lourdes"
+  • "Si vous ratez" / "Si vous manquez"
+  • "Score :"
+  • "Compare" / "RPE" / "Niveau" / "Effort"
+  Any sentence that explains, motivates, or coaches rather than prescribes → instruction.
+  When in doubt → instruction.  If no instruction exists → use ""
+
+━━━ LEVEL LABELS ━━━
+Level labels (RX 🔱, INTER+ 🪖, INTER 🎖️, etc.) are section headers — skip the label line itself, never include it in content or instruction.
+
+━━━ RX FILTERING ━━━
+When multiple levels exist, keep ONLY the RX 🔱 section.
+Remove everything from the first INTER+ or INTER label onward (until the next block title).
+Example:
+  Input:  "AMRAP 12:00 / 24 DU / 6 PC #50kg / 6 HSPU  [then]  INTER+ 🪖 / AMRAP 12:00 / ..."
+  Output content: "AMRAP 12:00\\n24 DU\\n6 PC #50kg\\n6 HSPU"
+
+━━━ IGNORE COMPLETELY ━━━
+- Day-tab labels: LUN, MAR, MER, JEU, VEN, SAM, DIM and Mon/Tue/Wed/Thu/Fri/Sat/Sun
+- Lines that are a single number 1-31 (date numbers in the week strip)
+- App header lines (e.g. "EMF 60'", "EMF 45'")
+- Bottom nav tabs: WOD, Box, Noter, PRs, Profil
+- Lines matching "N Scores", "N Score", "N Media", "N Media" where N is a number
+- Lines starting with http:// or https://
+- Announcements: WhatsApp groups, Zoom/Meet calls, weekly call banners
+- SKIP any block whose name contains: {excluded}
+- STOP at the first line containing "Inviter un ami" — ignore everything from that line onward
+
+Text:
 {text}"""
-
-
-def _to_bytes(image: Image.Image) -> bytes:
-    """Encode a PIL image to PNG bytes for Ollama's image field."""
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    return buf.getvalue()
 
 
 def _sanitize_json_strings(s: str) -> str:
@@ -91,7 +124,7 @@ def _extract_json(text: str) -> str:
     if "```" in stripped:
         stripped = stripped.split("```", 1)[-1]
         stripped = stripped.rsplit("```", 1)[0]
-        if stripped and not stripped.lstrip()[0:1] in ("{", "["):
+        if stripped and stripped.lstrip()[0:1] not in ("{", "["):
             stripped = stripped.split("\n", 1)[-1]
 
     arr_start = stripped.find("[")
@@ -130,28 +163,28 @@ def _extract_json(text: str) -> str:
 
 
 def _is_excluded(name: str) -> bool:
-    """Return True if the block name starts with any excluded prefix (case-insensitive)."""
+    """Return True if the block name contains any excluded string (case-insensitive).
+
+    Uses substring match so emoji-prefixed names like '🔥 Warm-up 🔥' are caught
+    by the 'Warm-up' entry without needing to list every emoji variant.
+    """
     name_lower = name.lower()
-    return any(name_lower.startswith(ex.lower()) for ex in config.EXCLUDED_BLOCKS)
+    return any(ex.lower() in name_lower for ex in config.EXCLUDED_BLOCKS)
 
 
-def extract_day_programming(
-    images: list[Image.Image],
+def extract_day_programming_from_text(
+    text: str,
     day_label: str,
     target_date,
     model: str | None = None,
 ) -> DayProgramming:
-    """Parse all programming blocks for a single day from one or more screenshots.
-
-    All scroll-position frames are sent together in one Ollama message so the
-    model sees every frame without repeating UI chrome between calls. Blocks
-    whose names match EXCLUDED_BLOCKS (prefix, case-insensitive) are dropped.
+    """Parse programming blocks from plain accessibility-tree text (no images).
 
     Args:
-        images: Ordered list of cropped screenshots (top → bottom scroll positions).
-        day_label: Short weekday label shown in Strivee (e.g. ``"Mon"``).
+        text: Raw text lines collected from Android UI dump.
+        day_label: Short weekday label (e.g. ``"Mon"``).
         target_date: Calendar date the day corresponds to.
-        model: Ollama model tag; defaults to ``config.OLLAMA_MODEL``.
+        model: Ollama model tag; defaults to ``config.OLLAMA_TEXT_MODEL``.
 
     Returns:
         A :class:`~strivee_btwb.models.DayProgramming` with all non-excluded blocks.
@@ -159,72 +192,50 @@ def extract_day_programming(
     Raises:
         ValueError: If the model returns output that cannot be parsed as JSON.
     """
-    model = model or config.OLLAMA_MODEL
+    model = model or config.OLLAMA_TEXT_MODEL
     excluded_str = ", ".join(config.EXCLUDED_BLOCKS) if config.EXCLUDED_BLOCKS else "none"
-    prompt = _DAY_PROMPT_TEMPLATE.format(
+    prompt = _TEXT_PROMPT_TEMPLATE.format(
         day_label=day_label,
-        count=len(images),
         excluded=excluded_str,
+        text=text,
     )
 
-    logger.info("Parsing %s (%d image(s)) with %s", day_label, len(images), model)
+    logger.info("Parsing %s from text dump (%d chars) with %s", day_label, len(text), model)
+
+    logger.debug("%s: prompt:\n%s", day_label, prompt)
     response = ollama.chat(
         model=model,
         think=False,  # suppress qwen3 thinking tokens that produce empty visible output
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-                "images": [_to_bytes(img) for img in images],
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
     )
 
     raw = response["message"]["content"]
-    logger.debug("%s: raw vision response:\n%s", day_label, raw)
-    data = None
+    logger.debug("%s: raw text-parse response:\n%s", day_label, raw)
+
     if not raw.strip():
-        logger.warning("%s: vision model returned empty response — skipping reformat", day_label)
+        logger.warning("%s: model returned empty response", day_label)
+        data: dict = {}
     else:
         try:
             json_str = _extract_json(raw)
             data = json.loads(json_str)
-        except (ValueError, json.JSONDecodeError):
-            # Model returned plain text instead of JSON (common with thinking models).
-            # Send the extracted text back without images for a fast reformat pass.
-            logger.warning("%s: no JSON in vision response — retrying as text reformat", day_label)
-            reformat_prompt = _REFORMAT_PROMPT_TEMPLATE.format(text=raw)
-            reformat_response = ollama.chat(
-                model=model,
-                think=False,
-                messages=[{"role": "user", "content": reformat_prompt}],
-            )
-            raw2 = reformat_response["message"]["content"]
-            logger.debug("%s: reformat response:\n%s", day_label, raw2)
-            try:
-                json_str = _extract_json(raw2)
-                data = json.loads(json_str)
-            except (ValueError, json.JSONDecodeError) as e:
-                raise ValueError(
-                    f"Vision parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
-                ) from e
+        except (ValueError, json.JSONDecodeError) as e:
+            raise ValueError(
+                f"Text parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
+            ) from e
 
-    if data is None:
-        data = {}
     if isinstance(data, list):
         data = {"blocks": data}
-    # Normalise wrong top-level key
     if not data.get("blocks"):
         list_vals = [v for v in data.values() if isinstance(v, list)]
         if list_vals:
-            # e.g. {"converted_data": [{...}]} — use first list
             data = {"blocks": list_vals[0]}
         elif data and all(isinstance(v, str) for v in data.values()):
-            # e.g. {"Block Name": "content"} — model used name-as-key format
             data = {"blocks": [{"name": k, "content": v} for k, v in data.items()]}
+
     all_blocks = data.get("blocks", [])
     blocks = [
-        ProgrammingBlock(name=b["name"], content=b["content"])
+        ProgrammingBlock(name=b["name"], content=b["content"], instruction=b.get("instruction", ""))
         for b in all_blocks
         if not _is_excluded(b.get("name", ""))
     ]

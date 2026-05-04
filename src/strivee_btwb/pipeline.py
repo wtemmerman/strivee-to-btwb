@@ -11,24 +11,20 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from PIL import Image
-
 import ollama
 
 from .btwb import AuthenticationError, post_week
 from .capture import (
-    capture_day_screenshots,
+    capture_day_as_text,
     launch_scrcpy,
     launch_strivee,
     navigate_to_week,
-    save_capture,
     scroll_to_top,
-    stitch_vertical,
 )
 from .core import config
 from .core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from .processing import format_for_btwb
-from .vision import extract_day_programming
+from .vision import extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +61,10 @@ def save_day(day: DayProgramming, ws: date) -> Path:
             {
                 "date": day.date.isoformat(),
                 "day_label": day.day_label,
-                "blocks": [{"name": b.name, "content": b.content} for b in day.blocks],
+                "blocks": [
+                    {"name": b.name, "content": b.content, "instruction": b.instruction}
+                    for b in day.blocks
+                ],
             },
             indent=2,
             ensure_ascii=False,
@@ -90,7 +89,9 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
                 date=date.fromisoformat(data["date"]),
                 day_label=data["day_label"],
                 blocks=[
-                    ProgrammingBlock(name=b["name"], content=b["content"])
+                    ProgrammingBlock(
+                        name=b["name"], content=b["content"], instruction=b.get("instruction", "")
+                    )
                     for b in data["blocks"]
                 ],
             )
@@ -98,17 +99,28 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
     return WeeklyProgramming(week_start=ws, days=parsed)
 
 
-def load_captures(days: list[str], ws: date) -> dict[str, list[Image.Image]]:
-    """Load stitched PNG captures from the per-week captures directory."""
+def save_text_capture(text: str, label: str, ws: date) -> Path:
+    """Save a UI-dump text capture and return its path."""
+    from datetime import datetime
+
+    out = config.CAPTURES_DIR / ws.isoformat()
+    out.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = out / f"strivee_{ts}_{label}.txt"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def load_text_captures(days: list[str], ws: date) -> dict[str, str]:
+    """Load UI-dump text captures from the per-week captures directory."""
     folder = config.CAPTURES_DIR / ws.isoformat()
-    result: dict[str, list[Image.Image]] = {}
+    result: dict[str, str] = {}
     for day in days:
-        matches = sorted(folder.glob(f"strivee_*_{day}.png"))
+        matches = sorted(folder.glob(f"strivee_*_{day}.txt"))
         if not matches:
-            logger.warning("No saved capture for %s", day)
             continue
-        logger.info("Loaded capture: %s", matches[-1].name)
-        result[day] = [Image.open(matches[-1])]
+        logger.info("Loaded text capture: %s", matches[-1].name)
+        result[day] = matches[-1].read_text(encoding="utf-8")
     return result
 
 
@@ -144,12 +156,20 @@ def clean_week(week: WeeklyProgramming) -> WeeklyProgramming:
             if not block.content.strip():
                 continue
             if merged and merged[-1].name.lower() == block.name.lower():
+                merged_instruction = "\n".join(
+                    filter(None, [merged[-1].instruction, block.instruction])
+                )
                 merged[-1] = ProgrammingBlock(
                     name=merged[-1].name,
                     content=merged[-1].content + "\n" + block.content,
+                    instruction=merged_instruction,
                 )
             else:
-                merged.append(ProgrammingBlock(name=block.name, content=block.content))
+                merged.append(
+                    ProgrammingBlock(
+                        name=block.name, content=block.content, instruction=block.instruction
+                    )
+                )
         if merged:
             cleaned_days.append(
                 DayProgramming(date=day.date, day_label=day.day_label, blocks=merged)
@@ -186,7 +206,11 @@ def log_preview(week: WeeklyProgramming) -> None:
 # ── Steps ─────────────────────────────────────────────────────────────────────
 
 
-def do_capture(days: list[str], no_scrcpy: bool, ws: date | None = None) -> None:
+def do_capture(
+    days: list[str],
+    no_scrcpy: bool,
+    ws: date | None = None,
+) -> None:
     serial = config.ANDROID_SERIAL
     ws = ws or week_start()
     scrcpy_proc = None
@@ -210,23 +234,17 @@ def do_capture(days: list[str], no_scrcpy: bool, ws: date | None = None) -> None
     scroll_to_top(serial)  # also waits for the app to fully render after launch
     navigate_to_week(ws, serial)
 
-    debug_dir = None
-    if logging.getLogger().isEnabledFor(logging.DEBUG):
-        debug_dir = config.CAPTURES_DIR / ws.isoformat() / "debug"
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        logger.debug("Raw frames will be saved to %s", debug_dir)
-
-    logger.info("Capturing %d day(s): %s", len(days), ", ".join(days))
+    logger.info("Capturing %d day(s) via UI text dump: %s", len(days), ", ".join(days))
     saved = 0
+
     for day in days:
         try:
-            scroll_to_top(serial)
-            frames = capture_day_screenshots(day, serial, config.MAX_SCROLLS, debug_dir=debug_dir)
-            path = save_capture(stitch_vertical(frames), label=day, week_start=ws)
-            logger.info("%s saved -> %s (%d frame(s))", day, path.name, len(frames))
+            text = capture_day_as_text(day, serial, config.MAX_SCROLLS)
+            path = save_text_capture(text, label=day, ws=ws)
+            logger.info("%s saved -> %s (%d chars)", day, path.name, len(text))
             saved += 1
         except Exception as e:
-            logger.error("%s: capture failed — %s", day, e)
+            logger.error("%s: text capture failed — %s", day, e)
 
     if scrcpy_proc:
         scrcpy_proc.terminate()
@@ -240,8 +258,10 @@ def do_capture(days: list[str], no_scrcpy: bool, ws: date | None = None) -> None
 
 def do_analyse(days: list[str], ws: date | None = None) -> None:
     ws = ws or week_start()
-    day_images = load_captures(days, ws)
-    if not day_images:
+
+    text_captures = load_text_captures(days, ws)
+
+    if not text_captures:
         logger.error(
             "No captures found in %s/%s/ — run: strivee-btwb capture",
             config.CAPTURES_DIR,
@@ -249,25 +269,25 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
         )
         sys.exit(1)
 
-    logger.info("Starting vision analysis with model '%s'", config.OLLAMA_MODEL)
-    for day_short, frames in day_images.items():
+    logger.info("Starting text analysis with model '%s'", config.OLLAMA_TEXT_MODEL)
+    for day_short, text in text_captures.items():
         try:
-            day_prog = extract_day_programming(
-                images=frames,
+            day_prog = extract_day_programming_from_text(
+                text=text,
                 day_label=day_short,
                 target_date=short_to_date(day_short, ws),
             )
-            if not day_prog.blocks and config.OLLAMA_FALLBACK_MODEL:
+            if not day_prog.blocks and config.OLLAMA_FALLBACK_TEXT_MODEL:
                 logger.warning(
                     "%s: no blocks from primary model — retrying with fallback '%s'",
                     day_short,
-                    config.OLLAMA_FALLBACK_MODEL,
+                    config.OLLAMA_FALLBACK_TEXT_MODEL,
                 )
-                day_prog = extract_day_programming(
-                    images=frames,
+                day_prog = extract_day_programming_from_text(
+                    text=text,
                     day_label=day_short,
                     target_date=short_to_date(day_short, ws),
-                    model=config.OLLAMA_FALLBACK_MODEL,
+                    model=config.OLLAMA_FALLBACK_TEXT_MODEL,
                 )
             if day_prog.blocks:
                 path = save_day(day_prog, ws)

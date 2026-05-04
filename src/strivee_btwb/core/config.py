@@ -12,16 +12,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Vision ────────────────────────────────────────────────────────────────────
-
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3vl:8b")
-"""Ollama model tag used for vision parsing (must support image input)."""
-
-OLLAMA_FALLBACK_MODEL: str | None = os.getenv("OLLAMA_FALLBACK_MODEL") or None
-"""Fallback model tried when the primary returns zero blocks. Set to empty to disable."""
+# ── Models ────────────────────────────────────────────────────────────────────
 
 OLLAMA_FORMAT_MODEL: str = os.getenv("OLLAMA_FORMAT_MODEL", "qwen3:1.7b")
 """Ollama model used for BTWB text formatting (text-only, no image input needed)."""
+
+OLLAMA_TEXT_MODEL: str = os.getenv("OLLAMA_TEXT_MODEL", "qwen3:8b")
+"""Ollama model used to parse UI accessibility text dumps (text-only, no vision needed)."""
+
+OLLAMA_FALLBACK_TEXT_MODEL: str | None = os.getenv("OLLAMA_FALLBACK_TEXT_MODEL") or None
+"""Fallback model for text parsing when the primary returns zero blocks. Set to empty to disable."""
 
 # ── BTWB credentials ──────────────────────────────────────────────────────────
 
@@ -51,7 +51,9 @@ CAPTURE_CROP_BOTTOM: int = int(os.getenv("CAPTURE_CROP_BOTTOM", "0"))
 
 # ── Block filtering ───────────────────────────────────────────────────────────
 
-_excluded_raw = os.getenv("EXCLUDED_BLOCKS", "Hebdomadaire,GROUPE WHATS APP EMF,Warm-up")
+_excluded_raw = os.getenv(
+    "EXCLUDED_BLOCKS", "Hebdomadaire,GROUPE WHATS APP EMF,Warm-up,Swim Workout"
+)
 EXCLUDED_BLOCKS: list[str] = [b.strip() for b in _excluded_raw.split(",") if b.strip()]
 """Block names (prefix-matched, case-insensitive) to drop from parsed results."""
 
@@ -62,6 +64,3 @@ CAPTURES_DIR: Path = Path(os.getenv("CAPTURES_DIR", "captures"))
 
 PARSED_DIR: Path = Path(os.getenv("PARSED_DIR", "parsed"))
 """Root directory for vision-parsed JSON cache (one sub-folder per week)."""
-
-FIXTURE_IMAGE_PATH: str | None = os.getenv("FIXTURE_IMAGE_PATH")
-"""Optional path to a static PNG used instead of live ADB capture (for testing)."""
