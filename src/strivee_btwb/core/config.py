@@ -52,7 +52,8 @@ CAPTURE_CROP_BOTTOM: int = int(os.getenv("CAPTURE_CROP_BOTTOM", "0"))
 # ── Block filtering ───────────────────────────────────────────────────────────
 
 _excluded_raw = os.getenv(
-    "EXCLUDED_BLOCKS", "Hebdomadaire,GROUPE WHATS APP EMF,Warm-up,Swim Workout"
+    "EXCLUDED_BLOCKS",
+    "Hebdomadaire,GROUPE WHATS APP EMF,Warm-up,Swim Workout,Sport simulation",
 )
 EXCLUDED_BLOCKS: list[str] = [b.strip() for b in _excluded_raw.split(",") if b.strip()]
 """Block names (prefix-matched, case-insensitive) to drop from parsed results."""

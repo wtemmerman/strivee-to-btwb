@@ -33,7 +33,45 @@ A Strivee block title ALWAYS matches one of these two patterns:
   • Starts with "EMF"  →  e.g. "EMF 60 : Snatch", "EMF RX - Optional RUN", "EMF Rx : Pull-up"
   • Starts with an emoji followed by a sport/category name  →  e.g. "🏊🏼‍♂️Swim Workout"
 
-Everything between a block title and the next block title (or end of text) belongs to that block.
+Everything between a block title and the next block title (or end of text) belongs to that block. A new block title ALWAYS starts a new block, even if the previous block's content looks topically related (e.g. a warm-up full of snatch drills followed by a real "EMF 60 : Snatch" block — these are TWO separate blocks, not one).
+
+Critical example A — warm-up directly followed by an EMF block:
+  Input lines:
+    🔥 Warm-up 🔥
+    KB Ankle Stretch x1min30/side
+    Muscle Snatch from hip
+    Hang Muscle Snatch
+    Hang Power Snatch
+    x6 reps / movement
+    EMF 60 : Snatch
+    Build to a 1RM Squat Snatch for the day
+    Gamme suggéré : ...
+
+  Correct interpretation:
+    Block 1 = "🔥 Warm-up 🔥" (everything from KB Ankle Stretch through "x6 reps / movement") → DROPPED because Warm-up is excluded
+    Block 2 = "EMF 60 : Snatch" (everything from "Build to a 1RM..." through Gamme suggéré...) → KEPT
+  WRONG: merging the snatch drills into the EMF 60 : Snatch block. The drills belong to the warm-up only.
+
+Critical example B — two consecutive EMF blocks where the first is an announcement/excluded:
+  Input lines:
+    EMF 60 : Friday Sport Simulation
+    🎯 Classement directement disponible sur :
+    https://strivee.app/marketplace/plan/...
+    🥇 Depuis maintenant 5 ans, le FSS est devenu...
+    💪🏻 Quelques conseils pour performer chaque vendredi...
+    EMF 60 : Skill Bar Muscle-up
+    🔱 RX 🔱
+    3 rounds :
+    Max Bar Muscle-up Unbroken
+    Score : total + meilleur set UB
+    Objectif : Montrez ce que 8 semaines de travail ont construit.
+
+  Correct interpretation — TWO separate blocks:
+    Block 1 = "EMF 60 : Friday Sport Simulation" → DROPPED (Sport simulation is excluded)
+    Block 2 = "EMF 60 : Skill Bar Muscle-up", content = "3 rounds :\\nMax Bar Muscle-up Unbroken", instruction = "Score : ...\\nObjectif : ..."
+  WRONG: emitting one block named "EMF 60 : Friday Sport Simulation" and stuffing the Skill Bar Muscle-up workout into its content or instruction. Each "EMF ..." line on its own row is ALWAYS the start of a NEW block — it does NOT matter if the previous block was an announcement, an excluded block, or full of links.
+
+RULE OF THUMB: every line starting with "EMF " followed by a number/RX/Rx is its own block title and starts a new block. There is never a case where an "EMF ..." title line should appear inside another block's content or instruction.
 
 NOT block titles — these are sub-section headers WITHIN the current block, keep their text as part of the block content:
   • Lines ending with " -"  (e.g. "Warm-up -", "Main Part -", "Cooldown -", "Rest 3 min jogging between sets -")
@@ -41,44 +79,105 @@ NOT block titles — these are sub-section headers WITHIN the current block, kee
   • Any other short label that does not match the EMF / emoji-category patterns above
 
 ━━━ CONTENT (prescription only) ━━━
-"content" = the minimal statement of what to DO, copied exactly:
-  • Conditioning (AMRAP/EMOM/For Time/Run/Swim sets): time domain + movements + distances + reps + weights
+"content" = the minimal statement of what to DO for the RX 🔱 level ONLY, copied exactly:
+  • Never include the block title line itself in content
+  • If the block has multiple difficulty levels (RX + INTER+ and/or INTER), content contains ONLY the RX prescription. NEVER concatenate RX with INTER+ or INTER content. The INTER+ / INTER prescriptions go to instruction (see DIFFICULTY LEVELS section).
+  • Conditioning (AMRAP/EMOM/For Time/Run/Swim sets): time domain + movements + distances + reps + weights — for the RX section only
     — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
   • Strength (Build to / Find / Work to): ONLY the single goal sentence
     e.g. "Build to a 1RM Squat Snatch for the day"  ← that one line is the entire content
   • Do NOT include percentages-as-progressions, coaching explanations, or Objectif text in content
 
 ━━━ INSTRUCTION (everything else) ━━━
-"instruction" = all coaching, guidance, and context — NOT the core prescription.
+"instruction" = all coaching, guidance, and context — NOT the core RX prescription.
 These markers ALWAYS begin an instruction section; move the marker line AND everything after it to instruction:
   • "Objectif"
-  • "Gamme suggéré"
+  • "Gamme suggéré" / "Gammes suggéré"
   • "Tentatives lourdes"
   • "Si vous ratez" / "Si vous manquez"
   • "Score :"
   • "Compare" / "RPE" / "Niveau" / "Effort"
   Any sentence that explains, motivates, or coaches rather than prescribes → instruction.
-  When in doubt → instruction.  If no instruction exists → use ""
+  When in doubt → instruction.  If no instruction exists → use "".
 
-━━━ LEVEL LABELS ━━━
-Level labels (RX 🔱, INTER+ 🪖, INTER 🎖️, etc.) are section headers — skip the label line itself, never include it in content or instruction.
+PRESERVE FORMATTING: keep the original line breaks and blank lines from the source text inside instruction. Multi-paragraph instructions stay multi-paragraph (use \\n between lines, \\n\\n between sections).
 
-━━━ RX FILTERING ━━━
-When multiple levels exist, keep ONLY the RX 🔱 section.
-Remove everything from the first INTER+ or INTER label onward (until the next block title).
-Example:
-  Input:  "AMRAP 12:00 / 24 DU / 6 PC #50kg / 6 HSPU  [then]  INTER+ 🪖 / AMRAP 12:00 / ..."
-  Output content: "AMRAP 12:00\\n24 DU\\n6 PC #50kg\\n6 HSPU"
+━━━ DIFFICULTY LEVELS (RX vs INTER+ vs INTER) ━━━
+Strivee blocks often present multiple difficulty levels:
+  • RX 🔱 (or "🔱 Rx", "Rx 🔱", "RX 🔱") — the prescribed/main version
+  • INTER+ 🪖 (or "🪖 INTER+ 🪖", "🪖 INTER+ -") — scaled intermediate-plus
+  • INTER 🎖️ (or "🎖️ INTER 🎖️", "🎖️ INTER -") — scaled intermediate
+
+How to map them:
+  1. RX 🔱 prescription → "content". SKIP the RX header line itself; do not write "RX 🔱" anywhere.
+  2. INTER+ 🪖 and INTER 🎖️ sections → "instruction". KEEP their header lines as visible section markers (e.g. "🪖 INTER+ 🪖", "🎖️ INTER -") and include their full prescription text below the header.
+  3. Combined headers like "🔱 Rx - 🪖 INTER+ -" mean RX and INTER+ share the SAME content — put it once in "content", do NOT duplicate it in instruction. Only the separate "🎖️ INTER -" section (if present) goes to instruction.
+  4. If only ONE level exists, its content goes to "content"; no level header anywhere.
+
+Example with separate RX and INTER sections:
+  Input:
+    🔱 Rx
+    AMRAP 12:00
+    24 DU
+    6 PC #50kg
+    🎖️ INTER -
+    AMRAP 12:00
+    24 DU
+    6 PC #40kg with abmat
+    Objectif : Tenir les DU unbroken
+  Output:
+    "content":     "AMRAP 12:00\\n24 DU\\n6 PC #50kg"
+    "instruction": "🎖️ INTER -\\nAMRAP 12:00\\n24 DU\\n6 PC #40kg with abmat\\n\\nObjectif : Tenir les DU unbroken"
+
+Example with combined RX/INTER+ header:
+  Input:
+    🔱 Rx - 🪖 INTER+ -
+    AMRAP 12:00
+    24 DU
+    🎖️ INTER -
+    AMRAP 12:00
+    20 DU with abmat
+  Output:
+    "content":     "AMRAP 12:00\\n24 DU"
+    "instruction": "🎖️ INTER -\\nAMRAP 12:00\\n20 DU with abmat"
+
+Example with all three levels separate (THIS IS THE COMMON CASE — pay close attention):
+  Input:
+    RX 🔱
+    AMRAP 12:00
+    5 Ring Muscle-up
+    8 Strict HSPU
+    15 Toes to Bar
+    200m Run
+    INTER+ 🪖
+    AMRAP 12:00
+    4 Bar Muscle-up
+    6 Strict HSPU
+    12 Toes to Bar
+    200m Run
+    INTER 🎖️
+    AMRAP 12:00
+    5 Chest to bar pull-up
+    6 Strict HSPU Abmat
+    10 Toes to Bar
+    200m Run
+    Objectif : Unbroken sur chaque mouvement gym
+  Output:
+    "content":     "AMRAP 12:00\\n5 Ring Muscle-up\\n8 Strict HSPU\\n15 Toes to Bar\\n200m Run"
+    "instruction": "🪖 INTER+ 🪖\\nAMRAP 12:00\\n4 Bar Muscle-up\\n6 Strict HSPU\\n12 Toes to Bar\\n200m Run\\n\\n🎖️ INTER 🎖️\\nAMRAP 12:00\\n5 Chest to bar pull-up\\n6 Strict HSPU Abmat\\n10 Toes to Bar\\n200m Run\\n\\nObjectif : Unbroken sur chaque mouvement gym"
+
+  WRONG output (do NOT do this):
+    "content": "AMRAP 12:00\\n5 Ring Muscle-up...\\n\\nAMRAP 12:00\\n4 Bar Muscle-up...\\n\\nAMRAP 12:00\\n5 Chest to bar pull-up..."  ← all 3 levels in content is FORBIDDEN
 
 ━━━ IGNORE COMPLETELY ━━━
 - Day-tab labels: LUN, MAR, MER, JEU, VEN, SAM, DIM and Mon/Tue/Wed/Thu/Fri/Sat/Sun
 - Lines that are a single number 1-31 (date numbers in the week strip)
-- App header lines (e.g. "EMF 60'", "EMF 45'")
+- App header lines: lines that are EXACTLY "EMF 60'" or "EMF 45'" (with a minute/prime symbol ') — NOT block titles like "EMF 60 : Snatch" which have a colon and a name after them
 - Bottom nav tabs: WOD, Box, Noter, PRs, Profil
 - Lines matching "N Scores", "N Score", "N Media", "N Media" where N is a number
 - Lines starting with http:// or https://
 - Announcements: WhatsApp groups, Zoom/Meet calls, weekly call banners
-- SKIP any block whose name contains: {excluded}
+- SKIP any block whose title (the EMF or emoji+category header line) contains: {excluded} — skip ONLY that individual block; do not stop processing, the next block title starts a new block normally. IMPORTANT: the exclusion check applies only to block title lines — never to content or instruction lines inside a block (e.g. "Warm-up : 60% / 70%..." is a percentage label inside a Gamme suggéré, NOT a new block to exclude)
 - STOP at the first line containing "Inviter un ami" — ignore everything from that line onward
 
 Text:

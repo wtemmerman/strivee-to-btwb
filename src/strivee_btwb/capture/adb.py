@@ -117,6 +117,7 @@ def swipe_up(
     serial: str | None = None,
     distance_fraction: float | None = None,
     duration_ms: int = 350,
+    sleep_s: float = 0.0,
 ) -> None:
     """Swipe upward (scroll content down) by a fraction of the screen height."""
     frac = distance_fraction if distance_fraction is not None else config.SCROLL_DISTANCE
@@ -128,13 +129,15 @@ def swipe_up(
         ["shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), str(duration_ms)],
         serial,
     )
-    time.sleep(0.8)
+    if sleep_s > 0:
+        time.sleep(sleep_s)
 
 
 def swipe_down(
     serial: str | None = None,
     distance_fraction: float | None = None,
     duration_ms: int = 350,
+    sleep_s: float = 0.8,
 ) -> None:
     """Swipe downward (scroll content up) by a fraction of the screen height."""
     frac = distance_fraction if distance_fraction is not None else config.SCROLL_DISTANCE
@@ -146,7 +149,7 @@ def swipe_down(
         ["shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), str(duration_ms)],
         serial,
     )
-    time.sleep(0.8)
+    time.sleep(sleep_s)
 
 
 def _change_fraction(a: Image.Image, b: Image.Image) -> float:
@@ -209,11 +212,11 @@ def navigate_to_week(target_week: date, serial: str | None = None) -> None:
         time.sleep(1.0)
 
 
-def scroll_to_top(serial: str | None = None, max_swipes: int = 12) -> None:
+def scroll_to_top(serial: str | None = None, max_swipes: int = 8) -> None:
     """Swipe down repeatedly until the screen stops changing, indicating the top."""
     prev = take_screenshot(serial)
     for _ in range(max_swipes):
-        swipe_down(serial)
+        swipe_down(serial, distance_fraction=0.8, duration_ms=200, sleep_s=0.3)
         curr = take_screenshot(serial)
         if _screens_same(prev, curr):
             break
@@ -317,8 +320,22 @@ def capture_day_as_text(
     scroll_to_top(serial)
 
     _, h_device = _device_size(serial)
-    content_px = h_device - config.CAPTURE_CROP_TOP - config.CAPTURE_CROP_BOTTOM
-    scroll_fraction = content_px / h_device
+
+    # Swipe from 75% down — keeps the gesture safely above Strivee's bottom nav bar.
+    # End point: 30% from top, or just below the header if crop is configured.
+    # This gives ~45% scroll distance and ~55% overlap between consecutive dumps.
+    y_start = int(h_device * 0.75)
+    y_end = max(config.CAPTURE_CROP_TOP + 80, int(h_device * 0.30))
+    scroll_fraction = (y_start - y_end) / h_device
+
+    logger.debug(
+        "%s: swipe %d→%d (%.0f%% scroll), device h=%d",
+        day_short,
+        y_start,
+        y_end,
+        scroll_fraction * 100,
+        h_device,
+    )
 
     seen: set[str] = set()
     lines: list[str] = []
@@ -329,7 +346,7 @@ def capture_day_as_text(
                 seen.add(text)
                 lines.append(text)
         prev = take_screenshot(serial)
-        swipe_up(serial, distance_fraction=scroll_fraction, duration_ms=800)
+        swipe_up(serial, distance_fraction=scroll_fraction, duration_ms=1000, sleep_s=0.5)
         curr = take_screenshot(serial)
         if _screens_same(prev, curr):
             break
