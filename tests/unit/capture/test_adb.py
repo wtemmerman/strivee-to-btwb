@@ -221,21 +221,21 @@ def test_tap_calls_adb(monkeypatch):
 def test_navigate_to_day_returns_true_when_found(monkeypatch):
     import strivee_btwb.core.config as cfg
 
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 550)
+    monkeypatch.setattr(cfg, "DAY_TAB_Y", 500)
     monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     tapped = []
     monkeypatch.setattr(
         "strivee_btwb.capture.adb._tap", lambda x, y, *_, **__: tapped.append((x, y))
     )
     assert navigate_to_day("Mon") is True
-    # Mon is index 0 → x = int((0 + 0.5) * 1080 / 7) = 77, y = 550 - 50 = 500
+    # Mon is index 0 → x = int((0 + 0.5) * 1080 / 7) = 77, y = DAY_TAB_Y = 500
     assert tapped == [(77, 500)]
 
 
 def test_navigate_to_day_tries_french_fallback(monkeypatch):
     import strivee_btwb.core.config as cfg
 
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)  # force fallback path
+    monkeypatch.setattr(cfg, "DAY_TAB_Y", 0)  # force UI-detection fallback
     monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     no_match_xml = (
         '<?xml version="1.0"?><hierarchy><node text="Lun" bounds="[0,100][270,200]"/></hierarchy>'
@@ -252,7 +252,7 @@ def test_navigate_to_day_returns_false_when_not_found(monkeypatch):
 def test_navigate_to_day_returns_false_when_ui_fallback_finds_nothing(monkeypatch):
     import strivee_btwb.core.config as cfg
 
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)  # force fallback path
+    monkeypatch.setattr(cfg, "DAY_TAB_Y", 0)  # force UI-detection fallback
     monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     empty_xml = (
         '<?xml version="1.0"?><hierarchy><node text="Other" bounds="[0,0][100,100]"/></hierarchy>'
@@ -300,10 +300,6 @@ def test_texts_from_dump_empty_hierarchy():
 
 
 def test_capture_day_as_text_returns_string(monkeypatch):
-    import strivee_btwb.core.config as cfg
-
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_BOTTOM", 0)
     monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
     monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
 
@@ -351,7 +347,7 @@ def test_navigate_to_week_future_week_swipes_left(monkeypatch):
     today = date.today()
     next_week = today - timedelta(days=today.weekday()) + timedelta(weeks=1)
 
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)
+    monkeypatch.setattr(cfg, "DAY_TAB_Y", 0)
     monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
 
@@ -373,7 +369,7 @@ def test_navigate_to_week_past_week_swipes_right(monkeypatch):
     today = date.today()
     last_week = today - timedelta(days=today.weekday()) - timedelta(weeks=1)
 
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)
+    monkeypatch.setattr(cfg, "DAY_TAB_Y", 0)
     monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
     monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
 
@@ -386,10 +382,6 @@ def test_navigate_to_week_past_week_swipes_right(monkeypatch):
 
 
 def test_capture_day_as_text_deduplicates_lines(monkeypatch):
-    import strivee_btwb.core.config as cfg
-
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_TOP", 0)
-    monkeypatch.setattr(cfg, "CAPTURE_CROP_BOTTOM", 0)
     monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
     monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
     monkeypatch.setattr("strivee_btwb.capture.adb.scroll_to_top", lambda *_: None)

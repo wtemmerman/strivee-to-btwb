@@ -182,8 +182,6 @@ def navigate_to_week(target_week: date, serial: str | None = None) -> None:
     Assumes Strivee is already open on the current week.
     Finger right → previous week (past).
     Finger left  → next week (future).
-    The swipe y-coordinate is placed just inside the bottom of the
-    CAPTURE_CROP_TOP area, where the day tabs live.
     """
     today = date.today()
     current_week = today - timedelta(days=today.weekday())
@@ -194,8 +192,7 @@ def navigate_to_week(target_week: date, serial: str | None = None) -> None:
 
     w, h = _device_size(serial)
     cx = w // 2
-    # Day tabs sit at the bottom of the header crop zone
-    y = config.CAPTURE_CROP_TOP - 50 if config.CAPTURE_CROP_TOP > 0 else int(h * 0.22)
+    y = config.DAY_TAB_Y if config.DAY_TAB_Y > 0 else int(h * 0.21)
     swipe_distance = w // 3
 
     direction = "forward" if weeks_diff > 0 else "backward"
@@ -267,8 +264,7 @@ def navigate_to_day(day_short: str, serial: str | None = None) -> bool:
 
     Primary: geometric tap — the week header spans the full screen width with
     7 equally-spaced day columns; Mon is index 0, Sun is index 6.
-    Requires CAPTURE_CROP_TOP to be configured (it sets the Y position just
-    inside the header). Falls back to UI element detection when not configured.
+    Requires DAY_TAB_Y to be set in config. Falls back to UI element detection when 0.
     """
     try:
         day_index = _WEEKDAYS_EN.index(day_short)
@@ -278,14 +274,14 @@ def navigate_to_day(day_short: str, serial: str | None = None) -> bool:
 
     w, h = _device_size(serial)
 
-    if config.CAPTURE_CROP_TOP > 0:
+    if config.DAY_TAB_Y > 0:
         x = int((day_index + 0.5) * w / 7)
-        y = config.CAPTURE_CROP_TOP - 50
+        y = config.DAY_TAB_Y
         logger.debug("Tapping %s at (%d, %d) via geometry", day_short, x, y)
         _tap(x, y, serial)
         return True
 
-    # Fallback: UI element detection (used when CAPTURE_CROP_TOP is not set)
+    # Fallback: UI element detection (used when DAY_TAB_Y is not set)
     xml = _ui_dump(serial)
     center = _find_element_center(xml, day_short)
     if center is None:
@@ -325,7 +321,7 @@ def capture_day_as_text(
     # End point: 30% from top, or just below the header if crop is configured.
     # This gives ~45% scroll distance and ~55% overlap between consecutive dumps.
     y_start = int(h_device * 0.75)
-    y_end = max(config.CAPTURE_CROP_TOP + 80, int(h_device * 0.30))
+    y_end = int(h_device * 0.30)
     scroll_fraction = (y_start - y_end) / h_device
 
     logger.debug(

@@ -201,6 +201,10 @@ def log_preview(week: WeeklyProgramming) -> None:
             logger.info("  [%s]", block.name)
             for line in block.content.splitlines():
                 logger.info("      %s", line)
+            if block.instruction.strip():
+                logger.info("    ── coaching note ──")
+                for line in block.instruction.splitlines():
+                    logger.info("      %s", line)
 
 
 # ── Steps ─────────────────────────────────────────────────────────────────────

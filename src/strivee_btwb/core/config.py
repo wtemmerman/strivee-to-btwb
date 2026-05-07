@@ -14,7 +14,7 @@ load_dotenv()
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
-OLLAMA_FORMAT_MODEL: str = os.getenv("OLLAMA_FORMAT_MODEL", "qwen3:1.7b")
+OLLAMA_FORMAT_MODEL: str = os.getenv("OLLAMA_FORMAT_MODEL", "qwen3:8b")
 """Ollama model used for BTWB text formatting (text-only, no image input needed)."""
 
 OLLAMA_TEXT_MODEL: str = os.getenv("OLLAMA_TEXT_MODEL", "qwen3:8b")
@@ -43,11 +43,10 @@ MAX_SCROLLS: int = int(os.getenv("MAX_SCROLLS", "10"))
 SCROLL_DISTANCE: float = float(os.getenv("SCROLL_DISTANCE", "0.3"))
 """Fraction of screen height scrolled per swipe (smaller → more overlap)."""
 
-CAPTURE_CROP_TOP: int = int(os.getenv("CAPTURE_CROP_TOP", "0"))
-"""Pixels to crop from the top of each frame (removes Strivee day-tab header)."""
-
-CAPTURE_CROP_BOTTOM: int = int(os.getenv("CAPTURE_CROP_BOTTOM", "0"))
-"""Pixels to crop from the bottom of each frame (removes nav bar)."""
+DAY_TAB_Y: int = int(os.getenv("DAY_TAB_Y", "0"))
+"""Pixel Y-coordinate of the Strivee day-tab strip used for week/day navigation taps.
+Set to 0 to fall back to a screen-fraction estimate (int(h * 0.21)).
+Tune once per device — 500 works well on a 1080×2400 screen."""
 
 # ── Block filtering ───────────────────────────────────────────────────────────
 
