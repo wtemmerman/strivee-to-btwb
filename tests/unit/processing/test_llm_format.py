@@ -46,6 +46,26 @@ def test_format_for_btwb_falls_back_to_regex_on_exception(mock_chat):
 
 
 @patch("strivee_btwb.processing.llm_format.ollama.chat")
+def test_format_for_btwb_converts_hash_percent_to_at(mock_chat):
+    mock_chat.return_value = _mock_response(
+        "Set 1 - 1 Clean and Jerk #70%\nSet 2 - 1 Clean and Jerk #75%"
+    )
+    block = ProgrammingBlock(name="Clean and Jerk", content="...")
+    result = format_for_btwb(block)
+    assert "#70%" not in result.content
+    assert "@70%" in result.content
+    assert "@75%" in result.content
+
+
+@patch("strivee_btwb.processing.llm_format.ollama.chat")
+def test_format_for_btwb_keeps_hash_on_weights(mock_chat):
+    mock_chat.return_value = _mock_response("AMRAP 12:00\n6 Power clean #50/35kg\n6 Strict HSPU")
+    block = ProgrammingBlock(name="WOD", content="...")
+    result = format_for_btwb(block)
+    assert "#50/35kg" in result.content
+
+
+@patch("strivee_btwb.processing.llm_format.ollama.chat")
 def test_format_for_btwb_uses_configured_model(mock_chat, monkeypatch):
     import strivee_btwb.core.config as cfg
 

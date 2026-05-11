@@ -6,6 +6,7 @@ for entry into BTWB's workout form.
 """
 
 import logging
+import re
 
 import ollama
 
@@ -204,6 +205,10 @@ KEEP — the workout prescription only:
 - Sets, reps, weights, distances, times, movements
 - Work/rest intervals and round structure
 
+FORMAT — apply these substitutions:
+- Percentages of 1RM use @ not #: "#70%" → "@70%", "#83%" → "@83%"
+- Weights keep # as-is: "#50/35kg", "#43kg" stay unchanged
+
 REMOVE everything else, including:
 - Athlete level headers and everything under them: when a block contains sections like "RX 🏋️", "INTER+", "INTER 🏆" (with or without emoji), output ONLY the content of the first/top section. Discard the header line itself and all content that follows the first sub-level heading.
 - Objectives and coaching intent: lines starting with "Objectif", "But", "l'objectif", "On cherche", "On veut", "On reprend", "Semaine X/Y", "Week X/Y", "Progression :"
@@ -261,6 +266,7 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
             think=False,
         )
         result = response["message"]["content"].strip()
+        result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
         if result:
             logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
             return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)
