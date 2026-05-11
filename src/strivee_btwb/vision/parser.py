@@ -52,26 +52,27 @@ Critical example A — warm-up directly followed by an EMF block:
     Block 2 = "EMF 60 : Snatch" (everything from "Build to a 1RM..." through Gamme suggéré...) → KEPT
   WRONG: merging the snatch drills into the EMF 60 : Snatch block. The drills belong to the warm-up only.
 
-Critical example B — two consecutive EMF blocks where the first is an announcement/excluded:
+Critical example B — excluded block with long marketing content followed by a real block:
   Input lines:
-    EMF 60 : Friday Sport Simulation
+    EMF 60 : Friday sport Simulation
     🎯 Classement directement disponible sur :
     https://strivee.app/marketplace/plan/...
-    🥇 Depuis maintenant 5 ans, le FSS est devenu...
-    💪🏻 Quelques conseils pour performer chaque vendredi...
-    EMF 60 : Skill Bar Muscle-up
-    🔱 RX 🔱
-    3 rounds :
-    Max Bar Muscle-up Unbroken
-    Score : total + meilleur set UB
-    Objectif : Montrez ce que 8 semaines de travail ont construit.
+    🥇 Depuis maintenant 5 ans, le FSS est devenu notre rendez-vous hebdomadaire incontournable pour tous les athlètes, coachs et boxes affiliées.
+    ➡️ L'objectif n'a jamais été de simplement viser le haut du classement, mais bien de s'engager chaque semaine dans la pratique du fitness fonctionnel.
+    💪🏻 Quelques conseils pour performer chaque vendredi : anticipez votre stratégie, entourez-vous (avec un juge si possible).
+    EMF 60 - Easy Energy system
+    Bike and Run -
+    5 sets of :
+    2min Bike erg #RPE 3-4
+    2min Run #RPE 3-4
+    ➡️ L'objectif ici est de bouger à basse intensité !
 
   Correct interpretation — TWO separate blocks:
-    Block 1 = "EMF 60 : Friday Sport Simulation" → DROPPED (Sport simulation is excluded)
-    Block 2 = "EMF 60 : Skill Bar Muscle-up", content = "3 rounds :\\nMax Bar Muscle-up Unbroken", instruction = "Score : ...\\nObjectif : ..."
-  WRONG: emitting one block named "EMF 60 : Friday Sport Simulation" and stuffing the Skill Bar Muscle-up workout into its content or instruction. Each "EMF ..." line on its own row is ALWAYS the start of a NEW block — it does NOT matter if the previous block was an announcement, an excluded block, or full of links.
+    Block 1 = "EMF 60 : Friday sport Simulation" → DROPPED (Sport simulation is excluded). It ends the moment "EMF 60 - Easy Energy system" appears — regardless of how long its content was.
+    Block 2 = "EMF 60 - Easy Energy system", content = "Bike and Run -\\n5 sets of :\\n2min Bike erg #RPE 3-4\\n2min Run #RPE 3-4", instruction = "Objectif : bouger à basse intensité !"
+  WRONG: absorbing "EMF 60 - Easy Energy system" into the FSS block's content and dropping it alongside FSS. The block boundary rule is unconditional — it applies even when skipping an excluded block.
 
-RULE OF THUMB: every line starting with "EMF " followed by a number/RX/Rx is its own block title and starts a new block. There is never a case where an "EMF ..." title line should appear inside another block's content or instruction.
+RULE OF THUMB: every line starting with "EMF " followed by a number/RX/Rx is its own block title and starts a new block. This applies unconditionally — even when the preceding block is being skipped. A skipped block ends at the very next EMF/emoji-category title line, just like any non-skipped block. There is never a case where an "EMF ..." title line should appear inside another block's content or instruction.
 
 NOT block titles — these are sub-section headers WITHIN the current block, keep their text as part of the block content:
   • Lines ending with " -"  (e.g. "Warm-up -", "Main Part -", "Cooldown -", "Rest 3 min jogging between sets -")
