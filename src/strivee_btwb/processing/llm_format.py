@@ -196,7 +196,19 @@ Deadlift 5-5-5-5-5 heavy
 
 [next]
 Deadlift 5x5 same weight
-Rest 3 min"""
+Rest 3 min
+
+
+[next]
+Clean and Jerk 5x1
+@80/83/83/83/85%
+Every 2 min
+
+
+[next]
+Back Squat 5x3
+@70/75/80/80/80%
+Rest 2 min"""
 
 _PROMPT = """\
 You are formatting a CrossFit workout block for entry into Beyond The Whiteboard (BTWB).
@@ -267,6 +279,7 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
         )
         result = response["message"]["content"].strip()
         result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
+        result = re.sub(r"\bC\s*&\s*J\b", "Clean & Jerk", result, flags=re.IGNORECASE)
         if result:
             logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
             return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)
