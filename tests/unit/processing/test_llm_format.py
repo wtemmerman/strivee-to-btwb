@@ -3,7 +3,11 @@
 from unittest.mock import MagicMock, patch
 
 from strivee_btwb.core.models import ProgrammingBlock
-from strivee_btwb.processing.llm_format import format_for_btwb
+from strivee_btwb.processing.llm_format import (
+    _ensure_movement_in_content,
+    _movement_from_block_name,
+    format_for_btwb,
+)
 
 
 def _mock_response(text: str) -> MagicMock:
@@ -63,6 +67,91 @@ def test_format_for_btwb_keeps_hash_on_weights(mock_chat):
     block = ProgrammingBlock(name="WOD", content="...")
     result = format_for_btwb(block)
     assert "#50/35kg" in result.content
+
+
+# ---------------------------------------------------------------------------
+# _movement_from_block_name
+# ---------------------------------------------------------------------------
+
+
+def test_movement_from_block_name_colon_separator():
+    assert _movement_from_block_name("EMF 60 : Clean Pull") == "Clean Pull"
+
+
+def test_movement_from_block_name_dash_separator():
+    assert _movement_from_block_name("EMF 60 - Gymnastic Ring Muscle-up") == "Gymnastic Ring Muscle-up"
+
+
+def test_movement_from_block_name_rx_prefix():
+    assert _movement_from_block_name("EMF RX : Gym - Maintenance") == "Gym - Maintenance"
+
+
+def test_movement_from_block_name_no_match_returns_none():
+    assert _movement_from_block_name("Back Squat") is None
+    assert _movement_from_block_name("WOD") is None
+
+
+# ---------------------------------------------------------------------------
+# _ensure_movement_in_content
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_movement_prepends_when_absent():
+    block = ProgrammingBlock(
+        name="EMF 60 : Clean Pull",
+        content="3 reps @100-105% of your 1RM Clean and Jerk",
+        instruction="",
+    )
+    result = _ensure_movement_in_content(block)
+    assert result.content.startswith("Clean Pull\n")
+
+
+def test_ensure_movement_skips_when_already_present():
+    block = ProgrammingBlock(
+        name="EMF 60 : Push Press",
+        content="EMOMx6:\n1 Push press\n#95% of your 5RM",
+        instruction="",
+    )
+    result = _ensure_movement_in_content(block)
+    assert result.content == block.content  # unchanged
+
+
+def test_ensure_movement_case_insensitive_check():
+    block = ProgrammingBlock(
+        name="EMF 60 : Snatch",
+        content="Build to a 1RM squat snatch for the day",
+        instruction="",
+    )
+    result = _ensure_movement_in_content(block)
+    assert result.content == block.content  # "snatch" found case-insensitively
+
+
+def test_ensure_movement_no_emf_prefix_unchanged():
+    block = ProgrammingBlock(name="WOD", content="AMRAP 10:00\n5 Pull-ups", instruction="")
+    result = _ensure_movement_in_content(block)
+    assert result.content == block.content
+
+
+# ---------------------------------------------------------------------------
+# C&J → Clean and Jerk substitution
+# ---------------------------------------------------------------------------
+
+
+@patch("strivee_btwb.processing.llm_format.ollama.chat")
+def test_format_replaces_cj_abbreviation(mock_chat):
+    mock_chat.return_value = _mock_response("1 C&J @85%")
+    block = ProgrammingBlock(name="EMF 60 : Clean and Jerk", content="1 C&J @85%")
+    result = format_for_btwb(block)
+    assert "C&J" not in result.content
+    assert "Clean and Jerk" in result.content
+
+
+@patch("strivee_btwb.processing.llm_format.ollama.chat")
+def test_format_replaces_cj_case_insensitive(mock_chat):
+    mock_chat.return_value = _mock_response("1 c&j @85%")
+    block = ProgrammingBlock(name="EMF 60 : Clean and Jerk", content="1 c&j @85%")
+    result = format_for_btwb(block)
+    assert "Clean and Jerk" in result.content
 
 
 @patch("strivee_btwb.processing.llm_format.ollama.chat")

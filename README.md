@@ -315,6 +315,10 @@ BTWB_EMAIL=your@email.com
 BTWB_PASSWORD=yourpassword
 BTWB_TRACK_ID=156552        # visible in BTWB calendar URL: ?t=<id>
 
+# Required when more than one device/emulator is connected (phone + emulator running at the same time).
+# Without it, adb refuses to run. Find the serial with: adb devices
+ANDROID_SERIAL=0B241FDD4003UN
+
 # Blocks to skip (case-insensitive substring match)
 EXCLUDED_BLOCKS=Hebdomadaire,GROUPE WHATS APP EMF,Warm-up
 ```

@@ -101,8 +101,10 @@ def test_find_element_center_invalid_xml():
 # ---------------------------------------------------------------------------
 
 
-def _fake_proc(stdout: bytes = b"", returncode: int = 0) -> subprocess.CompletedProcess:
-    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout)
+def _fake_proc(
+    stdout: bytes = b"", returncode: int = 0, stderr: bytes = b""
+) -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
 def test_adb_calls_subprocess_run():
@@ -147,6 +149,17 @@ def test_find_strivee_package_raises_when_not_found():
 
     with patch("strivee_btwb.capture.adb._adb", return_value=_fake_proc(b"package:com.other")):
         with pytest.raises(RuntimeError, match="Strivee not found"):
+            find_strivee_package()
+
+
+def test_find_strivee_package_raises_on_multiple_devices():
+    import pytest
+
+    with patch(
+        "strivee_btwb.capture.adb._adb",
+        return_value=_fake_proc(b"", stderr=b"adb: more than one device/emulator"),
+    ):
+        with pytest.raises(RuntimeError, match="Multiple ADB devices"):
             find_strivee_package()
 
 

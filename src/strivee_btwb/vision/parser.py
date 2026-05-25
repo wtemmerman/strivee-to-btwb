@@ -72,7 +72,36 @@ Critical example B — excluded block with long marketing content followed by a 
     Block 2 = "EMF 60 - Easy Energy system", content = "Bike and Run -\\n5 sets of :\\n2min Bike erg #RPE 3-4\\n2min Run #RPE 3-4", instruction = "Objectif : bouger à basse intensité !"
   WRONG: absorbing "EMF 60 - Easy Energy system" into the FSS block's content and dropping it alongside FSS. The block boundary rule is unconditional — it applies even when skipping an excluded block.
 
+Critical example C — navigation tabs mid-text followed by multiple blocks:
+  Input lines:
+    🔥 Warm-up 🔥
+    60 sec hollow hold
+    WOD
+    Box
+    Noter
+    PRs
+    Profil
+    EMF 60 : Back Squat
+    4 sets, Every 2min :
+    3 Back Squat @80% of 1RM
+    Notes : Rester bas, poitrine haute.
+    0 Score
+    EMF RX : Conditioning
+    AMRAP 10:00 :
+    5 Pull-ups
+    10 Push-ups
+    Notes : Unbroken.
+    INTER+ : 4 Pull-ups
+
+  Correct interpretation — THREE blocks:
+    Block 1 = "🔥 Warm-up 🔥" → DROPPED (excluded)
+    Block 2 = "EMF 60 : Back Squat", content = "4 sets, Every 2min :\n3 Back Squat @80% of 1RM", instruction = "Notes : Rester bas, poitrine haute." → KEPT
+    Block 3 = "EMF RX : Conditioning", content = "AMRAP 10:00 :\n5 Pull-ups\n10 Push-ups", instruction = "Notes : Unbroken.\n\nINTER+ : 4 Pull-ups" → KEPT
+  CRITICAL: "WOD / Box / Noter / PRs / Profil" are app navigation tabs captured mid-scroll — they are NOT a section boundary. Ignore them and continue. BOTH Block 2 and Block 3 must appear in the output. "0 Score" is also ignored (it is a UI counter, not content).
+
 RULE OF THUMB: every line starting with "EMF " followed by a number/RX/Rx is its own block title and starts a new block. This applies unconditionally — even when the preceding block is being skipped. A skipped block ends at the very next EMF/emoji-category title line, just like any non-skipped block. There is never a case where an "EMF ..." title line should appear inside another block's content or instruction.
+
+COMPLETENESS RULE — THIS IS MANDATORY: before writing the JSON, scan the entire input text and count every non-excluded block title. Your blocks array MUST contain one entry for each of those titles. If you counted 3 non-excluded block titles, the output must have exactly 3 entries. Missing a block is ALWAYS wrong, even if the block seems confusing or has unusual content.
 
 NOT block titles — these are sub-section headers WITHIN the current block, keep their text as part of the block content:
   • Lines ending with " -"  (e.g. "Warm-up -", "Main Part -", "Cooldown -", "Rest 3 min jogging between sets -")
@@ -87,7 +116,8 @@ NOT block titles — these are sub-section headers WITHIN the current block, kee
     — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
   • Strength (Build to / Find / Work to): ONLY the single goal sentence
     e.g. "Build to a 1RM Squat Snatch for the day"  ← that one line is the entire content
-  • Do NOT include percentages-as-progressions, coaching explanations, or Objectif text in content
+  • A standalone line like "#90% of your 5RM from week 1" or "#95% of your 5RM from week 1" that defines the working load for the block belongs in content — keep it with the prescription
+  • Do NOT include Gamme suggéré ramp-up tables (multiple percentage steps), coaching explanations, or Objectif text in content
 
 ━━━ INSTRUCTION (everything else) ━━━
 "instruction" = all coaching, guidance, and context — NOT the core RX prescription.
@@ -174,7 +204,7 @@ Example with all three levels separate (THIS IS THE COMMON CASE — pay close at
 - Day-tab labels: LUN, MAR, MER, JEU, VEN, SAM, DIM and Mon/Tue/Wed/Thu/Fri/Sat/Sun
 - Lines that are a single number 1-31 (date numbers in the week strip)
 - App header lines: lines that are EXACTLY "EMF 60'" or "EMF 45'" (with a minute/prime symbol ') — NOT block titles like "EMF 60 : Snatch" which have a colon and a name after them
-- Bottom nav tabs: WOD, Box, Noter, PRs, Profil
+- Bottom nav tabs: WOD, Box, Noter, PRs, Profil — these labels can appear anywhere mid-text when the phone's navigation bar is captured mid-scroll; skip them and keep reading, blocks appear after them
 - Lines matching "N Scores", "N Score", "N Media", "N Media" where N is a number
 - Lines starting with http:// or https://
 - Announcements: WhatsApp groups, Zoom/Meet calls, weekly call banners

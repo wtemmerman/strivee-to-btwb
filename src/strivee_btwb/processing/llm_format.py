@@ -259,11 +259,29 @@ Workout block to format:
 {content}"""
 
 
-def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> ProgrammingBlock:
-    """Reformat a block's content for BTWB using a local Ollama model.
+def _movement_from_block_name(name: str) -> str | None:
+    """Extract the movement label from a block title like 'EMF 60 : Clean Pull'."""
+    m = re.match(r"^EMF\s+[\w\s'\"]+[:\-]\s*(.+)$", name, re.IGNORECASE)
+    return m.group(1).strip() if m else None
 
-    Falls back to regex-based prepare_block if the LLM returns empty content.
-    """
+
+def _ensure_movement_in_content(block: ProgrammingBlock) -> ProgrammingBlock:
+    """Prepend the movement name to content when it is only named in the block title."""
+    movement = _movement_from_block_name(block.name)
+    if not movement:
+        return block
+    if movement.lower() in block.content.lower():
+        return block
+    return ProgrammingBlock(
+        name=block.name,
+        content=movement + "\n" + block.content,
+        instruction=block.instruction,
+    )
+
+
+def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> ProgrammingBlock:
+    """Reformat a block's content for BTWB using a local Ollama model."""
+    block = _ensure_movement_in_content(block)
     m = model or config.OLLAMA_FORMAT_MODEL
     logger.debug("[%s] formatting with model '%s'", block.name, m)
     logger.debug("[%s] input (%d chars):\n%s", block.name, len(block.content), block.content)
@@ -279,7 +297,7 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
         )
         result = response["message"]["content"].strip()
         result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
-        result = re.sub(r"\bC\s*&\s*J\b", "Clean & Jerk", result, flags=re.IGNORECASE)
+        result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)
         if result:
             logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
             return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)

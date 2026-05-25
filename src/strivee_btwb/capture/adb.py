@@ -73,6 +73,12 @@ def find_strivee_package(serial: str | None = None) -> str:
     Raises RuntimeError if no Strivee package is found.
     """
     result = _adb(["shell", "pm", "list", "packages"], serial)
+    stderr = result.stderr.decode(errors="replace")
+    if "more than one device" in stderr:
+        raise RuntimeError(
+            "Multiple ADB devices connected — set ANDROID_SERIAL in .env to pick one "
+            "(run 'adb devices' to see serials)."
+        )
     for line in result.stdout.decode(errors="replace").splitlines():
         pkg = line.removeprefix("package:").strip()
         if "strivee" in pkg.lower():
