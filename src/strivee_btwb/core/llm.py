@@ -34,37 +34,16 @@ class LLMUnavailableError(RuntimeError):
     """
 
 
-# Exception types that always mean "the service/model is unavailable", never a
-# content problem.
-_UNAVAILABLE_EXC: tuple[type[Exception], ...] = (
+# Transient connection/transport failures worth retrying. These are matched by
+# TYPE (not by message text), so classification never drifts with Ollama/httpx
+# wording. A successful ollama.chat() call never raises — any exception means we
+# got no usable answer, so every failure ultimately becomes LLMUnavailableError.
+_TRANSIENT_EXC: tuple[type[Exception], ...] = (
     ConnectionError,
     httpx.ConnectError,
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
-    ollama.RequestError,
 )
-
-# Substrings that mark an ``ollama.ResponseError`` as an availability problem
-# (e.g. "model 'qwen3:8b' not found", "connection refused").
-_UNAVAILABLE_MARKERS: tuple[str, ...] = (
-    "connection",
-    "connect",
-    "refused",
-    "not found",
-    "no such host",
-    "timeout",
-    "unavailable",
-)
-
-
-def _is_unavailable(exc: Exception) -> bool:
-    """Classify *exc* as an availability failure (True) or a content problem (False)."""
-    if isinstance(exc, _UNAVAILABLE_EXC):
-        return True
-    if isinstance(exc, ollama.ResponseError):
-        msg = str(exc).lower()
-        return any(marker in msg for marker in _UNAVAILABLE_MARKERS)
-    return False
 
 
 def _chat(
@@ -75,10 +54,13 @@ def _chat(
     retries: int = 2,
     backoff_s: float = 1.0,
 ) -> str:
-    """Send *prompt* to *model* and return the raw message content.
+    """Send *prompt* to *model* and return the message content (``""`` if empty).
 
-    Retries transient availability failures up to *retries* times before raising
-    :class:`LLMUnavailableError`. Non-availability errors propagate immediately.
+    Either returns a string or raises :class:`LLMUnavailableError`. Transient
+    connection failures are retried up to *retries* times; any other failure of
+    the call (server error, model not pulled, malformed response) is wrapped in
+    :class:`LLMUnavailableError` without retry — we never guess infra-vs-content
+    from the message text, and we never silently return a degraded result.
     """
     kwargs: dict = {
         "model": model,
@@ -93,16 +75,15 @@ def _chat(
     for attempt in range(retries + 1):
         try:
             response = ollama.chat(**kwargs)
-            return response["message"]["content"]
-        except Exception as exc:
-            # Re-classified below: availability failures retry/raise LLMUnavailableError,
-            # everything else propagates unchanged.
+            content = response["message"]["content"]
+            # Ollama types content as Optional[str]; a thinking-only/empty turn
+            # yields None. Normalise to "" so callers can treat it as empty.
+            return content if content is not None else ""
+        except _TRANSIENT_EXC as exc:
             last_exc = exc
-            if not _is_unavailable(exc):
-                raise
             if attempt < retries:
                 logger.warning(
-                    "Ollama unavailable (%s) — retry %d/%d in %.0fs",
+                    "Ollama unreachable (%s) — retry %d/%d in %.0fs",
                     exc,
                     attempt + 1,
                     retries,
@@ -111,9 +92,15 @@ def _chat(
                 time.sleep(backoff_s)
                 continue
             break
+        except Exception as exc:
+            # Non-transient failure of the call (HTTP 5xx, model not pulled, bad
+            # response shape). Retrying won't help; fail loud so callers abort
+            # rather than fall back to unformatted content.
+            last_exc = exc
+            break
 
     raise LLMUnavailableError(
-        f"Ollama is unreachable or model '{model}' is unavailable ({last_exc}). "
+        f"Ollama call failed for model '{model}' ({last_exc}). "
         f"Start Ollama ('ollama serve') and pull the model ('ollama pull {model}')."
     ) from last_exc
 

@@ -58,9 +58,9 @@ def test_connection_error_raises_unavailable_after_retries():
             "strivee_btwb.core.llm.ollama.chat",
             side_effect=httpx.ConnectError("connection refused"),
         ) as mock_chat:
-            with pytest.raises(LLMUnavailableError, match="unreachable"):
+            with pytest.raises(LLMUnavailableError, match="Ollama call failed"):
                 chat_text("p", "qwen3:8b", retries=2)
-    # initial attempt + 2 retries
+    # initial attempt + 2 retries (transient connection error is retried)
     assert mock_chat.call_count == 3
 
 
@@ -88,18 +88,30 @@ def test_retry_then_success_returns_content():
 
 
 # ---------------------------------------------------------------------------
-# Content problems propagate as their own exception (NOT LLMUnavailableError)
+# Any failed call → LLMUnavailableError (never silently degraded). A successful
+# call never raises, so a non-transient exception means no usable answer.
 # ---------------------------------------------------------------------------
 
 
-def test_non_availability_response_error_propagates_unchanged():
-    err = ollama.ResponseError("invalid role specified in the request")
-    with patch("strivee_btwb.core.llm.ollama.chat", side_effect=err):
-        with pytest.raises(ollama.ResponseError):
-            chat_text("p", "m")
+def test_response_error_becomes_unavailable_without_retry():
+    # A server-side error (HTTP 5xx, model not pulled, bad request) is not a
+    # transient connection error: fail loud immediately, do not retry.
+    err = ollama.ResponseError("internal server error")
+    with patch("strivee_btwb.core.llm.time.sleep") as mock_sleep:
+        with patch("strivee_btwb.core.llm.ollama.chat", side_effect=err) as mock_chat:
+            with pytest.raises(LLMUnavailableError):
+                chat_text("p", "m")
+    assert mock_chat.call_count == 1  # no retry for non-transient failures
+    mock_sleep.assert_not_called()
 
 
-def test_generic_error_propagates_unchanged():
+def test_generic_error_becomes_unavailable():
     with patch("strivee_btwb.core.llm.ollama.chat", side_effect=KeyError("message")):
-        with pytest.raises(KeyError):
+        with pytest.raises(LLMUnavailableError):
             chat_text("p", "m")
+
+
+def test_none_content_returns_empty_string():
+    # A thinking-only / empty assistant turn yields content=None; normalise to "".
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value={"message": {"content": None}}):
+        assert chat_text("p", "m") == ""

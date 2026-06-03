@@ -9,7 +9,7 @@ import logging
 import re
 
 from ..core import config
-from ..core.llm import LLMUnavailableError, chat_text
+from ..core.llm import chat_text
 from ..core.models import ProgrammingBlock
 from ..prompts import load
 
@@ -45,16 +45,11 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
 
     prompt = _PROMPT.format(examples=_BTWB_EXAMPLES, content=block.content)
     logger.debug("[%s] prompt (%d chars):\n%s", block.name, len(prompt), prompt)
-    try:
-        result = chat_text(prompt, m).strip()
-    except LLMUnavailableError:
-        # Infrastructure failure: do NOT silently fall back to unformatted content,
-        # which would push raw Strivee text to BTWB. Abort so the caller can stop.
-        raise
-    except Exception as exc:
-        # Content problem (not infrastructure) — degrade gracefully to the original.
-        logger.warning("[%s] LLM format error (%s) — returning original content", block.name, exc)
-        return block
+    # chat_text returns a string or raises LLMUnavailableError. We deliberately do
+    # NOT catch that here: a failed model call must abort the run, not silently
+    # post raw Strivee text to BTWB. A *successful* but empty response is handled
+    # by the `if result:` check below (degrade to the original parsed content).
+    result = chat_text(prompt, m).strip()
 
     result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
     result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)

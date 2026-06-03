@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from strivee_btwb.core.llm import LLMUnavailableError
 from strivee_btwb.core.models import ProgrammingBlock
 from strivee_btwb.processing.llm_format import (
     _ensure_movement_in_content,
@@ -42,11 +45,13 @@ def test_format_for_btwb_falls_back_to_original_on_empty(mock_chat, monkeypatch)
 
 
 @patch("strivee_btwb.core.llm.ollama.chat")
-def test_format_for_btwb_falls_back_to_regex_on_exception(mock_chat):
+def test_format_for_btwb_raises_when_ollama_unavailable(mock_chat):
+    # A failed model call must abort (fail loud), NOT silently return the raw
+    # unformatted block — otherwise raw Strivee text gets posted to BTWB.
     mock_chat.side_effect = RuntimeError("Ollama not running")
     block = ProgrammingBlock(name="WOD", content="21-15-9\nThrusters\nPull-ups")
-    result = format_for_btwb(block)
-    assert "21-15-9" in result.content
+    with pytest.raises(LLMUnavailableError):
+        format_for_btwb(block)
 
 
 @patch("strivee_btwb.core.llm.ollama.chat")
