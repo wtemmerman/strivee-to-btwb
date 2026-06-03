@@ -22,6 +22,7 @@ from .capture import (
     scroll_to_top,
 )
 from .core import config
+from .core.llm import LLMUnavailableError
 from .core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from .processing import format_for_btwb
 from .vision import extract_day_programming_from_text
@@ -298,6 +299,11 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
                 logger.info("%s cached -> %s", day_short, path.name)
             else:
                 logger.warning("%s: no blocks found after fallback — skipping", day_short)
+        except LLMUnavailableError as e:
+            # Systemic failure — every day would fail the same way. Abort loudly
+            # rather than logging one error per day and reporting "Analysis done".
+            logger.error("%s", e)
+            sys.exit(1)
         except Exception as e:
             logger.error("%s: analysis failed — %s", day_short, e)
 
@@ -310,7 +316,11 @@ def do_preview(days: list[str], ws: date | None = None) -> None:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
     week = clean_week(week)
-    week = llm_format_week(week)
+    try:
+        week = llm_format_week(week)
+    except LLMUnavailableError as e:
+        logger.error("%s", e)
+        sys.exit(1)
     log_summary(week)
     log_preview(week)
 
@@ -321,7 +331,12 @@ def do_post(days: list[str], yes: bool, headless: bool, ws: date | None = None) 
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
     week = clean_week(week)
-    week = llm_format_week(week)
+    try:
+        week = llm_format_week(week)
+    except LLMUnavailableError as e:
+        # Abort before opening a browser / posting anything to BTWB.
+        logger.error("%s", e)
+        sys.exit(1)
     log_summary(week)
 
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:

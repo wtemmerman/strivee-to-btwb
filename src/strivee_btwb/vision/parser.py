@@ -12,10 +12,10 @@ import json
 import logging
 import re
 
-import ollama
 from json_repair import repair_json
 
 from ..core import config
+from ..core.llm import chat_text
 from ..core.models import DayProgramming, ProgrammingBlock
 
 logger = logging.getLogger("vision")
@@ -321,6 +321,7 @@ def extract_day_programming_from_text(
 
     Raises:
         ValueError: If the model returns output that cannot be parsed as JSON.
+        LLMUnavailableError: If Ollama is unreachable or the model is missing.
     """
     model = model or config.OLLAMA_TEXT_MODEL
     excluded_str = ", ".join(config.EXCLUDED_BLOCKS) if config.EXCLUDED_BLOCKS else "none"
@@ -333,13 +334,7 @@ def extract_day_programming_from_text(
     logger.info("Parsing %s from text dump (%d chars) with %s", day_label, len(text), model)
 
     logger.debug("%s: prompt:\n%s", day_label, prompt)
-    response = ollama.chat(
-        model=model,
-        think=False,  # suppress qwen3 thinking tokens that produce empty visible output
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = response["message"]["content"]
+    raw = chat_text(prompt, model)
     logger.debug("%s: raw text-parse response:\n%s", day_label, raw)
 
     if not raw.strip():

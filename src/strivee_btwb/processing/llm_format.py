@@ -8,9 +8,8 @@ for entry into BTWB's workout form.
 import logging
 import re
 
-import ollama
-
 from ..core import config
+from ..core.llm import LLMUnavailableError, chat_text
 from ..core.models import ProgrammingBlock
 
 logger = logging.getLogger("processing")
@@ -289,19 +288,20 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
     prompt = _PROMPT.format(examples=_BTWB_EXAMPLES, content=block.content)
     logger.debug("[%s] prompt (%d chars):\n%s", block.name, len(prompt), prompt)
     try:
-        response = ollama.chat(
-            model=m,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0},
-            think=False,
-        )
-        result = response["message"]["content"].strip()
-        result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
-        result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)
-        if result:
-            logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
-            return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)
-        logger.warning("[%s] LLM returned empty — returning original content", block.name)
+        result = chat_text(prompt, m).strip()
+    except LLMUnavailableError:
+        # Infrastructure failure: do NOT silently fall back to unformatted content,
+        # which would push raw Strivee text to BTWB. Abort so the caller can stop.
+        raise
     except Exception as exc:
+        # Content problem (not infrastructure) — degrade gracefully to the original.
         logger.warning("[%s] LLM format error (%s) — returning original content", block.name, exc)
+        return block
+
+    result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
+    result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)
+    if result:
+        logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
+        return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)
+    logger.warning("[%s] LLM returned empty — returning original content", block.name)
     return block

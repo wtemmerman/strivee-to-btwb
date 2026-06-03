@@ -136,7 +136,7 @@ def test_extract_from_text_parses_mocked_response(monkeypatch):
             )
         }
     }
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
 
     result = extract_day_programming_from_text("some text", "Mon", date(2026, 4, 27))
@@ -162,7 +162,7 @@ def test_extract_from_text_drops_excluded_blocks(monkeypatch):
             )
         }
     }
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Warm-up"])
 
     result = extract_day_programming_from_text("some text", "Mon", date(2026, 4, 27))
@@ -177,7 +177,7 @@ def test_extract_from_text_empty_response_returns_zero_blocks(monkeypatch):
     from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     monkeypatch.setattr(
-        "strivee_btwb.vision.parser.ollama.chat",
+        "strivee_btwb.core.llm.ollama.chat",
         lambda **_: {"message": {"content": ""}},
     )
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
@@ -194,7 +194,7 @@ def test_extract_from_text_raises_on_unparseable_response(monkeypatch):
     from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     monkeypatch.setattr(
-        "strivee_btwb.vision.parser.ollama.chat",
+        "strivee_btwb.core.llm.ollama.chat",
         lambda **_: {"message": {"content": "sorry, I cannot parse this"}},
     )
     with pytest.raises(ValueError, match="Text parsing failed"):
@@ -210,7 +210,7 @@ def test_extract_from_text_normalises_list_response(monkeypatch):
     fake_response = {
         "message": {"content": '[{"name": "WOD", "content": "AMRAP 12", "instruction": ""}]'}
     }
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
 
     result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
@@ -225,7 +225,7 @@ def test_extract_from_text_normalises_name_as_key_format(monkeypatch):
     from strivee_btwb.vision.parser import extract_day_programming_from_text
 
     fake_response = {"message": {"content": '{"Back Squat": "5x5 @ 80%", "WOD": "21-15-9"}'}}
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
 
     result = extract_day_programming_from_text("text", "Fri", date(2026, 4, 25))
@@ -246,7 +246,7 @@ def test_extract_from_text_normalises_wrapped_list_format(monkeypatch):
             )
         }
     }
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
 
     result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
@@ -268,7 +268,7 @@ def test_extract_from_text_excluded_blocks_logged(monkeypatch, caplog):
             '{"name": "WOD", "content": "21-15-9", "instruction": ""}]}'
         }
     }
-    monkeypatch.setattr("strivee_btwb.vision.parser.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Warm-up"])
 
     with caplog.at_level(logging.DEBUG, logger="vision"):
