@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+# Bump when the parsed-cache JSON shape or the parser semantics change, so that
+# preview/post warn instead of silently consuming output from an older parser.
+CACHE_SCHEMA_VERSION = 1
+
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -60,6 +64,7 @@ def save_day(day: DayProgramming, ws: date) -> Path:
     path.write_text(
         json.dumps(
             {
+                "schema_version": CACHE_SCHEMA_VERSION,
                 "date": day.date.isoformat(),
                 "day_label": day.day_label,
                 "blocks": [
@@ -84,6 +89,15 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
             logger.warning("No cached analysis for %s", label)
             continue
         data = json.loads(matches[-1].read_text())
+        version = data.get("schema_version")
+        if version != CACHE_SCHEMA_VERSION:
+            logger.warning(
+                "Cache %s has schema_version %r (expected %d) — it may be stale; "
+                "re-run 'strivee-btwb analyse' if results look wrong.",
+                matches[-1].name,
+                version,
+                CACHE_SCHEMA_VERSION,
+            )
         logger.info("Loaded cache: %s", matches[-1].name)
         parsed.append(
             DayProgramming(

@@ -10,6 +10,7 @@ import pytest
 
 from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from strivee_btwb.pipeline import (
+    CACHE_SCHEMA_VERSION,
     clean_week,
     do_analyse,
     do_capture,
@@ -102,6 +103,32 @@ def test_load_days_warns_on_missing(tmp_path, monkeypatch, caplog):
 
     assert week.days == []
     assert "Mon" in caplog.text
+
+
+def test_save_day_writes_schema_version(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    path = save_day(_make_day(), FIXTURE_WEEK)
+    assert json.loads(path.read_text())["schema_version"] == CACHE_SCHEMA_VERSION
+
+
+def test_load_days_warns_on_stale_schema(tmp_path, monkeypatch, caplog):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    # A legacy cache written before versioning existed (no schema_version key).
+    (folder / "parsed_2026-04-27_Mon.json").write_text(
+        json.dumps({"date": "2026-04-27", "day_label": "Mon", "blocks": []})
+    )
+
+    with caplog.at_level(logging.WARNING):
+        week = load_days(["Mon"], FIXTURE_WEEK)
+
+    assert len(week.days) == 1  # still loaded, just flagged
+    assert "stale" in caplog.text.lower() or "schema_version" in caplog.text
 
 
 # ── clean_week ────────────────────────────────────────────────────────────────
