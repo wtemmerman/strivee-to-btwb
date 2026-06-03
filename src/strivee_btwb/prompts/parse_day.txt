@@ -95,12 +95,26 @@ NOT block titles — these are sub-section headers WITHIN the current block, kee
 "content" = the minimal statement of what to DO for the RX 🔱 level ONLY, copied exactly:
   • Never include the block title line itself in content
   • If the block has multiple difficulty levels (RX + INTER+ and/or INTER), content contains ONLY the RX prescription. NEVER concatenate RX with INTER+ or INTER content. The INTER+ / INTER prescriptions go to instruction (see DIFFICULTY LEVELS section).
-  • Conditioning (AMRAP/EMOM/For Time/Run/Swim sets): time domain + movements + distances + reps + weights — for the RX section only
+  • Conditioning AND fixed-format strength — the FORMAT line is the time-domain / interval structure and ALWAYS stays in content. This covers "AMRAP", "EMOM", "EMOMx6", "E2MOM", "For Time", "N rounds", "N sets of", "N sets, Every Xmin", "Start Every Xmin", "Every Xmin x N", and Run/Swim sets. Keep that format line together with the movements, distances, reps and weights — for the RX section only. NEVER move an "EMOM" / "N sets of" / "Start Every" / "AMRAP" line into instruction; without it the workout has no format.
     — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
-  • Strength (Build to / Find / Work to): ONLY the single goal sentence
+  • Open-ended strength ONLY (Build to / Find / Work to a max): content is the single goal sentence
     e.g. "Build to a 1RM Squat Snatch for the day"  ← that one line is the entire content
-  • A standalone line like "#90% of your 5RM from week 1" or "#95% of your 5RM from week 1" that defines the working load for the block belongs in content — keep it with the prescription
+    This single-line rule does NOT apply to fixed-format strength (sets × reps @ %, or on an EMOM/interval) — keep its full format + reps + load in content.
+  • A standalone working-load line like "#100% of your 5RM from week 1" or "#95% of your 5RM from week 1" belongs in content EVEN WHEN it appears BEFORE the format line — keep it at the top of content with the prescription, never in instruction.
   • Do NOT include Gamme suggéré ramp-up tables (multiple percentage steps), coaching explanations, or Objectif text in content
+
+Example — working-load line FIRST, then EMOM format (keep the whole prescription in content):
+  Input lines:
+    EMF 60 : Push Press
+    #100% of your 5RM from week 1
+    EMOMx6 :
+    1 Push press
+    Notes : Dip court et vertical...
+  Correct interpretation:
+    content = the load line, then the EMOM format line, then the movement+reps, in order:
+      "#100% of your 5RM from week 1", then "EMOMx6 :", then "1 Push press"
+    instruction = "Notes : Dip court et vertical..."
+  WRONG: content = "1 Push press" alone, with "#100% of your 5RM from week 1" and "EMOMx6 :" pushed to instruction — that discards the working load and the workout format. The EMOM line MUST stay in content; a leading "#...% of 5RM" load line is part of the prescription, not a coaching note.
 
 ━━━ INSTRUCTION (everything else) ━━━
 "instruction" = all coaching, guidance, and context — NOT the core RX prescription.
