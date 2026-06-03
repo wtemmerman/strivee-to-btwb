@@ -1,4 +1,4 @@
-.PHONY: install dev-install test test-cov test-watch lint format start help setup-python
+.PHONY: install dev-install test test-cov test-watch lint format typecheck check start help setup-python
 
 help:
 	@echo "Available Commands"
@@ -17,6 +17,8 @@ help:
 	@echo "Quality:"
 	@echo "  make lint           - Run linting checks"
 	@echo "  make format         - Format code"
+	@echo "  make typecheck      - Run mypy static type checks"
+	@echo "  make check          - Run lint + typecheck + tests (what CI runs)"
 	@echo ""
 	@echo "Cleaning:"
 	@echo "  make clean          - Remove __pycache__ and .pyc files"
@@ -55,6 +57,13 @@ format:
 	uv run ruff format src tests
 	@echo "Organizing imports with ruff..."
 	uv run ruff check --select I --fix src tests
+
+typecheck:
+	@echo "Running mypy..."
+	uv run mypy
+
+check: lint typecheck test
+	@echo "All checks passed."
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -r {} +

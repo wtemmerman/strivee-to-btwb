@@ -1,0 +1,11 @@
+# Fast pre-commit checks. Type checking (mypy) and tests run in CI / `make check`
+# to keep commits quick. Install with: uv run pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.2
+    hooks:
+      - id: ruff
+        name: ruff (lint + autofix)
+        args: [--fix]
+      - id: ruff-format
+        name: ruff (format)

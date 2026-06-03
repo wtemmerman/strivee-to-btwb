@@ -4,7 +4,7 @@ Automates the weekly transfer of CrossFit programming from the **Strivee** Andro
 
 ## Coverage
 
-![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen?style=flat&logo=pytest)
+![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen?style=flat&logo=pytest)
 
 > Run `make test-cov` to regenerate with an HTML report in `htmlcov/`.
 
@@ -385,13 +385,25 @@ make test             # run all tests
 make test-cov         # tests with HTML coverage report (htmlcov/)
 make lint             # ruff lint check
 make format           # ruff format + import sort
+make typecheck        # mypy static type checks
+make check            # lint + typecheck + tests (what CI runs)
 ```
+
+Optional git hooks run ruff (lint + format) on each commit:
+
+```bash
+uv run pre-commit install
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs lint, format-check, mypy, and
+tests on every push to `main` and on pull requests.
 
 ### Project Structure
 
 ```
 src/strivee_btwb/
-  core/           config, logging setup, data models
+  core/           config, logging, data models, Ollama wrapper (llm.py)
+  prompts/        LLM prompt templates as .txt files
   capture/        ADB UI accessibility text dump (adb.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
