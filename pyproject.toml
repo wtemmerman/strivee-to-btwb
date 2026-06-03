@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "ollama>=0.4.0",
+    "httpx>=0.27.0",  # used directly in core/llm.py for connection-error typing
     "json-repair>=0.28.0",
     "Pillow>=11.0.0",
     "playwright>=1.44.0",

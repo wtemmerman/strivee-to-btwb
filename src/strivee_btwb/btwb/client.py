@@ -189,7 +189,8 @@ def _post_day(page: Page | None, day: DayProgramming, dry_run: bool) -> list[dic
             logger.info("[dry-run] Would submit '%s': %s...", block.name, block.content[:60])
         return [_planned_result(b, date_str) for b in day.blocks]
 
-    assert page is not None, "a live page is required when not in dry-run"
+    if page is None:  # invariant: the non-dry-run path always gets a live page
+        raise BTWBError("internal error: _post_day called without a page (dry_run=False)")
     existing = _fetch_existing_block_names(page, date_str)
     if existing:
         logger.info("Already on BTWB: %s", ", ".join(sorted(existing)))
