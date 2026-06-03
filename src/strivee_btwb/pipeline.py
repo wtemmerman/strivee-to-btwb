@@ -25,7 +25,7 @@ from .core import config
 from .core.llm import LLMUnavailableError
 from .core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from .processing import format_for_btwb
-from .vision import extract_day_programming_from_text
+from .vision import count_block_titles, extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -277,24 +277,40 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
     logger.info("Starting text analysis with model '%s'", config.OLLAMA_TEXT_MODEL)
     for day_short, text in text_captures.items():
         try:
+            expected = len(count_block_titles(text))
             day_prog = extract_day_programming_from_text(
                 text=text,
                 day_label=day_short,
                 target_date=short_to_date(day_short, ws),
             )
-            if not day_prog.blocks and config.OLLAMA_FALLBACK_TEXT_MODEL:
+            # Retry with the fallback model when the primary returns nothing or
+            # fewer blocks than the source has EMF titles (a likely dropped block).
+            short = len(day_prog.blocks) < expected
+            if (not day_prog.blocks or short) and config.OLLAMA_FALLBACK_TEXT_MODEL:
                 logger.warning(
-                    "%s: no blocks from primary model — retrying with fallback '%s'",
+                    "%s: primary model returned %d/%d block(s) — retrying with fallback '%s'",
                     day_short,
+                    len(day_prog.blocks),
+                    expected,
                     config.OLLAMA_FALLBACK_TEXT_MODEL,
                 )
-                day_prog = extract_day_programming_from_text(
+                fallback = extract_day_programming_from_text(
                     text=text,
                     day_label=day_short,
                     target_date=short_to_date(day_short, ws),
                     model=config.OLLAMA_FALLBACK_TEXT_MODEL,
                 )
+                if len(fallback.blocks) > len(day_prog.blocks):
+                    day_prog = fallback
             if day_prog.blocks:
+                if len(day_prog.blocks) < expected:
+                    logger.warning(
+                        "%s: cached %d block(s) but source has %d EMF title(s) — "
+                        "review for a dropped block",
+                        day_short,
+                        len(day_prog.blocks),
+                        expected,
+                    )
                 path = save_day(day_prog, ws)
                 logger.info("%s cached -> %s", day_short, path.name)
             else:

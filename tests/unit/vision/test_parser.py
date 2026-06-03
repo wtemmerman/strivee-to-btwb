@@ -4,7 +4,12 @@ import json
 
 import pytest
 
-from strivee_btwb.vision.parser import _extract_json, _is_excluded, _sanitize_json_strings
+from strivee_btwb.vision.parser import (
+    _extract_json,
+    _is_excluded,
+    _sanitize_json_strings,
+    count_block_titles,
+)
 
 # ---------------------------------------------------------------------------
 # _sanitize_json_strings
@@ -115,6 +120,68 @@ def test_is_excluded_empty_list(monkeypatch):
 
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
     assert not _is_excluded("Anything")
+
+
+# ---------------------------------------------------------------------------
+# count_block_titles
+# ---------------------------------------------------------------------------
+
+
+def test_count_block_titles_counts_emf_titles(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+    text = "EMF 60 : Snatch\nBuild to 1RM\nEMF RX - Optional RUN\n5k easy"
+    assert count_block_titles(text) == ["EMF 60 : Snatch", "EMF RX - Optional RUN"]
+
+
+def test_count_block_titles_ignores_minute_header(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+    # "EMF 60'" is the app header (prime symbol, no separator) — not a block title.
+    text = "EMF 60'\nEMF 60 : Back Squat\n4 sets"
+    assert count_block_titles(text) == ["EMF 60 : Back Squat"]
+
+
+def test_count_block_titles_skips_excluded(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Sport simulation"])
+    text = "EMF 60 : Friday sport Simulation\nblah\nEMF 60 : Back Squat\n4 sets"
+    assert count_block_titles(text) == ["EMF 60 : Back Squat"]
+
+
+def test_count_block_titles_ignores_subsection_and_emoji_lines(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+    text = "Main Part -\n📌 Session\n🔱 Rx\nEMF 60 : Clean\n1 rep"
+    assert count_block_titles(text) == ["EMF 60 : Clean"]
+
+
+def test_extract_warns_when_blocks_dropped(monkeypatch, caplog):
+    import logging
+    from datetime import date
+
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    # Source has two EMF titles, but the model only returns one block.
+    source = "EMF 60 : Snatch\nBuild to 1RM\nEMF RX : Conditioning\nAMRAP 10"
+    fake_response = {
+        "message": {
+            "content": '{"blocks": [{"name": "EMF 60 : Snatch", "content": "Build to 1RM"}]}'
+        }
+    }
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake_response)
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+
+    with caplog.at_level(logging.WARNING, logger="vision"):
+        result = extract_day_programming_from_text(source, "Mon", date(2026, 4, 27))
+
+    assert len(result.blocks) == 1
+    assert any("may have dropped a block" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

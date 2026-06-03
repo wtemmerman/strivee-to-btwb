@@ -302,6 +302,30 @@ def _is_excluded(name: str) -> bool:
     return any(ex.lower() in name_lower for ex in config.EXCLUDED_BLOCKS)
 
 
+# A real "EMF ..." block title starts with EMF, a level (number / RX), and has a
+# name after a ':' or '-' separator. This deliberately excludes the app header
+# lines "EMF 60'" / "EMF 45'" (a minute/prime symbol, no separator).
+_EMF_TITLE_RE = re.compile(r"^EMF\s+(?:\d+|RX)\b.*[:\-]", re.IGNORECASE)
+
+
+def count_block_titles(text: str) -> list[str]:
+    """List the non-excluded ``EMF ...`` block titles found in *text*.
+
+    This is a deterministic lower bound on how many blocks the model should
+    return: it is instructed to emit one entry per title, so a shorter result
+    means a block was dropped. Emoji-category titles are intentionally NOT
+    counted — they are hard to tell apart from difficulty headers (🔱/🪖/🎖️)
+    and sub-section markers (📌) without the model's judgement, and are almost
+    always excluded blocks anyway. Using only EMF titles keeps this a
+    false-positive-free signal.
+    """
+    return [
+        s
+        for line in text.splitlines()
+        if (s := line.strip()) and _EMF_TITLE_RE.match(s) and not _is_excluded(s)
+    ]
+
+
 def extract_day_programming_from_text(
     text: str,
     day_label: str,
@@ -367,5 +391,17 @@ def extract_day_programming_from_text(
     excluded_count = len(all_blocks) - len(blocks)
     if excluded_count:
         logger.debug("%s: %d block(s) dropped by exclusion filter", day_label, excluded_count)
+
+    expected_titles = count_block_titles(text)
+    if len(blocks) < len(expected_titles):
+        logger.warning(
+            "%s: extracted %d block(s) but the source has %d EMF block title(s) — "
+            "the model may have dropped a block. Source titles: %s",
+            day_label,
+            len(blocks),
+            len(expected_titles),
+            expected_titles,
+        )
+
     logger.info("%s: %d block(s) extracted", day_label, len(blocks))
     return DayProgramming(date=target_date, day_label=day_label, blocks=blocks)
