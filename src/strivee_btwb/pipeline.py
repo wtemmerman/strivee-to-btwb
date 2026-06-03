@@ -22,13 +22,18 @@ from .capture import (
     scroll_to_top,
 )
 from .core import config
+from .core.llm import LLMUnavailableError
 from .core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from .processing import format_for_btwb
-from .vision import extract_day_programming_from_text
+from .vision import count_block_titles, extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+# Bump when the parsed-cache JSON shape or the parser semantics change, so that
+# preview/post warn instead of silently consuming output from an older parser.
+CACHE_SCHEMA_VERSION = 1
 
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
@@ -59,6 +64,7 @@ def save_day(day: DayProgramming, ws: date) -> Path:
     path.write_text(
         json.dumps(
             {
+                "schema_version": CACHE_SCHEMA_VERSION,
                 "date": day.date.isoformat(),
                 "day_label": day.day_label,
                 "blocks": [
@@ -83,9 +89,17 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
             logger.warning("No cached analysis for %s", label)
             continue
         data = json.loads(matches[-1].read_text())
-        logger.info("Loaded cache: %s", matches[-1].name)
-        parsed.append(
-            DayProgramming(
+        version = data.get("schema_version")
+        if version != CACHE_SCHEMA_VERSION:
+            logger.warning(
+                "Cache %s has schema_version %r (expected %d) — it may be stale; "
+                "re-run 'strivee-btwb analyse' if results look wrong.",
+                matches[-1].name,
+                version,
+                CACHE_SCHEMA_VERSION,
+            )
+        try:
+            day = DayProgramming(
                 date=date.fromisoformat(data["date"]),
                 day_label=data["day_label"],
                 blocks=[
@@ -95,7 +109,17 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
                     for b in data["blocks"]
                 ],
             )
-        )
+        except (KeyError, ValueError) as e:
+            # Malformed / older-shape / empty-name cache: skip this day with a clear
+            # message rather than crashing the whole preview/post with a traceback.
+            logger.warning(
+                "Skipping unreadable cache %s (%s) — re-run: strivee-btwb analyse",
+                matches[-1].name,
+                e,
+            )
+            continue
+        logger.info("Loaded cache: %s", matches[-1].name)
+        parsed.append(day)
     return WeeklyProgramming(week_start=ws, days=parsed)
 
 
@@ -159,17 +183,13 @@ def clean_week(week: WeeklyProgramming) -> WeeklyProgramming:
                 merged_instruction = "\n".join(
                     filter(None, [merged[-1].instruction, block.instruction])
                 )
-                merged[-1] = ProgrammingBlock(
-                    name=merged[-1].name,
+                merged[-1] = merged[-1].replace(
                     content=merged[-1].content + "\n" + block.content,
                     instruction=merged_instruction,
                 )
             else:
-                merged.append(
-                    ProgrammingBlock(
-                        name=block.name, content=block.content, instruction=block.instruction
-                    )
-                )
+                # Blocks are immutable, so the original can be shared as-is.
+                merged.append(block)
         if merged:
             cleaned_days.append(
                 DayProgramming(date=day.date, day_label=day.day_label, blocks=merged)
@@ -274,34 +294,57 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
         sys.exit(1)
 
     logger.info("Starting text analysis with model '%s'", config.OLLAMA_TEXT_MODEL)
+    saved = 0
+    errors = 0
     for day_short, text in text_captures.items():
         try:
+            expected = len(count_block_titles(text))
             day_prog = extract_day_programming_from_text(
                 text=text,
                 day_label=day_short,
                 target_date=short_to_date(day_short, ws),
             )
-            if not day_prog.blocks and config.OLLAMA_FALLBACK_TEXT_MODEL:
+            # Retry with the fallback model when the primary returns nothing or
+            # fewer blocks than the source has EMF titles (a likely dropped block).
+            # extract_day_programming_from_text already warns about the shortfall.
+            short = len(day_prog.blocks) < expected
+            if (not day_prog.blocks or short) and config.OLLAMA_FALLBACK_TEXT_MODEL:
                 logger.warning(
-                    "%s: no blocks from primary model — retrying with fallback '%s'",
+                    "%s: primary model returned %d/%d block(s) — retrying with fallback '%s'",
                     day_short,
+                    len(day_prog.blocks),
+                    expected,
                     config.OLLAMA_FALLBACK_TEXT_MODEL,
                 )
-                day_prog = extract_day_programming_from_text(
+                fallback = extract_day_programming_from_text(
                     text=text,
                     day_label=day_short,
                     target_date=short_to_date(day_short, ws),
                     model=config.OLLAMA_FALLBACK_TEXT_MODEL,
                 )
+                if len(fallback.blocks) > len(day_prog.blocks):
+                    day_prog = fallback
             if day_prog.blocks:
                 path = save_day(day_prog, ws)
+                saved += 1
                 logger.info("%s cached -> %s", day_short, path.name)
             else:
                 logger.warning("%s: no blocks found after fallback — skipping", day_short)
+        except LLMUnavailableError as e:
+            # Systemic failure — every day would fail the same way. Abort loudly
+            # rather than logging one error per day and reporting "Analysis done".
+            logger.error("%s", e)
+            sys.exit(1)
         except Exception as e:
+            errors += 1
             logger.error("%s: analysis failed — %s", day_short, e)
 
-    logger.info("Analysis done")
+    if errors and not saved:
+        # Every processed day errored: a systemic problem, not per-day noise.
+        # Exit non-zero instead of printing a success line.
+        logger.error("All %d day(s) failed to parse — aborting", errors)
+        sys.exit(1)
+    logger.info("Analysis done (%d day(s) cached)", saved)
 
 
 def do_preview(days: list[str], ws: date | None = None) -> None:
@@ -310,7 +353,11 @@ def do_preview(days: list[str], ws: date | None = None) -> None:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
     week = clean_week(week)
-    week = llm_format_week(week)
+    try:
+        week = llm_format_week(week)
+    except LLMUnavailableError as e:
+        logger.error("%s", e)
+        sys.exit(1)
     log_summary(week)
     log_preview(week)
 
@@ -321,7 +368,12 @@ def do_post(days: list[str], yes: bool, headless: bool, ws: date | None = None) 
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
     week = clean_week(week)
-    week = llm_format_week(week)
+    try:
+        week = llm_format_week(week)
+    except LLMUnavailableError as e:
+        # Abort before opening a browser / posting anything to BTWB.
+        logger.error("%s", e)
+        sys.exit(1)
     log_summary(week)
 
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:

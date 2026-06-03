@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from strivee_btwb.core.llm import LLMUnavailableError
 from strivee_btwb.core.models import ProgrammingBlock
 from strivee_btwb.processing.llm_format import (
     _ensure_movement_in_content,
@@ -18,7 +21,7 @@ def _mock_response(text: str) -> MagicMock:
     return response
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_for_btwb_returns_llm_content(mock_chat):
     mock_chat.return_value = _mock_response("AMRAP 05:00\nMax sets of 5 Ring Muscle-up Unbroken")
     block = ProgrammingBlock(
@@ -29,7 +32,7 @@ def test_format_for_btwb_returns_llm_content(mock_chat):
     assert result.content == "AMRAP 05:00\nMax sets of 5 Ring Muscle-up Unbroken"
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_for_btwb_falls_back_to_original_on_empty(mock_chat, monkeypatch):
     import strivee_btwb.core.config as cfg
 
@@ -41,15 +44,17 @@ def test_format_for_btwb_falls_back_to_original_on_empty(mock_chat, monkeypatch)
     assert result.content == block.content
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
-def test_format_for_btwb_falls_back_to_regex_on_exception(mock_chat):
+@patch("strivee_btwb.core.llm.ollama.chat")
+def test_format_for_btwb_raises_when_ollama_unavailable(mock_chat):
+    # A failed model call must abort (fail loud), NOT silently return the raw
+    # unformatted block — otherwise raw Strivee text gets posted to BTWB.
     mock_chat.side_effect = RuntimeError("Ollama not running")
     block = ProgrammingBlock(name="WOD", content="21-15-9\nThrusters\nPull-ups")
-    result = format_for_btwb(block)
-    assert "21-15-9" in result.content
+    with pytest.raises(LLMUnavailableError):
+        format_for_btwb(block)
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_for_btwb_converts_hash_percent_to_at(mock_chat):
     mock_chat.return_value = _mock_response(
         "Set 1 - 1 Clean and Jerk #70%\nSet 2 - 1 Clean and Jerk #75%"
@@ -61,7 +66,7 @@ def test_format_for_btwb_converts_hash_percent_to_at(mock_chat):
     assert "@75%" in result.content
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_for_btwb_keeps_hash_on_weights(mock_chat):
     mock_chat.return_value = _mock_response("AMRAP 12:00\n6 Power clean #50/35kg\n6 Strict HSPU")
     block = ProgrammingBlock(name="WOD", content="...")
@@ -79,7 +84,8 @@ def test_movement_from_block_name_colon_separator():
 
 
 def test_movement_from_block_name_dash_separator():
-    assert _movement_from_block_name("EMF 60 - Gymnastic Ring Muscle-up") == "Gymnastic Ring Muscle-up"
+    result = _movement_from_block_name("EMF 60 - Gymnastic Ring Muscle-up")
+    assert result == "Gymnastic Ring Muscle-up"
 
 
 def test_movement_from_block_name_rx_prefix():
@@ -137,7 +143,7 @@ def test_ensure_movement_no_emf_prefix_unchanged():
 # ---------------------------------------------------------------------------
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_replaces_cj_abbreviation(mock_chat):
     mock_chat.return_value = _mock_response("1 C&J @85%")
     block = ProgrammingBlock(name="EMF 60 : Clean and Jerk", content="1 C&J @85%")
@@ -146,7 +152,7 @@ def test_format_replaces_cj_abbreviation(mock_chat):
     assert "Clean and Jerk" in result.content
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_replaces_cj_case_insensitive(mock_chat):
     mock_chat.return_value = _mock_response("1 c&j @85%")
     block = ProgrammingBlock(name="EMF 60 : Clean and Jerk", content="1 c&j @85%")
@@ -154,7 +160,7 @@ def test_format_replaces_cj_case_insensitive(mock_chat):
     assert "Clean and Jerk" in result.content
 
 
-@patch("strivee_btwb.processing.llm_format.ollama.chat")
+@patch("strivee_btwb.core.llm.ollama.chat")
 def test_format_for_btwb_uses_configured_model(mock_chat, monkeypatch):
     import strivee_btwb.core.config as cfg
 

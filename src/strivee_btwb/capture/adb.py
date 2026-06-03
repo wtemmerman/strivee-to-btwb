@@ -17,6 +17,7 @@ import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from datetime import date, timedelta
 
 from PIL import Image, ImageChops
@@ -50,6 +51,29 @@ def _device_size(serial: str | None = None) -> tuple[int, int]:
     if m:
         return int(m.group(1)), int(m.group(2))
     return 1080, 2400
+
+
+def _retry_until[T](
+    produce: Callable[[], T],
+    is_valid: Callable[[T], bool],
+    *,
+    attempts: int = 3,
+    delay_s: float = 0.5,
+    what: str = "adb call",
+) -> T:
+    """Call *produce* until *is_valid* accepts its result, retrying transient misses.
+
+    Returns the last result regardless of validity (callers decide how to handle a
+    final invalid value). Adds no happy-path latency — returns on first success.
+    """
+    result = produce()
+    for attempt in range(1, attempts):
+        if is_valid(result):
+            return result
+        logger.warning("%s — retry %d/%d", what, attempt, attempts - 1)
+        time.sleep(delay_s)
+        result = produce()
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -105,13 +129,22 @@ def launch_strivee(serial: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def take_screenshot(serial: str | None = None) -> Image.Image:
+def take_screenshot(
+    serial: str | None = None, attempts: int = 3, delay_s: float = 0.5
+) -> Image.Image:
     """Capture the current device screen and return it as an RGB PIL image.
 
-    Raises RuntimeError if ADB returns no data (device disconnected / debugging
-    disabled).
+    Retries a few times when ADB returns no data, since a single transient
+    hiccup should not abort a whole day's capture. Raises RuntimeError only if
+    every attempt comes back empty (device disconnected / debugging disabled).
     """
-    result = _adb(["exec-out", "screencap", "-p"], serial, timeout=10)
+    result = _retry_until(
+        lambda: _adb(["exec-out", "screencap", "-p"], serial, timeout=10),
+        lambda r: bool(r.stdout),
+        attempts=attempts,
+        delay_s=delay_s,
+        what="ADB screenshot empty",
+    )
     if not result.stdout:
         raise RuntimeError(
             "ADB screenshot returned no data. Is the device connected and USB debugging enabled?"
@@ -226,11 +259,26 @@ def scroll_to_top(serial: str | None = None, max_swipes: int = 8) -> None:
         prev = curr
 
 
-def _ui_dump(serial: str | None = None) -> str:
-    """Dump the current UI hierarchy XML from the device."""
-    _adb(["shell", "uiautomator", "dump", "/sdcard/uidump.xml"], serial)
-    result = _adb(["shell", "cat", "/sdcard/uidump.xml"], serial)
-    return result.stdout.decode(errors="replace")
+def _ui_dump(serial: str | None = None, attempts: int = 3, delay_s: float = 0.5) -> str:
+    """Dump the current UI hierarchy XML from the device.
+
+    Retries when the dump comes back without a ``<hierarchy`` root (uiautomator
+    occasionally races the foreground app and returns an empty/partial file).
+    Returns the last response even if invalid; callers handle empty XML.
+    """
+
+    def produce() -> str:
+        _adb(["shell", "uiautomator", "dump", "/sdcard/uidump.xml"], serial)
+        result = _adb(["shell", "cat", "/sdcard/uidump.xml"], serial)
+        return result.stdout.decode(errors="replace")
+
+    return _retry_until(
+        produce,
+        lambda xml: "<hierarchy" in xml,
+        attempts=attempts,
+        delay_s=delay_s,
+        what="UI dump empty/invalid",
+    )
 
 
 def _texts_from_dump(xml_str: str) -> list[str]:
@@ -313,9 +361,11 @@ def capture_day_as_text(
 ) -> str:
     """Extract all visible programming text for a day via Android accessibility tree.
 
-    Navigates to the day tab, scrolls from top to bottom, and collects unique
-    text elements from the UI dump at each position. Returns deduplicated lines
-    in appearance order — no screenshots, no stitching, no overlap possible.
+    Navigates to the day tab and scrolls from top to bottom, collecting text
+    from the UI dump at each position. Lines are deduplicated only against the
+    immediately preceding dump (the scroll-overlap region and sticky
+    headers/footers), so legitimately repeated content — the same weight across
+    rounds, "200m Run" under multiple difficulty levels — is preserved.
     """
     navigate_to_day(day_short, serial)
     time.sleep(0.5)
@@ -339,14 +389,23 @@ def capture_day_as_text(
         h_device,
     )
 
-    seen: set[str] = set()
+    # Deduplicate only against the IMMEDIATELY preceding dump — the scroll-overlap
+    # region and sticky headers/footers. A global "seen" set would also drop
+    # legitimate repeats that recur far apart in the workout (a weight reused in
+    # several rounds, "200m Run" under each difficulty level), corrupting content.
     lines: list[str] = []
+    prev_texts: set[str] = set()
 
     for _ in range(max_scrolls + 1):
-        for text in _texts_from_dump(_ui_dump(serial)):
-            if text not in seen:
-                seen.add(text)
+        dump_texts = _texts_from_dump(_ui_dump(serial))
+        for text in dump_texts:
+            if text not in prev_texts:
                 lines.append(text)
+        # Only advance the dedup window on a non-empty dump. A transient empty
+        # dump must not reset it, or the next dump's overlap region (vs the last
+        # real dump) would be re-admitted as duplicates.
+        if dump_texts:
+            prev_texts = set(dump_texts)
         prev = take_screenshot(serial)
         swipe_up(serial, distance_fraction=scroll_fraction, duration_ms=1000, sleep_s=0.5)
         curr = take_screenshot(serial)

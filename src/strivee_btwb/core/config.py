@@ -46,7 +46,7 @@ SCROLL_DISTANCE: float = float(os.getenv("SCROLL_DISTANCE", "0.3"))
 DAY_TAB_Y: int = int(os.getenv("DAY_TAB_Y", "0"))
 """Pixel Y-coordinate of the Strivee day-tab strip used for week/day navigation taps.
 Set to 0 to fall back to a screen-fraction estimate (int(h * 0.21)).
-Tune once per device — 500 works well on a 1080×2400 screen."""
+Tune once per device — 500 works well on a 1080x2400 screen."""
 
 # ── Block filtering ───────────────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@ import pytest
 
 from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 from strivee_btwb.pipeline import (
+    CACHE_SCHEMA_VERSION,
     clean_week,
     do_analyse,
     do_capture,
@@ -102,6 +103,56 @@ def test_load_days_warns_on_missing(tmp_path, monkeypatch, caplog):
 
     assert week.days == []
     assert "Mon" in caplog.text
+
+
+def test_save_day_writes_schema_version(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    path = save_day(_make_day(), FIXTURE_WEEK)
+    assert json.loads(path.read_text())["schema_version"] == CACHE_SCHEMA_VERSION
+
+
+def test_load_days_warns_on_stale_schema(tmp_path, monkeypatch, caplog):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    # A legacy cache written before versioning existed (no schema_version key).
+    (folder / "parsed_2026-04-27_Mon.json").write_text(
+        json.dumps({"date": "2026-04-27", "day_label": "Mon", "blocks": []})
+    )
+
+    with caplog.at_level(logging.WARNING):
+        week = load_days(["Mon"], FIXTURE_WEEK)
+
+    assert len(week.days) == 1  # still loaded, just flagged
+    assert "stale" in caplog.text.lower() or "schema_version" in caplog.text
+
+
+def test_load_days_skips_invalid_cache_without_crashing(tmp_path, monkeypatch, caplog):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    # An older/edited cache with an empty block name (now rejected by the model)
+    # must be skipped with a warning, not crash the whole preview/post run.
+    (folder / "parsed_2026-04-27_Mon.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "date": "2026-04-27",
+                "day_label": "Mon",
+                "blocks": [{"name": "", "content": "x"}],
+            }
+        )
+    )
+    with caplog.at_level(logging.WARNING):
+        week = load_days(["Mon"], FIXTURE_WEEK)
+    assert week.days == []  # skipped, not crashed
+    assert "skipping unreadable" in caplog.text.lower()
 
 
 # ── clean_week ────────────────────────────────────────────────────────────────
@@ -523,8 +574,8 @@ def test_do_analyse_fallback_model_used_on_empty_blocks(monkeypatch, tmp_path):
     assert any((folder).glob("parsed_*_Mon.json"))
 
 
-def test_do_analyse_logs_error_on_exception(monkeypatch, tmp_path, caplog):
-    """Exceptions in analysis are caught and logged without raising."""
+def test_do_analyse_aborts_when_all_days_fail(monkeypatch, tmp_path, caplog):
+    """A per-day exception is caught and logged; when EVERY day fails it aborts."""
     import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
@@ -538,8 +589,34 @@ def test_do_analyse_logs_error_on_exception(monkeypatch, tmp_path, caplog):
         MagicMock(side_effect=ValueError("model error")),
     )
     with caplog.at_level(logging.ERROR):
-        do_analyse(["Mon"], ws=FIXTURE_WEEK)
+        with pytest.raises(SystemExit):
+            do_analyse(["Mon"], ws=FIXTURE_WEEK)
+    # The per-day ValueError was caught/logged (not raised), then the run aborted
+    # rather than reporting success with zero cached days.
     assert "analysis failed" in caplog.text.lower()
+
+
+def test_do_analyse_continues_on_partial_failure(monkeypatch, tmp_path, caplog):
+    """One failing day is logged but does not abort when another day succeeds."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    folder = tmp_path / FIXTURE_WEEK.isoformat()
+    folder.mkdir()
+    (folder / "strivee_20260427_120000_Mon.txt").write_text("mon text", encoding="utf-8")
+    (folder / "strivee_20260428_120000_Tue.txt").write_text("tue text", encoding="utf-8")
+
+    def fake_extract(*, day_label, **_):
+        if day_label == "Mon":
+            raise ValueError("model error")
+        return _make_day(label="Tue", day_date=date(2026, 4, 28))
+
+    monkeypatch.setattr("strivee_btwb.pipeline.extract_day_programming_from_text", fake_extract)
+    with caplog.at_level(logging.ERROR):
+        do_analyse(["Mon", "Tue"], ws=FIXTURE_WEEK)  # no SystemExit
+    assert "analysis failed" in caplog.text.lower()
+    assert any(folder.glob("parsed_*_Tue.json"))
 
 
 # ── do_post additional paths ──────────────────────────────────────────────────

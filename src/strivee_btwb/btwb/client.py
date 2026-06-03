@@ -35,6 +35,25 @@ class AuthenticationError(BTWBError):
     pass
 
 
+# ── Pure helpers (no browser — unit-testable) ─────────────────────────────────
+
+
+def _calendar_week_url(date_str: str) -> str:
+    """Build the BTWB calendar-week URL for an ISO date, dropping zero-padding."""
+    year, month, day = date_str.split("-")
+    return f"{_BASE}/plan/calendar/week/{int(year)}/{int(month)}/{int(day)}"
+
+
+def _blocks_to_post(day: DayProgramming, existing: set[str]) -> list[ProgrammingBlock]:
+    """Return the day's blocks whose titles are not already planned on BTWB."""
+    return [b for b in day.blocks if b.name not in existing]
+
+
+def _planned_result(block: ProgrammingBlock, date_str: str) -> dict:
+    """Build the dry-run record describing a block that would be posted."""
+    return {"dry_run": True, "block": block.name, "date": date_str}
+
+
 def _login(page: Page, email: str, password: str) -> None:
     page.goto(f"{_BASE}/signin", wait_until="domcontentloaded")
     page.locator("input[name='login']").fill(email)
@@ -127,11 +146,7 @@ def _fetch_existing_block_names(page: Page, date_str: str) -> set[str]:
     # bring_to_front prevents macOS background-tab JS throttling when the
     # terminal has focus (e.g. user just typed at the confirmation prompt)
     page.bring_to_front()
-    year, month, day = date_str.split("-")
-    page.goto(
-        f"{_BASE}/plan/calendar/week/{int(year)}/{int(month)}/{int(day)}",
-        wait_until="domcontentloaded",
-    )
+    page.goto(_calendar_week_url(date_str), wait_until="domcontentloaded")
     # Ensure the personal track checkbox is checked so workouts appear on the calendar.
     # wait_for(attached) is required — the checkbox is injected by JS after domcontentloaded,
     # so count() would return 0 and the click would be silently skipped without this wait.
@@ -165,29 +180,28 @@ def _fetch_existing_block_names(page: Page, date_str: str) -> set[str]:
     return set(titles)
 
 
-def _post_day(page: Page, day: DayProgramming, dry_run: bool) -> list[dict]:
+def _post_day(page: Page | None, day: DayProgramming, dry_run: bool) -> list[dict]:
     date_str = day.date.isoformat()
     logger.info("%s %s — %d block(s)", day.day_label, date_str, len(day.blocks))
-    results = []
 
-    if not dry_run:
-        existing = _fetch_existing_block_names(page, date_str)
-        if existing:
-            logger.info("Already on BTWB: %s", ", ".join(sorted(existing)))
-    else:
-        existing = set()
+    if dry_run:
+        for block in day.blocks:
+            logger.info("[dry-run] Would submit '%s': %s...", block.name, block.content[:60])
+        return [_planned_result(b, date_str) for b in day.blocks]
 
-    blocks_to_post = [b for b in day.blocks if b.name not in existing]
+    if page is None:  # invariant: the non-dry-run path always gets a live page
+        raise BTWBError("internal error: _post_day called without a page (dry_run=False)")
+    existing = _fetch_existing_block_names(page, date_str)
+    if existing:
+        logger.info("Already on BTWB: %s", ", ".join(sorted(existing)))
+
+    blocks_to_post = _blocks_to_post(day, existing)
     if not blocks_to_post:
         logger.info("%s — all blocks already posted, skipping", day.day_label)
-        return results
+        return []
 
+    results: list[dict] = []
     for i, block in enumerate(blocks_to_post):
-        if dry_run:
-            logger.info("[dry-run] Would submit '%s': %s...", block.name, block.content[:60])
-            results.append({"dry_run": True, "block": block.name, "date": date_str})
-            continue
-
         logger.info("Submitting block '%s'", block.name)
         is_last = i == len(blocks_to_post) - 1
 

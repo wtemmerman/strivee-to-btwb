@@ -8,6 +8,8 @@ import pytest
 from strivee_btwb.btwb import post_week
 from strivee_btwb.btwb.client import (
     AuthenticationError,
+    _blocks_to_post,
+    _calendar_week_url,
     _fetch_existing_block_names,
     _login,
     _post_day,
@@ -15,6 +17,42 @@ from strivee_btwb.btwb.client import (
 from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
 
 WEEK_START = date(2026, 4, 27)
+
+
+# ── pure helpers (no browser) ─────────────────────────────────────────────────
+
+
+def test_calendar_week_url_drops_zero_padding():
+    assert (
+        _calendar_week_url("2026-04-27")
+        == "https://beyondthewhiteboard.com/plan/calendar/week/2026/4/27"
+    )
+
+
+def test_calendar_week_url_single_digit_month_and_day():
+    assert _calendar_week_url("2026-01-05").endswith("/2026/1/5")
+
+
+def test_blocks_to_post_filters_existing_by_title():
+    day = DayProgramming(
+        date=date(2026, 4, 27),
+        day_label="Mon",
+        blocks=[
+            ProgrammingBlock(name="Back Squat", content="5x5"),
+            ProgrammingBlock(name="WOD", content="21-15-9"),
+        ],
+    )
+    remaining = _blocks_to_post(day, {"Back Squat"})
+    assert [b.name for b in remaining] == ["WOD"]
+
+
+def test_blocks_to_post_empty_when_all_present():
+    day = DayProgramming(
+        date=date(2026, 4, 27),
+        day_label="Mon",
+        blocks=[ProgrammingBlock(name="WOD", content="x")],
+    )
+    assert _blocks_to_post(day, {"WOD"}) == []
 
 
 def _make_week(blocks: list[ProgrammingBlock] | None = None) -> WeeklyProgramming:

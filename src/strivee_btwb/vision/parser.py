@@ -12,207 +12,39 @@ import json
 import logging
 import re
 
-import ollama
 from json_repair import repair_json
 
 from ..core import config
+from ..core.llm import chat_json
 from ..core.models import DayProgramming, ProgrammingBlock
+from ..prompts import load
 
 logger = logging.getLogger("vision")
 
-_TEXT_PROMPT_TEMPLATE = """Extract every CrossFit programming block from the Strivee accessibility text below for {day_label}.
+_TEXT_PROMPT_TEMPLATE = load("parse_day.txt")
 
-OUTPUT FORMAT — follow exactly, no exceptions:
-{{"blocks": [{{"name": "BLOCK_TITLE", "content": "PRESCRIPTION_HERE", "instruction": "COACHING_NOTES_HERE"}}]}}
-
-Your response must be ONLY that JSON object — no explanation, no markdown, no code fences, no text before or after.
-NEVER use "BLOCK_TITLE", "PRESCRIPTION_HERE", or "COACHING_NOTES_HERE" literally — those are placeholders.
-
-━━━ IDENTIFYING BLOCKS ━━━
-A Strivee block title ALWAYS matches one of these two patterns:
-  • Starts with "EMF"  →  e.g. "EMF 60 : Snatch", "EMF RX - Optional RUN", "EMF Rx : Pull-up"
-  • Starts with an emoji followed by a sport/category name  →  e.g. "🏊🏼‍♂️Swim Workout"
-
-Everything between a block title and the next block title (or end of text) belongs to that block. A new block title ALWAYS starts a new block, even if the previous block's content looks topically related (e.g. a warm-up full of snatch drills followed by a real "EMF 60 : Snatch" block — these are TWO separate blocks, not one).
-
-Critical example A — warm-up directly followed by an EMF block:
-  Input lines:
-    🔥 Warm-up 🔥
-    KB Ankle Stretch x1min30/side
-    Muscle Snatch from hip
-    Hang Muscle Snatch
-    Hang Power Snatch
-    x6 reps / movement
-    EMF 60 : Snatch
-    Build to a 1RM Squat Snatch for the day
-    Gamme suggéré : ...
-
-  Correct interpretation:
-    Block 1 = "🔥 Warm-up 🔥" (everything from KB Ankle Stretch through "x6 reps / movement") → DROPPED because Warm-up is excluded
-    Block 2 = "EMF 60 : Snatch" (everything from "Build to a 1RM..." through Gamme suggéré...) → KEPT
-  WRONG: merging the snatch drills into the EMF 60 : Snatch block. The drills belong to the warm-up only.
-
-Critical example B — excluded block with long marketing content followed by a real block:
-  Input lines:
-    EMF 60 : Friday sport Simulation
-    🎯 Classement directement disponible sur :
-    https://strivee.app/marketplace/plan/...
-    🥇 Depuis maintenant 5 ans, le FSS est devenu notre rendez-vous hebdomadaire incontournable pour tous les athlètes, coachs et boxes affiliées.
-    ➡️ L'objectif n'a jamais été de simplement viser le haut du classement, mais bien de s'engager chaque semaine dans la pratique du fitness fonctionnel.
-    💪🏻 Quelques conseils pour performer chaque vendredi : anticipez votre stratégie, entourez-vous (avec un juge si possible).
-    EMF 60 - Easy Energy system
-    Bike and Run -
-    5 sets of :
-    2min Bike erg #RPE 3-4
-    2min Run #RPE 3-4
-    ➡️ L'objectif ici est de bouger à basse intensité !
-
-  Correct interpretation — TWO separate blocks:
-    Block 1 = "EMF 60 : Friday sport Simulation" → DROPPED (Sport simulation is excluded). It ends the moment "EMF 60 - Easy Energy system" appears — regardless of how long its content was.
-    Block 2 = "EMF 60 - Easy Energy system", content = "Bike and Run -\\n5 sets of :\\n2min Bike erg #RPE 3-4\\n2min Run #RPE 3-4", instruction = "Objectif : bouger à basse intensité !"
-  WRONG: absorbing "EMF 60 - Easy Energy system" into the FSS block's content and dropping it alongside FSS. The block boundary rule is unconditional — it applies even when skipping an excluded block.
-
-Critical example C — navigation tabs mid-text followed by multiple blocks:
-  Input lines:
-    🔥 Warm-up 🔥
-    60 sec hollow hold
-    WOD
-    Box
-    Noter
-    PRs
-    Profil
-    EMF 60 : Back Squat
-    4 sets, Every 2min :
-    3 Back Squat @80% of 1RM
-    Notes : Rester bas, poitrine haute.
-    0 Score
-    EMF RX : Conditioning
-    AMRAP 10:00 :
-    5 Pull-ups
-    10 Push-ups
-    Notes : Unbroken.
-    INTER+ : 4 Pull-ups
-
-  Correct interpretation — THREE blocks:
-    Block 1 = "🔥 Warm-up 🔥" → DROPPED (excluded)
-    Block 2 = "EMF 60 : Back Squat", content = "4 sets, Every 2min :\n3 Back Squat @80% of 1RM", instruction = "Notes : Rester bas, poitrine haute." → KEPT
-    Block 3 = "EMF RX : Conditioning", content = "AMRAP 10:00 :\n5 Pull-ups\n10 Push-ups", instruction = "Notes : Unbroken.\n\nINTER+ : 4 Pull-ups" → KEPT
-  CRITICAL: "WOD / Box / Noter / PRs / Profil" are app navigation tabs captured mid-scroll — they are NOT a section boundary. Ignore them and continue. BOTH Block 2 and Block 3 must appear in the output. "0 Score" is also ignored (it is a UI counter, not content).
-
-RULE OF THUMB: every line starting with "EMF " followed by a number/RX/Rx is its own block title and starts a new block. This applies unconditionally — even when the preceding block is being skipped. A skipped block ends at the very next EMF/emoji-category title line, just like any non-skipped block. There is never a case where an "EMF ..." title line should appear inside another block's content or instruction.
-
-COMPLETENESS RULE — THIS IS MANDATORY: before writing the JSON, scan the entire input text and count every non-excluded block title. Your blocks array MUST contain one entry for each of those titles. If you counted 3 non-excluded block titles, the output must have exactly 3 entries. Missing a block is ALWAYS wrong, even if the block seems confusing or has unusual content.
-
-NOT block titles — these are sub-section headers WITHIN the current block, keep their text as part of the block content:
-  • Lines ending with " -"  (e.g. "Warm-up -", "Main Part -", "Cooldown -", "Rest 3 min jogging between sets -")
-  • Lines starting with "📌"  (e.g. "📌Échauffement", "📌Session")
-  • Any other short label that does not match the EMF / emoji-category patterns above
-
-━━━ CONTENT (prescription only) ━━━
-"content" = the minimal statement of what to DO for the RX 🔱 level ONLY, copied exactly:
-  • Never include the block title line itself in content
-  • If the block has multiple difficulty levels (RX + INTER+ and/or INTER), content contains ONLY the RX prescription. NEVER concatenate RX with INTER+ or INTER content. The INTER+ / INTER prescriptions go to instruction (see DIFFICULTY LEVELS section).
-  • Conditioning (AMRAP/EMOM/For Time/Run/Swim sets): time domain + movements + distances + reps + weights — for the RX section only
-    — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
-  • Strength (Build to / Find / Work to): ONLY the single goal sentence
-    e.g. "Build to a 1RM Squat Snatch for the day"  ← that one line is the entire content
-  • A standalone line like "#90% of your 5RM from week 1" or "#95% of your 5RM from week 1" that defines the working load for the block belongs in content — keep it with the prescription
-  • Do NOT include Gamme suggéré ramp-up tables (multiple percentage steps), coaching explanations, or Objectif text in content
-
-━━━ INSTRUCTION (everything else) ━━━
-"instruction" = all coaching, guidance, and context — NOT the core RX prescription.
-These markers ALWAYS begin an instruction section; move the marker line AND everything after it to instruction:
-  • "Objectif"
-  • "Gamme suggéré" / "Gammes suggéré"
-  • "Tentatives lourdes"
-  • "Si vous ratez" / "Si vous manquez"
-  • "Score :"
-  • "Compare" / "RPE" / "Niveau" / "Effort"
-  Any sentence that explains, motivates, or coaches rather than prescribes → instruction.
-  When in doubt → instruction.  If no instruction exists → use "".
-
-PRESERVE FORMATTING: keep the original line breaks and blank lines from the source text inside instruction. Multi-paragraph instructions stay multi-paragraph (use \\n between lines, \\n\\n between sections).
-
-━━━ DIFFICULTY LEVELS (RX vs INTER+ vs INTER) ━━━
-Strivee blocks often present multiple difficulty levels:
-  • RX 🔱 (or "🔱 Rx", "Rx 🔱", "RX 🔱") — the prescribed/main version
-  • INTER+ 🪖 (or "🪖 INTER+ 🪖", "🪖 INTER+ -") — scaled intermediate-plus
-  • INTER 🎖️ (or "🎖️ INTER 🎖️", "🎖️ INTER -") — scaled intermediate
-
-How to map them:
-  1. RX 🔱 prescription → "content". SKIP the RX header line itself; do not write "RX 🔱" anywhere.
-  2. INTER+ 🪖 and INTER 🎖️ sections → "instruction". KEEP their header lines as visible section markers (e.g. "🪖 INTER+ 🪖", "🎖️ INTER -") and include their full prescription text below the header.
-  3. Combined headers like "🔱 Rx - 🪖 INTER+ -" mean RX and INTER+ share the SAME content — put it once in "content", do NOT duplicate it in instruction. Only the separate "🎖️ INTER -" section (if present) goes to instruction.
-  4. If only ONE level exists, its content goes to "content"; no level header anywhere.
-
-Example with separate RX and INTER sections:
-  Input:
-    🔱 Rx
-    AMRAP 12:00
-    24 DU
-    6 PC #50kg
-    🎖️ INTER -
-    AMRAP 12:00
-    24 DU
-    6 PC #40kg with abmat
-    Objectif : Tenir les DU unbroken
-  Output:
-    "content":     "AMRAP 12:00\\n24 DU\\n6 PC #50kg"
-    "instruction": "🎖️ INTER -\\nAMRAP 12:00\\n24 DU\\n6 PC #40kg with abmat\\n\\nObjectif : Tenir les DU unbroken"
-
-Example with combined RX/INTER+ header:
-  Input:
-    🔱 Rx - 🪖 INTER+ -
-    AMRAP 12:00
-    24 DU
-    🎖️ INTER -
-    AMRAP 12:00
-    20 DU with abmat
-  Output:
-    "content":     "AMRAP 12:00\\n24 DU"
-    "instruction": "🎖️ INTER -\\nAMRAP 12:00\\n20 DU with abmat"
-
-Example with all three levels separate (THIS IS THE COMMON CASE — pay close attention):
-  Input:
-    RX 🔱
-    AMRAP 12:00
-    5 Ring Muscle-up
-    8 Strict HSPU
-    15 Toes to Bar
-    200m Run
-    INTER+ 🪖
-    AMRAP 12:00
-    4 Bar Muscle-up
-    6 Strict HSPU
-    12 Toes to Bar
-    200m Run
-    INTER 🎖️
-    AMRAP 12:00
-    5 Chest to bar pull-up
-    6 Strict HSPU Abmat
-    10 Toes to Bar
-    200m Run
-    Objectif : Unbroken sur chaque mouvement gym
-  Output:
-    "content":     "AMRAP 12:00\\n5 Ring Muscle-up\\n8 Strict HSPU\\n15 Toes to Bar\\n200m Run"
-    "instruction": "🪖 INTER+ 🪖\\nAMRAP 12:00\\n4 Bar Muscle-up\\n6 Strict HSPU\\n12 Toes to Bar\\n200m Run\\n\\n🎖️ INTER 🎖️\\nAMRAP 12:00\\n5 Chest to bar pull-up\\n6 Strict HSPU Abmat\\n10 Toes to Bar\\n200m Run\\n\\nObjectif : Unbroken sur chaque mouvement gym"
-
-  WRONG output (do NOT do this):
-    "content": "AMRAP 12:00\\n5 Ring Muscle-up...\\n\\nAMRAP 12:00\\n4 Bar Muscle-up...\\n\\nAMRAP 12:00\\n5 Chest to bar pull-up..."  ← all 3 levels in content is FORBIDDEN
-
-━━━ IGNORE COMPLETELY ━━━
-- Day-tab labels: LUN, MAR, MER, JEU, VEN, SAM, DIM and Mon/Tue/Wed/Thu/Fri/Sat/Sun
-- Lines that are a single number 1-31 (date numbers in the week strip)
-- App header lines: lines that are EXACTLY "EMF 60'" or "EMF 45'" (with a minute/prime symbol ') — NOT block titles like "EMF 60 : Snatch" which have a colon and a name after them
-- Bottom nav tabs: WOD, Box, Noter, PRs, Profil — these labels can appear anywhere mid-text when the phone's navigation bar is captured mid-scroll; skip them and keep reading, blocks appear after them
-- Lines matching "N Scores", "N Score", "N Media", "N Media" where N is a number
-- Lines starting with http:// or https://
-- Announcements: WhatsApp groups, Zoom/Meet calls, weekly call banners
-- SKIP any block whose title (the EMF or emoji+category header line) contains: {excluded} — skip ONLY that individual block; do not stop processing, the next block title starts a new block normally. IMPORTANT: the exclusion check applies only to block title lines — never to content or instruction lines inside a block (e.g. "Warm-up : 60% / 70%..." is a percentage label inside a Gamme suggéré, NOT a new block to exclude)
-- STOP at the first line containing "Inviter un ami" — ignore everything from that line onward
-
-Text:
-{text}"""
+# JSON schema passed to Ollama's structured-output `format`. The model is
+# grammar-constrained to emit valid JSON in this shape, which removes almost all
+# of the historical JSON-repair fragility at the source. _extract_json is kept
+# as a fallback for Ollama/model setups that do not honour the schema.
+_BLOCKS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "blocks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "content": {"type": "string"},
+                    "instruction": {"type": "string"},
+                },
+                "required": ["name", "content"],
+            },
+        }
+    },
+    "required": ["blocks"],
+}
 
 
 def _sanitize_json_strings(s: str) -> str:
@@ -302,6 +134,106 @@ def _is_excluded(name: str) -> bool:
     return any(ex.lower() in name_lower for ex in config.EXCLUDED_BLOCKS)
 
 
+def _normalise_shape(data: object) -> dict:
+    """Coerce assorted model response shapes into a ``{"blocks": [...]}`` dict.
+
+    The schema-constrained path returns this shape directly; this only matters
+    for the fallback path, where a model may emit a bare list, a single block
+    object, a ``{"blocks": ...}`` synonym keyed differently, or a flat
+    ``{name: content}`` mapping.
+    """
+    if isinstance(data, list):
+        return {"blocks": data}
+    if not isinstance(data, dict):
+        return {"blocks": []}
+
+    blocks: list = []
+    if isinstance(data.get("blocks"), list):
+        blocks = data["blocks"]
+    elif "name" in data:
+        # A single unwrapped block object — wrap it; do NOT explode its fields
+        # into bogus blocks named "name"/"content".
+        blocks = [data]
+    elif list_vals := [v for v in data.values() if isinstance(v, list)]:
+        blocks = list_vals[0]
+    elif data and all(isinstance(v, str) for v in data.values()):
+        blocks = [{"name": k, "content": v} for k, v in data.items()]
+    return {"blocks": blocks}
+
+
+def _validate_blocks(raw_blocks: object, day_label: str) -> list[dict]:
+    """Return well-formed ``{name, content, instruction}`` dicts from the model output.
+
+    Drops entries that are not objects or have no usable name, logging each, so a
+    single malformed entry can never abort the whole day.
+    """
+    if not isinstance(raw_blocks, list):
+        return []
+    valid: list[dict] = []
+    for b in raw_blocks:
+        if not isinstance(b, dict):
+            logger.warning("%s: dropping non-object block entry: %r", day_label, b)
+            continue
+        name = str(b.get("name", "")).strip()
+        if not name:
+            logger.warning("%s: dropping block with empty name: %r", day_label, b)
+            continue
+        valid.append(
+            {
+                "name": name,
+                "content": str(b.get("content", "")),
+                "instruction": str(b.get("instruction", "")),
+            }
+        )
+    return valid
+
+
+def _parse_blocks_response(raw: str, day_label: str) -> dict:
+    """Parse the model's response into a ``{"blocks": [...]}`` dict.
+
+    Fast path: structured output is valid JSON, so ``json.loads`` succeeds
+    directly. Fallback: the tolerant :func:`_extract_json` repair path handles
+    fences, stray prose, and unescaped control characters for setups where the
+    schema is not honoured.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            data = json.loads(_extract_json(raw))
+        except (ValueError, json.JSONDecodeError) as e:
+            raise ValueError(
+                f"Text parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
+            ) from e
+    return _normalise_shape(data)
+
+
+# A real "EMF ..." block title starts with EMF, a level (a number or RX), then a
+# ':'/'-' separator DIRECTLY after the level. Anchoring the separator right after
+# the level (rather than anywhere in the line) avoids matching content lines that
+# merely start with "EMF <n>" and contain a dash later, and excludes the app
+# header lines "EMF 60'" / "EMF 45'" (prime symbol, no separator).
+_EMF_TITLE_RE = re.compile(r"^EMF\s+(?:\d+|RX)\b\s*[:\-]", re.IGNORECASE)
+
+
+def count_block_titles(text: str) -> list[str]:
+    """List the non-excluded ``EMF ...`` block titles found in *text*.
+
+    A conservative, best-effort lower bound on how many blocks the model should
+    return: it is instructed to emit one entry per title, so a shorter result
+    likely means a block was dropped. Emoji-category titles are intentionally NOT
+    counted — they are hard to tell apart from difficulty headers (🔱/🪖/🎖️)
+    and sub-section markers (📌) without the model's judgement, and are almost
+    always excluded blocks anyway. The count only drives a warning and a
+    fallback retry, never a hard failure, so an occasional miscount is harmless.
+    """
+    return [
+        s
+        for line in text.splitlines()
+        if (s := line.strip()) and _EMF_TITLE_RE.match(s) and not _is_excluded(s)
+    ]
+
+
 def extract_day_programming_from_text(
     text: str,
     day_label: str,
@@ -321,6 +253,7 @@ def extract_day_programming_from_text(
 
     Raises:
         ValueError: If the model returns output that cannot be parsed as JSON.
+        LLMUnavailableError: If Ollama is unreachable or the model is missing.
     """
     model = model or config.OLLAMA_TEXT_MODEL
     excluded_str = ", ".join(config.EXCLUDED_BLOCKS) if config.EXCLUDED_BLOCKS else "none"
@@ -333,44 +266,35 @@ def extract_day_programming_from_text(
     logger.info("Parsing %s from text dump (%d chars) with %s", day_label, len(text), model)
 
     logger.debug("%s: prompt:\n%s", day_label, prompt)
-    response = ollama.chat(
-        model=model,
-        think=False,  # suppress qwen3 thinking tokens that produce empty visible output
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = response["message"]["content"]
+    raw = chat_json(prompt, model, schema=_BLOCKS_SCHEMA)
     logger.debug("%s: raw text-parse response:\n%s", day_label, raw)
 
     if not raw.strip():
         logger.warning("%s: model returned empty response", day_label)
-        data: dict = {}
+        data: dict = {"blocks": []}
     else:
-        try:
-            json_str = _extract_json(raw)
-            data = json.loads(json_str)
-        except (ValueError, json.JSONDecodeError) as e:
-            raise ValueError(
-                f"Text parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
-            ) from e
+        data = _parse_blocks_response(raw, day_label)
 
-    if isinstance(data, list):
-        data = {"blocks": data}
-    if not data.get("blocks"):
-        list_vals = [v for v in data.values() if isinstance(v, list)]
-        if list_vals:
-            data = {"blocks": list_vals[0]}
-        elif data and all(isinstance(v, str) for v in data.values()):
-            data = {"blocks": [{"name": k, "content": v} for k, v in data.items()]}
-
-    all_blocks = data.get("blocks", [])
+    all_blocks = _validate_blocks(data.get("blocks", []), day_label)
     blocks = [
-        ProgrammingBlock(name=b["name"], content=b["content"], instruction=b.get("instruction", ""))
+        ProgrammingBlock(name=b["name"], content=b["content"], instruction=b["instruction"])
         for b in all_blocks
-        if not _is_excluded(b.get("name", ""))
+        if not _is_excluded(b["name"])
     ]
     excluded_count = len(all_blocks) - len(blocks)
     if excluded_count:
         logger.debug("%s: %d block(s) dropped by exclusion filter", day_label, excluded_count)
+
+    expected_titles = count_block_titles(text)
+    if len(blocks) < len(expected_titles):
+        logger.warning(
+            "%s: extracted %d block(s) but the source has %d EMF block title(s) — "
+            "the model may have dropped a block. Source titles: %s",
+            day_label,
+            len(blocks),
+            len(expected_titles),
+            expected_titles,
+        )
+
     logger.info("%s: %d block(s) extracted", day_label, len(blocks))
     return DayProgramming(date=target_date, day_label=day_label, blocks=blocks)

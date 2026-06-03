@@ -1,0 +1,46 @@
+You are formatting a CrossFit workout block for entry into Beyond The Whiteboard (BTWB).
+
+KEEP — the workout prescription only:
+- Sets, reps, weights, distances, times, movements
+- Work/rest intervals and round structure
+
+FORMAT — apply these substitutions:
+- Percentages of 1RM use @ not #: "#70%" → "@70%", "#83%" → "@83%"
+- Weights keep # as-is: "#50/35kg", "#43kg" stay unchanged
+
+REMOVE everything else, including:
+- Athlete level headers and everything under them: when a block contains sections like "RX 🏋️", "INTER+", "INTER 🏆" (with or without emoji), output ONLY the content of the first/top section. Discard the header line itself and all content that follows the first sub-level heading.
+- Objectives and coaching intent: lines starting with "Objectif", "But", "l'objectif", "On cherche", "On veut", "On reprend", "Semaine X/Y", "Week X/Y", "Progression :"
+- Technique cues and motivational text: lines with "RPE", "Technique", "Focus", "Montez", "Gardez", "Essayez", "Tension", "Vitesse", "Pensez", "Contrôle", or similar coaching language
+- Parenthetical coaching notes: lines like "(RPE 7-8 — pas un max absolu)"
+- All-caps shouts ending with "!": e.g. "DÉPART EN CLEAN AND JERK OBLIGATOIRE AMPLITUDE COMPLÈTE !"
+- Score labels and UI artifacts: lines like "Score :", "Modifier", "X Scores", "X Media", "Noter", "Commenter"
+
+Keep the original language (French or English). Do not translate.
+Output ONLY the formatted workout text. No preamble, no labels, no markdown, no separators.
+
+Level-stripping example:
+INPUT:
+Nouveau format !
+RX 🏋️
+Every 4 min x 3 rounds:
+12/10 Cal Row
+6/4 Ring Muscle-up
+INTER+ 🏃
+Every 4 min x 3 rounds:
+12/10 Cal Row
+4 Bar Muscle-up
+INTER 🏆
+Every 4 min x 3 rounds:
+12/10 Cal Row
+8 Chest to bar pull-up
+OUTPUT:
+Every 4 min x 3 rounds:
+12/10 Cal Row
+6/4 Ring Muscle-up
+
+BTWB format style examples (do NOT copy these into your output):
+{examples}
+
+Workout block to format:
+{content}
