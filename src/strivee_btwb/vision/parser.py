@@ -138,21 +138,27 @@ def _normalise_shape(data: object) -> dict:
     """Coerce assorted model response shapes into a ``{"blocks": [...]}`` dict.
 
     The schema-constrained path returns this shape directly; this only matters
-    for the fallback path, where a model may emit a bare list, a ``{"blocks":
-    ...}`` synonym keyed differently, or a flat ``{name: content}`` mapping.
+    for the fallback path, where a model may emit a bare list, a single block
+    object, a ``{"blocks": ...}`` synonym keyed differently, or a flat
+    ``{name: content}`` mapping.
     """
     if isinstance(data, list):
         return {"blocks": data}
     if not isinstance(data, dict):
         return {"blocks": []}
-    if data.get("blocks"):
-        return data
-    list_vals = [v for v in data.values() if isinstance(v, list)]
-    if list_vals:
-        return {"blocks": list_vals[0]}
-    if data and all(isinstance(v, str) for v in data.values()):
-        return {"blocks": [{"name": k, "content": v} for k, v in data.items()]}
-    return {"blocks": data.get("blocks", [])}
+
+    blocks: list = []
+    if isinstance(data.get("blocks"), list):
+        blocks = data["blocks"]
+    elif "name" in data:
+        # A single unwrapped block object — wrap it; do NOT explode its fields
+        # into bogus blocks named "name"/"content".
+        blocks = [data]
+    elif list_vals := [v for v in data.values() if isinstance(v, list)]:
+        blocks = list_vals[0]
+    elif data and all(isinstance(v, str) for v in data.values()):
+        blocks = [{"name": k, "content": v} for k, v in data.items()]
+    return {"blocks": blocks}
 
 
 def _validate_blocks(raw_blocks: object, day_label: str) -> list[dict]:
@@ -202,22 +208,24 @@ def _parse_blocks_response(raw: str, day_label: str) -> dict:
     return _normalise_shape(data)
 
 
-# A real "EMF ..." block title starts with EMF, a level (number / RX), and has a
-# name after a ':' or '-' separator. This deliberately excludes the app header
-# lines "EMF 60'" / "EMF 45'" (a minute/prime symbol, no separator).
-_EMF_TITLE_RE = re.compile(r"^EMF\s+(?:\d+|RX)\b.*[:\-]", re.IGNORECASE)
+# A real "EMF ..." block title starts with EMF, a level (a number or RX), then a
+# ':'/'-' separator DIRECTLY after the level. Anchoring the separator right after
+# the level (rather than anywhere in the line) avoids matching content lines that
+# merely start with "EMF <n>" and contain a dash later, and excludes the app
+# header lines "EMF 60'" / "EMF 45'" (prime symbol, no separator).
+_EMF_TITLE_RE = re.compile(r"^EMF\s+(?:\d+|RX)\b\s*[:\-]", re.IGNORECASE)
 
 
 def count_block_titles(text: str) -> list[str]:
     """List the non-excluded ``EMF ...`` block titles found in *text*.
 
-    This is a deterministic lower bound on how many blocks the model should
+    A conservative, best-effort lower bound on how many blocks the model should
     return: it is instructed to emit one entry per title, so a shorter result
-    means a block was dropped. Emoji-category titles are intentionally NOT
+    likely means a block was dropped. Emoji-category titles are intentionally NOT
     counted — they are hard to tell apart from difficulty headers (🔱/🪖/🎖️)
     and sub-section markers (📌) without the model's judgement, and are almost
-    always excluded blocks anyway. Using only EMF titles keeps this a
-    false-positive-free signal.
+    always excluded blocks anyway. The count only drives a warning and a
+    fallback retry, never a hard failure, so an occasional miscount is harmless.
     """
     return [
         s

@@ -181,6 +181,23 @@ def test_extract_passes_schema_to_model(monkeypatch):
     assert result.blocks[0].name == "WOD"
 
 
+def test_extract_wraps_single_block_object(monkeypatch):
+    from datetime import date
+
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    # Fallback path: model returns ONE unwrapped block object, not {"blocks":[...]}.
+    fake = {"message": {"content": '{"name": "EMF 60 : WOD", "content": "AMRAP 12"}'}}
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: fake)
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
+    # One real block — NOT two garbage blocks named "name" and "content".
+    assert len(result.blocks) == 1
+    assert result.blocks[0].name == "EMF 60 : WOD"
+    assert result.blocks[0].content == "AMRAP 12"
+
+
 # ---------------------------------------------------------------------------
 # count_block_titles
 # ---------------------------------------------------------------------------
@@ -217,6 +234,16 @@ def test_count_block_titles_ignores_subsection_and_emoji_lines(monkeypatch):
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
     text = "Main Part -\n📌 Session\n🔱 Rx\nEMF 60 : Clean\n1 rep"
     assert count_block_titles(text) == ["EMF 60 : Clean"]
+
+
+def test_count_block_titles_ignores_emf_content_line(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+    # A content line that merely starts with "EMF <n>" and has a dash LATER is not
+    # a title — the separator must come directly after the level.
+    text = "EMF 60 : Back Squat\n4 sets\nEMF 3 rounds - 200m run then rest"
+    assert count_block_titles(text) == ["EMF 60 : Back Squat"]
 
 
 def test_extract_warns_when_blocks_dropped(monkeypatch, caplog):
