@@ -1,16 +1,21 @@
 """Unit tests for BTWB client — no live browser or network required."""
 
+import logging
 from datetime import date
 from unittest.mock import MagicMock
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from strivee_btwb.btwb import post_week
+from strivee_btwb.btwb import client, post_week
 from strivee_btwb.btwb.client import (
     AuthenticationError,
+    BTWBError,
+    _add_instruction,
     _blocks_to_post,
     _calendar_week_url,
     _fetch_existing_block_names,
+    _fill_and_plan,
     _login,
     _post_day,
 )
@@ -209,3 +214,116 @@ def test_post_day_returns_empty_when_all_already_posted(monkeypatch):
     )
     results = _post_day(page, day, dry_run=False)
     assert results == []
+
+
+# ── _add_instruction (mocked page) ────────────────────────────────────────────
+
+
+def test_add_instruction_skips_when_empty():
+    page = MagicMock()
+    _add_instruction(page, ProgrammingBlock(name="WOD", content="x", instruction=""))
+    page.locator.assert_not_called()  # early return, no page interaction
+
+
+def test_add_instruction_fills_and_saves(caplog):
+    page = MagicMock()
+    block = ProgrammingBlock(name="Back Squat", content="x", instruction="Stay tight")
+    with caplog.at_level(logging.INFO, logger="btwb"):
+        _add_instruction(page, block)
+    page.wait_for_load_state.assert_called()  # settled after saving the note
+    assert "instruction saved" in caplog.text.lower()
+
+
+def test_add_instruction_handles_timeout(caplog):
+    page = MagicMock()
+    page.locator.return_value.wait_for.side_effect = PlaywrightTimeoutError("timeout")
+    block = ProgrammingBlock(name="WOD", content="x", instruction="note")
+    with caplog.at_level(logging.WARNING, logger="btwb"):
+        _add_instruction(page, block)  # must not raise
+    assert "instruction tab not found" in caplog.text.lower()
+
+
+# ── _fill_and_plan (mocked page) ──────────────────────────────────────────────
+
+
+def test_fill_and_plan_runs_full_flow(caplog):
+    page = MagicMock()
+    # Drive the optional branches: track-select present & unset, title field present.
+    page.locator.return_value.count.return_value = 1
+    page.locator.return_value.input_value.return_value = ""
+    block = ProgrammingBlock(name="EMF 60 : WOD", content="AMRAP 12", instruction="")
+    with caplog.at_level(logging.INFO, logger="btwb"):
+        _fill_and_plan(page, block, last_block=True)
+    page.locator.return_value.fill.assert_called()  # description / title filled
+    page.wait_for_load_state.assert_called()  # last_block → networkidle
+    assert "saved" in caplog.text.lower()
+
+
+def test_fill_and_plan_skips_optional_steps_when_absent():
+    page = MagicMock()
+    page.locator.return_value.count.return_value = 0  # no track select, no title field
+    block = ProgrammingBlock(name="WOD", content="x", instruction="")
+    _fill_and_plan(page, block, last_block=False)  # must not raise
+    page.locator.return_value.select_option.assert_not_called()
+
+
+# ── _post_day (live posting loop, helpers mocked) ─────────────────────────────
+
+
+def test_post_day_posts_each_block(monkeypatch):
+    page = MagicMock()
+    monkeypatch.setattr(client, "_fetch_existing_block_names", lambda *a, **k: set())
+    monkeypatch.setattr(client, "_fill_and_plan", lambda *a, **k: None)
+    day = DayProgramming(
+        date=date(2026, 4, 27),
+        day_label="Mon",
+        blocks=[ProgrammingBlock(name="A", content="x"), ProgrammingBlock(name="B", content="y")],
+    )
+    results = _post_day(page, day, dry_run=False)
+    assert [r["block"] for r in results] == ["A", "B"]
+    assert all(r.get("ok") for r in results)
+    page.goto.assert_called()  # first block navigates to the new-workout form
+
+
+def test_post_day_raises_without_page_when_not_dry_run():
+    # The non-dry-run path requires a live page; passing None is a programmer error.
+    day = DayProgramming(
+        date=date(2026, 4, 27),
+        day_label="Mon",
+        blocks=[ProgrammingBlock(name="A", content="x")],
+    )
+    with pytest.raises(BTWBError):
+        _post_day(None, day, dry_run=False)
+
+
+def test_post_day_marks_block_skipped_on_timeout(monkeypatch, caplog):
+    page = MagicMock()
+    monkeypatch.setattr(client, "_fetch_existing_block_names", lambda *a, **k: set())
+    monkeypatch.setattr(
+        client, "_fill_and_plan", MagicMock(side_effect=PlaywrightTimeoutError("no preview"))
+    )
+    day = DayProgramming(
+        date=date(2026, 4, 27),
+        day_label="Mon",
+        blocks=[ProgrammingBlock(name="A", content="x")],
+    )
+    with caplog.at_level(logging.WARNING, logger="btwb"):
+        results = _post_day(page, day, dry_run=False)
+    assert results[0]["skipped"] is True
+    assert "did not generate a preview" in caplog.text.lower()
+
+
+# ── post_week (live browser path, Playwright mocked) ──────────────────────────
+
+
+def test_post_week_live_path_logs_in_and_posts(monkeypatch):
+    monkeypatch.setattr(client, "_login", MagicMock())
+    monkeypatch.setattr(client, "_post_day", MagicMock(return_value=[{"block": "A", "ok": True}]))
+    monkeypatch.setattr(client, "sync_playwright", lambda: MagicMock())
+
+    week = _make_week(blocks=[ProgrammingBlock(name="A", content="x")])
+    results = post_week(week=week, email="e@x.com", password="pw", headless=True)
+
+    assert results == [{"block": "A", "ok": True}]
+    client._login.assert_called_once()
+    client._post_day.assert_called_once()
