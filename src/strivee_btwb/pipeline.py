@@ -174,17 +174,13 @@ def clean_week(week: WeeklyProgramming) -> WeeklyProgramming:
                 merged_instruction = "\n".join(
                     filter(None, [merged[-1].instruction, block.instruction])
                 )
-                merged[-1] = ProgrammingBlock(
-                    name=merged[-1].name,
+                merged[-1] = merged[-1].replace(
                     content=merged[-1].content + "\n" + block.content,
                     instruction=merged_instruction,
                 )
             else:
-                merged.append(
-                    ProgrammingBlock(
-                        name=block.name, content=block.content, instruction=block.instruction
-                    )
-                )
+                # Blocks are immutable, so the original can be shared as-is.
+                merged.append(block)
         if merged:
             cleaned_days.append(
                 DayProgramming(date=day.date, day_label=day.day_label, blocks=merged)

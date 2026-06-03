@@ -33,11 +33,7 @@ def _ensure_movement_in_content(block: ProgrammingBlock) -> ProgrammingBlock:
         return block
     if movement.lower() in block.content.lower():
         return block
-    return ProgrammingBlock(
-        name=block.name,
-        content=movement + "\n" + block.content,
-        instruction=block.instruction,
-    )
+    return block.replace(content=movement + "\n" + block.content)
 
 
 def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> ProgrammingBlock:
@@ -64,6 +60,6 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
     result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)
     if result:
         logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
-        return ProgrammingBlock(name=block.name, content=result, instruction=block.instruction)
+        return block.replace(content=result)
     logger.warning("[%s] LLM returned empty — returning original content", block.name)
     return block
