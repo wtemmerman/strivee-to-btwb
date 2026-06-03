@@ -453,6 +453,24 @@ def test_capture_day_as_text_preserves_far_apart_repeat(monkeypatch):
     assert result.count("200m Run") == 2  # the old global dedup would drop the 2nd
 
 
+def test_capture_day_as_text_empty_dump_does_not_reset_dedup(monkeypatch):
+    """A transient empty dump must not re-admit the next dump's overlap region."""
+    monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
+    monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb.scroll_to_top", lambda *_: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
+    monkeypatch.setattr("strivee_btwb.capture.adb.take_screenshot", lambda *_: _solid((1, 2, 3)))
+    monkeypatch.setattr("strivee_btwb.capture.adb.swipe_up", lambda *_, **__: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb._screens_same", lambda a, b: False)
+
+    # Middle dump is empty (uiautomator raced); "C" overlaps dump 1 and dump 3.
+    dumps = iter([_xml(["A", "B", "C"]), "<hierarchy/>", _xml(["C", "D", "E"])])
+    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: next(dumps))
+
+    result = capture_day_as_text("Mon", max_scrolls=2).splitlines()
+    assert result == ["A", "B", "C", "D", "E"]  # "C" not duplicated
+
+
 def test_capture_day_as_text_deduplicates_lines(monkeypatch):
     monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
     monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
