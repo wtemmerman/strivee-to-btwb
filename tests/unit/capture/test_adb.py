@@ -183,12 +183,24 @@ def test_take_screenshot_returns_image():
         assert img.size == (10, 10)
 
 
-def test_take_screenshot_raises_on_empty_response():
+def test_take_screenshot_raises_on_empty_response(monkeypatch):
     import pytest
 
+    monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
     with patch("strivee_btwb.capture.adb._adb", return_value=_fake_proc(b"")):
         with pytest.raises(RuntimeError, match="no data"):
             take_screenshot()
+
+
+def test_take_screenshot_retries_then_succeeds(monkeypatch):
+    monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), (0, 255, 0)).save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    responses = iter([_fake_proc(b""), _fake_proc(png_bytes)])
+    with patch("strivee_btwb.capture.adb._adb", side_effect=lambda *a, **k: next(responses)):
+        img = take_screenshot()
+        assert img.size == (10, 10)
 
 
 def test_swipe_up_calls_adb(monkeypatch):
@@ -392,6 +404,53 @@ def test_navigate_to_week_past_week_swipes_right(monkeypatch):
     )
     navigate_to_week(last_week)
     assert len(adb_calls) == 1
+
+
+def _xml(texts: list[str]) -> str:
+    nodes = "".join(f'<node text="{t}" bounds="[0,0][100,100]"/>' for t in texts)
+    return f"<hierarchy>{nodes}</hierarchy>"
+
+
+def test_capture_day_as_text_collapses_scroll_overlap(monkeypatch):
+    """Sticky headers and the scroll-overlap region are deduped against the prev dump."""
+    monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
+    monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb.scroll_to_top", lambda *_: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
+    monkeypatch.setattr("strivee_btwb.capture.adb.take_screenshot", lambda *_: _solid((1, 2, 3)))
+    monkeypatch.setattr("strivee_btwb.capture.adb.swipe_up", lambda *_, **__: None)
+    # Never let the screenshot-equality check stop the loop early.
+    monkeypatch.setattr("strivee_btwb.capture.adb._screens_same", lambda a, b: False)
+
+    dumps = iter([_xml(["Header", "A", "B", "C"]), _xml(["Header", "C", "D", "E"])])
+    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: next(dumps))
+
+    result = capture_day_as_text("Mon", max_scrolls=1).splitlines()
+    # "Header" (sticky) and "C" (overlap) appear once; D and E are appended.
+    assert result == ["Header", "A", "B", "C", "D", "E"]
+
+
+def test_capture_day_as_text_preserves_far_apart_repeat(monkeypatch):
+    """A line repeated in non-adjacent dumps (a legit repeat) is kept both times."""
+    monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
+    monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb.scroll_to_top", lambda *_: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
+    monkeypatch.setattr("strivee_btwb.capture.adb.take_screenshot", lambda *_: _solid((1, 2, 3)))
+    monkeypatch.setattr("strivee_btwb.capture.adb.swipe_up", lambda *_, **__: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb._screens_same", lambda a, b: False)
+
+    dumps = iter(
+        [
+            _xml(["RX", "200m Run", "5 Pull-ups"]),
+            _xml(["5 Pull-ups", "INTER"]),  # overlaps "5 Pull-ups"
+            _xml(["INTER", "200m Run", "4 Pull-ups"]),  # "200m Run" recurs, far from dump 1
+        ]
+    )
+    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: next(dumps))
+
+    result = capture_day_as_text("Mon", max_scrolls=2).splitlines()
+    assert result.count("200m Run") == 2  # the old global dedup would drop the 2nd
 
 
 def test_capture_day_as_text_deduplicates_lines(monkeypatch):

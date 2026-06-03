@@ -105,18 +105,25 @@ def launch_strivee(serial: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def take_screenshot(serial: str | None = None) -> Image.Image:
+def take_screenshot(
+    serial: str | None = None, attempts: int = 3, delay_s: float = 0.5
+) -> Image.Image:
     """Capture the current device screen and return it as an RGB PIL image.
 
-    Raises RuntimeError if ADB returns no data (device disconnected / debugging
-    disabled).
+    Retries a few times when ADB returns no data, since a single transient
+    hiccup should not abort a whole day's capture. Raises RuntimeError only if
+    every attempt comes back empty (device disconnected / debugging disabled).
     """
-    result = _adb(["exec-out", "screencap", "-p"], serial, timeout=10)
-    if not result.stdout:
-        raise RuntimeError(
-            "ADB screenshot returned no data. Is the device connected and USB debugging enabled?"
-        )
-    return Image.open(io.BytesIO(result.stdout)).convert("RGB")
+    for attempt in range(attempts):
+        result = _adb(["exec-out", "screencap", "-p"], serial, timeout=10)
+        if result.stdout:
+            return Image.open(io.BytesIO(result.stdout)).convert("RGB")
+        if attempt < attempts - 1:
+            logger.warning("ADB screenshot empty — retry %d/%d", attempt + 1, attempts - 1)
+            time.sleep(delay_s)
+    raise RuntimeError(
+        "ADB screenshot returned no data. Is the device connected and USB debugging enabled?"
+    )
 
 
 def swipe_up(
@@ -226,11 +233,24 @@ def scroll_to_top(serial: str | None = None, max_swipes: int = 8) -> None:
         prev = curr
 
 
-def _ui_dump(serial: str | None = None) -> str:
-    """Dump the current UI hierarchy XML from the device."""
-    _adb(["shell", "uiautomator", "dump", "/sdcard/uidump.xml"], serial)
-    result = _adb(["shell", "cat", "/sdcard/uidump.xml"], serial)
-    return result.stdout.decode(errors="replace")
+def _ui_dump(serial: str | None = None, attempts: int = 3, delay_s: float = 0.5) -> str:
+    """Dump the current UI hierarchy XML from the device.
+
+    Retries when the dump comes back without a ``<hierarchy`` root (uiautomator
+    occasionally races the foreground app and returns an empty/partial file).
+    Returns the last response even if invalid; callers handle empty XML.
+    """
+    xml = ""
+    for attempt in range(attempts):
+        _adb(["shell", "uiautomator", "dump", "/sdcard/uidump.xml"], serial)
+        result = _adb(["shell", "cat", "/sdcard/uidump.xml"], serial)
+        xml = result.stdout.decode(errors="replace")
+        if "<hierarchy" in xml:
+            return xml
+        if attempt < attempts - 1:
+            logger.warning("UI dump empty/invalid — retry %d/%d", attempt + 1, attempts - 1)
+            time.sleep(delay_s)
+    return xml
 
 
 def _texts_from_dump(xml_str: str) -> list[str]:
@@ -313,9 +333,11 @@ def capture_day_as_text(
 ) -> str:
     """Extract all visible programming text for a day via Android accessibility tree.
 
-    Navigates to the day tab, scrolls from top to bottom, and collects unique
-    text elements from the UI dump at each position. Returns deduplicated lines
-    in appearance order — no screenshots, no stitching, no overlap possible.
+    Navigates to the day tab and scrolls from top to bottom, collecting text
+    from the UI dump at each position. Lines are deduplicated only against the
+    immediately preceding dump (the scroll-overlap region and sticky
+    headers/footers), so legitimately repeated content — the same weight across
+    rounds, "200m Run" under multiple difficulty levels — is preserved.
     """
     navigate_to_day(day_short, serial)
     time.sleep(0.5)
@@ -339,14 +361,19 @@ def capture_day_as_text(
         h_device,
     )
 
-    seen: set[str] = set()
+    # Deduplicate only against the IMMEDIATELY preceding dump — the scroll-overlap
+    # region and sticky headers/footers. A global "seen" set would also drop
+    # legitimate repeats that recur far apart in the workout (a weight reused in
+    # several rounds, "200m Run" under each difficulty level), corrupting content.
     lines: list[str] = []
+    prev_texts: set[str] = set()
 
     for _ in range(max_scrolls + 1):
-        for text in _texts_from_dump(_ui_dump(serial)):
-            if text not in seen:
-                seen.add(text)
+        dump_texts = _texts_from_dump(_ui_dump(serial))
+        for text in dump_texts:
+            if text not in prev_texts:
                 lines.append(text)
+        prev_texts = set(dump_texts)
         prev = take_screenshot(serial)
         swipe_up(serial, distance_fraction=scroll_fraction, duration_ms=1000, sleep_s=0.5)
         curr = take_screenshot(serial)
