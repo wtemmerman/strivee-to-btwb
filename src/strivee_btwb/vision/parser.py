@@ -15,13 +15,36 @@ import re
 from json_repair import repair_json
 
 from ..core import config
-from ..core.llm import chat_text
+from ..core.llm import chat_json
 from ..core.models import DayProgramming, ProgrammingBlock
 from ..prompts import load
 
 logger = logging.getLogger("vision")
 
 _TEXT_PROMPT_TEMPLATE = load("parse_day.txt")
+
+# JSON schema passed to Ollama's structured-output `format`. The model is
+# grammar-constrained to emit valid JSON in this shape, which removes almost all
+# of the historical JSON-repair fragility at the source. _extract_json is kept
+# as a fallback for Ollama/model setups that do not honour the schema.
+_BLOCKS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "blocks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "content": {"type": "string"},
+                    "instruction": {"type": "string"},
+                },
+                "required": ["name", "content"],
+            },
+        }
+    },
+    "required": ["blocks"],
+}
 
 
 def _sanitize_json_strings(s: str) -> str:
@@ -111,6 +134,74 @@ def _is_excluded(name: str) -> bool:
     return any(ex.lower() in name_lower for ex in config.EXCLUDED_BLOCKS)
 
 
+def _normalise_shape(data: object) -> dict:
+    """Coerce assorted model response shapes into a ``{"blocks": [...]}`` dict.
+
+    The schema-constrained path returns this shape directly; this only matters
+    for the fallback path, where a model may emit a bare list, a ``{"blocks":
+    ...}`` synonym keyed differently, or a flat ``{name: content}`` mapping.
+    """
+    if isinstance(data, list):
+        return {"blocks": data}
+    if not isinstance(data, dict):
+        return {"blocks": []}
+    if data.get("blocks"):
+        return data
+    list_vals = [v for v in data.values() if isinstance(v, list)]
+    if list_vals:
+        return {"blocks": list_vals[0]}
+    if data and all(isinstance(v, str) for v in data.values()):
+        return {"blocks": [{"name": k, "content": v} for k, v in data.items()]}
+    return {"blocks": data.get("blocks", [])}
+
+
+def _validate_blocks(raw_blocks: object, day_label: str) -> list[dict]:
+    """Return well-formed ``{name, content, instruction}`` dicts from the model output.
+
+    Drops entries that are not objects or have no usable name, logging each, so a
+    single malformed entry can never abort the whole day.
+    """
+    if not isinstance(raw_blocks, list):
+        return []
+    valid: list[dict] = []
+    for b in raw_blocks:
+        if not isinstance(b, dict):
+            logger.warning("%s: dropping non-object block entry: %r", day_label, b)
+            continue
+        name = str(b.get("name", "")).strip()
+        if not name:
+            logger.warning("%s: dropping block with empty name: %r", day_label, b)
+            continue
+        valid.append(
+            {
+                "name": name,
+                "content": str(b.get("content", "")),
+                "instruction": str(b.get("instruction", "")),
+            }
+        )
+    return valid
+
+
+def _parse_blocks_response(raw: str, day_label: str) -> dict:
+    """Parse the model's response into a ``{"blocks": [...]}`` dict.
+
+    Fast path: structured output is valid JSON, so ``json.loads`` succeeds
+    directly. Fallback: the tolerant :func:`_extract_json` repair path handles
+    fences, stray prose, and unescaped control characters for setups where the
+    schema is not honoured.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            data = json.loads(_extract_json(raw))
+        except (ValueError, json.JSONDecodeError) as e:
+            raise ValueError(
+                f"Text parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
+            ) from e
+    return _normalise_shape(data)
+
+
 # A real "EMF ..." block title starts with EMF, a level (number / RX), and has a
 # name after a ':' or '-' separator. This deliberately excludes the app header
 # lines "EMF 60'" / "EMF 45'" (a minute/prime symbol, no separator).
@@ -167,35 +258,20 @@ def extract_day_programming_from_text(
     logger.info("Parsing %s from text dump (%d chars) with %s", day_label, len(text), model)
 
     logger.debug("%s: prompt:\n%s", day_label, prompt)
-    raw = chat_text(prompt, model)
+    raw = chat_json(prompt, model, schema=_BLOCKS_SCHEMA)
     logger.debug("%s: raw text-parse response:\n%s", day_label, raw)
 
     if not raw.strip():
         logger.warning("%s: model returned empty response", day_label)
-        data: dict = {}
+        data: dict = {"blocks": []}
     else:
-        try:
-            json_str = _extract_json(raw)
-            data = json.loads(json_str)
-        except (ValueError, json.JSONDecodeError) as e:
-            raise ValueError(
-                f"Text parsing failed for {day_label}: {e}\n\nModel response:\n{raw}"
-            ) from e
+        data = _parse_blocks_response(raw, day_label)
 
-    if isinstance(data, list):
-        data = {"blocks": data}
-    if not data.get("blocks"):
-        list_vals = [v for v in data.values() if isinstance(v, list)]
-        if list_vals:
-            data = {"blocks": list_vals[0]}
-        elif data and all(isinstance(v, str) for v in data.values()):
-            data = {"blocks": [{"name": k, "content": v} for k, v in data.items()]}
-
-    all_blocks = data.get("blocks", [])
+    all_blocks = _validate_blocks(data.get("blocks", []), day_label)
     blocks = [
-        ProgrammingBlock(name=b["name"], content=b["content"], instruction=b.get("instruction", ""))
+        ProgrammingBlock(name=b["name"], content=b["content"], instruction=b["instruction"])
         for b in all_blocks
-        if not _is_excluded(b.get("name", ""))
+        if not _is_excluded(b["name"])
     ]
     excluded_count = len(all_blocks) - len(blocks)
     if excluded_count:

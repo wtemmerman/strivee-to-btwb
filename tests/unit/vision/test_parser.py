@@ -5,9 +5,11 @@ import json
 import pytest
 
 from strivee_btwb.vision.parser import (
+    _BLOCKS_SCHEMA,
     _extract_json,
     _is_excluded,
     _sanitize_json_strings,
+    _validate_blocks,
     count_block_titles,
 )
 
@@ -120,6 +122,63 @@ def test_is_excluded_empty_list(monkeypatch):
 
     monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
     assert not _is_excluded("Anything")
+
+
+# ---------------------------------------------------------------------------
+# _validate_blocks
+# ---------------------------------------------------------------------------
+
+
+def test_validate_blocks_keeps_wellformed():
+    raw = [{"name": "WOD", "content": "21-15-9", "instruction": "go hard"}]
+    assert _validate_blocks(raw, "Mon") == raw
+
+
+def test_validate_blocks_defaults_missing_fields():
+    result = _validate_blocks([{"name": "Squat"}], "Mon")
+    assert result == [{"name": "Squat", "content": "", "instruction": ""}]
+
+
+def test_validate_blocks_drops_non_objects_and_empty_names(caplog):
+    import logging
+
+    raw = [
+        {"name": "WOD", "content": "x"},
+        "not an object",
+        {"name": "   ", "content": "orphan"},
+    ]
+    with caplog.at_level(logging.WARNING, logger="vision"):
+        result = _validate_blocks(raw, "Mon")
+    assert [b["name"] for b in result] == ["WOD"]
+    assert sum("dropping" in r.message for r in caplog.records) == 2
+
+
+def test_validate_blocks_non_list_returns_empty():
+    assert _validate_blocks({"blocks": []}, "Mon") == []
+
+
+# ---------------------------------------------------------------------------
+# structured output (schema passed to the model)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_passes_schema_to_model(monkeypatch):
+    from datetime import date
+
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    captured = {}
+
+    def fake_chat(**kwargs):
+        captured.update(kwargs)
+        return {"message": {"content": '{"blocks": [{"name": "WOD", "content": "5x5"}]}'}}
+
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", fake_chat)
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text("text", "Mon", date(2026, 4, 27))
+    assert captured["format"] == _BLOCKS_SCHEMA
+    assert result.blocks[0].name == "WOD"
 
 
 # ---------------------------------------------------------------------------
