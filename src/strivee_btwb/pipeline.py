@@ -98,9 +98,8 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
                 version,
                 CACHE_SCHEMA_VERSION,
             )
-        logger.info("Loaded cache: %s", matches[-1].name)
-        parsed.append(
-            DayProgramming(
+        try:
+            day = DayProgramming(
                 date=date.fromisoformat(data["date"]),
                 day_label=data["day_label"],
                 blocks=[
@@ -110,7 +109,17 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
                     for b in data["blocks"]
                 ],
             )
-        )
+        except (KeyError, ValueError) as e:
+            # Malformed / older-shape / empty-name cache: skip this day with a clear
+            # message rather than crashing the whole preview/post with a traceback.
+            logger.warning(
+                "Skipping unreadable cache %s (%s) — re-run: strivee-btwb analyse",
+                matches[-1].name,
+                e,
+            )
+            continue
+        logger.info("Loaded cache: %s", matches[-1].name)
+        parsed.append(day)
     return WeeklyProgramming(week_start=ws, days=parsed)
 
 
@@ -285,6 +294,8 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
         sys.exit(1)
 
     logger.info("Starting text analysis with model '%s'", config.OLLAMA_TEXT_MODEL)
+    saved = 0
+    errors = 0
     for day_short, text in text_captures.items():
         try:
             expected = len(count_block_titles(text))
@@ -295,6 +306,7 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
             )
             # Retry with the fallback model when the primary returns nothing or
             # fewer blocks than the source has EMF titles (a likely dropped block).
+            # extract_day_programming_from_text already warns about the shortfall.
             short = len(day_prog.blocks) < expected
             if (not day_prog.blocks or short) and config.OLLAMA_FALLBACK_TEXT_MODEL:
                 logger.warning(
@@ -313,15 +325,8 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
                 if len(fallback.blocks) > len(day_prog.blocks):
                     day_prog = fallback
             if day_prog.blocks:
-                if len(day_prog.blocks) < expected:
-                    logger.warning(
-                        "%s: cached %d block(s) but source has %d EMF title(s) — "
-                        "review for a dropped block",
-                        day_short,
-                        len(day_prog.blocks),
-                        expected,
-                    )
                 path = save_day(day_prog, ws)
+                saved += 1
                 logger.info("%s cached -> %s", day_short, path.name)
             else:
                 logger.warning("%s: no blocks found after fallback — skipping", day_short)
@@ -331,9 +336,15 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
             logger.error("%s", e)
             sys.exit(1)
         except Exception as e:
+            errors += 1
             logger.error("%s: analysis failed — %s", day_short, e)
 
-    logger.info("Analysis done")
+    if errors and not saved:
+        # Every processed day errored: a systemic problem, not per-day noise.
+        # Exit non-zero instead of printing a success line.
+        logger.error("All %d day(s) failed to parse — aborting", errors)
+        sys.exit(1)
+    logger.info("Analysis done (%d day(s) cached)", saved)
 
 
 def do_preview(days: list[str], ws: date | None = None) -> None:
