@@ -1,6 +1,8 @@
 """Unit tests for vision JSON extraction and sanitisation helpers."""
 
 import json
+from datetime import date
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -8,9 +10,11 @@ from strivee_btwb.vision.parser import (
     _BLOCKS_SCHEMA,
     _extract_json,
     _is_excluded,
+    _recover_block,
     _sanitize_json_strings,
     _validate_blocks,
     count_block_titles,
+    extract_day_programming_from_text,
 )
 
 # ---------------------------------------------------------------------------
@@ -268,6 +272,62 @@ def test_extract_warns_when_blocks_dropped(monkeypatch, caplog):
 
     assert len(result.blocks) == 1
     assert any("may have dropped a block" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# _recover_block / missing-block recovery
+# ---------------------------------------------------------------------------
+
+
+def test_recover_block_returns_block(monkeypatch):
+    resp = {"message": {"content": '{"content": "45-60min Long Run", "instruction": "Endurance"}'}}
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: resp)
+    block = _recover_block("text", "EMF 60 - Optional RUN", "qwen3:8b")
+    assert block is not None
+    assert block.name == "EMF 60 - Optional RUN"
+    assert block.content == "45-60min Long Run"
+    assert block.instruction == "Endurance"
+
+
+def test_recover_block_empty_content_returns_none(monkeypatch):
+    resp = {"message": {"content": '{"content": "   ", "instruction": "x"}'}}
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", lambda **_: resp)
+    assert _recover_block("text", "EMF 60 : X", "qwen3:8b") is None
+
+
+def test_extract_recovers_block_merged_into_excluded_neighbour(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    # The full parse drops "EMF 60 - Optional RUN" (merged into the excluded
+    # Hebdomadaire); the focused recovery call then restores it.
+    source = "EMF 60 : Hebdomadaire\nCALL\nEMF 60 - Optional RUN\n45-60min Long Run\nObjectif"
+    primary_json = '{"blocks": [{"name": "EMF 60 : Hebdomadaire", "content": "CALL"}]}'
+    recover_json = '{"content": "45-60min Long Run", "instruction": "endurance"}'
+    primary = {"message": {"content": primary_json}}
+    recover = {"message": {"content": recover_json}}
+    monkeypatch.setattr(
+        "strivee_btwb.core.llm.ollama.chat", MagicMock(side_effect=[primary, recover])
+    )
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", ["Hebdomadaire"])
+
+    result = extract_day_programming_from_text(source, "Thu", date(2026, 6, 11))
+    names = [b.name for b in result.blocks]
+    assert names == ["EMF 60 - Optional RUN"]  # Hebdomadaire excluded, Optional RUN recovered
+    assert result.blocks[0].content == "45-60min Long Run"
+
+
+def test_extract_no_recovery_when_all_titles_present(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    source = "EMF 60 : Snatch\nBuild to 1RM"
+    primary_json = '{"blocks": [{"name": "EMF 60 : Snatch", "content": "Build to 1RM"}]}'
+    primary = {"message": {"content": primary_json}}
+    chat = MagicMock(return_value=primary)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", chat)
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+
+    extract_day_programming_from_text(source, "Mon", date(2026, 4, 27))
+    assert chat.call_count == 1  # no recovery call when nothing is missing
 
 
 # ---------------------------------------------------------------------------
