@@ -1,4 +1,4 @@
-.PHONY: install dev-install test test-cov test-watch lint format typecheck check start help setup-python
+.PHONY: install dev-install test test-cov test-watch benchmark-baseline benchmark lint format typecheck check start help setup-python
 
 help:
 	@echo "Available Commands"
@@ -47,6 +47,14 @@ test-cov:
 
 test-watch:
 	uv run pytest-watch tests/ -- -v
+
+# Accuracy + timing benchmark over saved captures (requires Ollama + captures/).
+# Run baseline once to snapshot current model output, then compare after changes.
+benchmark-baseline:
+	uv run python -m tests.benchmark.run_baseline
+
+benchmark:
+	uv run python -m tests.benchmark.compare
 
 lint:
 	@echo "Running ruff lint..."
