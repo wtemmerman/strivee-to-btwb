@@ -14,13 +14,17 @@ from strivee_btwb.pipeline import (
     clean_week,
     do_analyse,
     do_capture,
+    do_delete,
     do_post,
     do_preview,
     load_days,
+    load_formatted_day,
     load_text_captures,
     log_preview,
     log_summary,
+    prepare_week_for_btwb,
     save_day,
+    save_formatted_day,
     save_text_capture,
     short_to_date,
     week_start,
@@ -28,6 +32,15 @@ from strivee_btwb.pipeline import (
 
 FIXTURE_WEEK = date(2026, 4, 27)
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_formatted_dir(tmp_path, monkeypatch):
+    """Point the formatted-week cache at a throwaway dir so tests never read or
+    write the repo's ./formatted and each test starts cache-cold."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path / "formatted_cache")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -278,6 +291,58 @@ def test_do_preview_exits_when_no_cache(monkeypatch, tmp_path):
         do_preview(["Mon"])
 
 
+# ── formatted-week cache (prepare_week_for_btwb / save/load_formatted_day) ──────
+
+
+def test_formatted_cache_roundtrip():
+    day = DayProgramming(
+        date=FIXTURE_WEEK,
+        day_label="Mon",
+        blocks=[ProgrammingBlock(name="WOD", content="21-15-9")],
+    )
+    save_formatted_day(day, FIXTURE_WEEK, source_mtime_ns=12345)
+    loaded = load_formatted_day(FIXTURE_WEEK, "Mon", expected_mtime_ns=12345)
+    assert loaded is not None
+    assert loaded.blocks[0].name == "WOD"
+    assert loaded.blocks[0].content == "21-15-9"
+
+
+def test_formatted_cache_stale_when_source_mtime_changes(caplog):
+    day = DayProgramming(
+        date=FIXTURE_WEEK, day_label="Tue", blocks=[ProgrammingBlock(name="A", content="x")]
+    )
+    save_formatted_day(day, FIXTURE_WEEK, source_mtime_ns=100)
+    # Parsed source was re-analysed (newer mtime) → cache must be treated as stale.
+    assert load_formatted_day(FIXTURE_WEEK, "Tue", expected_mtime_ns=999) is None
+
+
+def test_formatted_cache_miss_when_absent():
+    assert load_formatted_day(FIXTURE_WEEK, "Wed", expected_mtime_ns=1) is None
+
+
+def test_prepare_week_reuses_cache_on_second_call(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    calls = {"n": 0}
+
+    def counting_format(block, **_):
+        calls["n"] += 1
+        return block
+
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", counting_format)
+
+    first = prepare_week_for_btwb(["Mon", "Tue"], FIXTURE_WEEK)
+    assert first.days  # formatted something
+    assert calls["n"] > 0
+    after_first = calls["n"]
+
+    # Second call must hit the formatted cache and not re-invoke the LLM formatter.
+    second = prepare_week_for_btwb(["Mon", "Tue"], FIXTURE_WEEK)
+    assert calls["n"] == after_first  # zero additional format calls
+    assert [d.day_label for d in second.days] == [d.day_label for d in first.days]
+
+
 # ── do_analyse ────────────────────────────────────────────────────────────────
 
 
@@ -434,6 +499,100 @@ def test_do_post_exits_when_no_days_approved(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _: "n")
     with pytest.raises(SystemExit):
         do_post(["Mon"], yes=False, headless=True)
+
+
+# ── do_delete ─────────────────────────────────────────────────────────────────
+
+
+def test_do_delete_passes_iso_dates_for_requested_days(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "test@example.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "password")
+
+    mock_delete = MagicMock(return_value=[{"id": "1", "ok": True}])
+    monkeypatch.setattr("strivee_btwb.pipeline.delete_week", mock_delete)
+
+    do_delete(["Mon", "Tue"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+    kwargs = mock_delete.call_args.kwargs
+    assert kwargs["dates"] == ["2026-04-27", "2026-04-28"]
+    assert kwargs["confirm"] is None  # --yes skips confirmation
+
+
+def test_do_delete_uses_confirm_prompt_when_not_yes(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "x")
+    mock_delete = MagicMock(return_value=[])
+    monkeypatch.setattr("strivee_btwb.pipeline.delete_week", mock_delete)
+
+    do_delete(["Mon"], yes=False, headless=True, ws=FIXTURE_WEEK)
+    assert callable(mock_delete.call_args.kwargs["confirm"])
+
+
+def test_do_delete_dry_run_skips_confirm(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "x")
+    mock_delete = MagicMock(return_value=[{"id": "1", "dry_run": True}])
+    monkeypatch.setattr("strivee_btwb.pipeline.delete_week", mock_delete)
+
+    do_delete(["Mon"], yes=False, headless=True, ws=FIXTURE_WEEK, dry_run=True)
+    assert mock_delete.call_args.kwargs["dry_run"] is True
+    assert mock_delete.call_args.kwargs["confirm"] is None  # dry-run never prompts
+
+
+def test_do_delete_exits_without_credentials(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "")
+    with pytest.raises(SystemExit):
+        do_delete(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_do_delete_exits_on_auth_error(monkeypatch):
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.btwb import AuthenticationError
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "x")
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.delete_week",
+        MagicMock(side_effect=AuthenticationError("bad creds")),
+    )
+    with pytest.raises(SystemExit):
+        do_delete(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_do_delete_exits_on_generic_exception(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "x")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "x")
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.delete_week", MagicMock(side_effect=RuntimeError("browser crashed"))
+    )
+    with pytest.raises(SystemExit):
+        do_delete(["Mon"], yes=True, headless=True, ws=FIXTURE_WEEK)
+
+
+def test_confirm_delete_accepts_y(monkeypatch, capsys):
+    from strivee_btwb.pipeline import _confirm_delete
+
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    assert _confirm_delete([{"date": "2026-06-08", "title": "WOD"}]) is True
+    assert "permanently delete" in capsys.readouterr().out.lower()
+
+
+def test_confirm_delete_defaults_to_no(monkeypatch):
+    from strivee_btwb.pipeline import _confirm_delete
+
+    monkeypatch.setattr("builtins.input", lambda _: "")  # bare Enter
+    assert _confirm_delete([{"date": "2026-06-08", "title": "WOD"}]) is False
 
 
 # ── save_text_capture / load_text_captures ────────────────────────────────────

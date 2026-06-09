@@ -4,7 +4,15 @@ import argparse
 from datetime import date
 
 from .core import log
-from .pipeline import do_analyse, do_capture, do_post, do_preview, parse_days, week_start
+from .pipeline import (
+    do_analyse,
+    do_capture,
+    do_delete,
+    do_post,
+    do_preview,
+    parse_days,
+    week_start,
+)
 
 _DAYS_HELP = "Comma-separated days to process (default: Mon-Sat)"
 _WEEK_HELP = "Week to process as YYYY-MM-DD (any day in the week); defaults to current week"
@@ -53,6 +61,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
     p.add_argument("--headless", action="store_true", help="Run browser without a visible window")
 
+    p = sub.add_parser("delete", help="Delete all planned workouts for a week on BTWB")
+    p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
+    p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
+    p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    p.add_argument("--headless", action="store_true", help="Run browser without a visible window")
+    p.add_argument(
+        "--dry-run", action="store_true", help="List the workouts that would be deleted, then stop"
+    )
+
     p = sub.add_parser("run", help="Run all steps: capture → analyse → preview → post")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
@@ -78,6 +95,14 @@ def main() -> None:
         do_preview(days, ws)
     elif args.command == "post":
         do_post(days, getattr(args, "yes", False), getattr(args, "headless", False), ws)
+    elif args.command == "delete":
+        do_delete(
+            days,
+            getattr(args, "yes", False),
+            getattr(args, "headless", False),
+            ws,
+            getattr(args, "dry_run", False),
+        )
     elif args.command == "run":
         do_capture(days, getattr(args, "no_scrcpy", False), ws)
         do_analyse(days, ws)

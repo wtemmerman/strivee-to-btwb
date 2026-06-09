@@ -64,6 +64,16 @@ def test_parser_debug_flag():
     assert args.debug is True
 
 
+def test_parser_delete_flags():
+    args = _build_parser().parse_args(
+        ["delete", "--days", "Mon,Tue", "--week", "2026-06-08", "--yes", "--headless", "--dry-run"]
+    )
+    assert args.days == "Mon,Tue"
+    assert args.yes is True
+    assert args.headless is True
+    assert args.dry_run is True
+
+
 def test_parser_requires_subcommand():
     with pytest.raises(SystemExit):
         _build_parser().parse_args([])
@@ -105,6 +115,15 @@ def test_main_post_calls_do_post(monkeypatch):
         mock.assert_called_once()
         args = mock.call_args[0]
         assert args[1] is True  # yes=True
+
+
+def test_main_delete_calls_do_delete(monkeypatch):
+    with patch("strivee_btwb.cli.do_delete") as mock:
+        _run_main(["delete", "--yes", "--dry-run"])
+        mock.assert_called_once()
+        args = mock.call_args[0]
+        assert args[1] is True  # yes=True
+        assert args[4] is True  # dry_run=True
 
 
 def test_main_run_calls_all_steps(monkeypatch):
