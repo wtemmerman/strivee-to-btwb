@@ -310,6 +310,9 @@ Copy `.env.example` to `.env` and fill in the required values:
 ```env
 OLLAMA_TEXT_MODEL=qwen3:8b         # text model for analyse step
 OLLAMA_FORMAT_MODEL=qwen3:8b       # text model for preview/post formatting (same model)
+# Optional Ollama tuning (sensible defaults if unset):
+# OLLAMA_NUM_CTX=16384             # context window — must exceed the parse prompt + a day's text
+# OLLAMA_KEEP_ALIVE=10m            # keep the model resident across a run
 
 BTWB_EMAIL=your@email.com
 BTWB_PASSWORD=yourpassword
@@ -426,7 +429,7 @@ src/strivee_btwb/
   capture/        ADB UI accessibility text dump (adb.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
-  btwb/           BTWB Playwright automation (client.py)
+  btwb/           BTWB Playwright automation — post + delete (client.py)
   pipeline.py     step orchestration and cache I/O
   cli.py          argparse wiring
   __main__.py     entry point
@@ -437,9 +440,11 @@ tests/
     capture/        UI text helpers, element detection, capture_day_as_text
     vision/         JSON extraction, mock Ollama tests
     processing/     Rx extraction, coaching strip
-    btwb/           dry-run posting
+    btwb/           dry-run posting, delete, calendar dedup
+    benchmark/      benchmark comparator tests
     test_pipeline   cache I/O, week processing
     test_cli        argument parsing
+  benchmark/        accuracy + timing harness (run via `make benchmark`)
   fixtures/
     2026-04-27/     real parsed JSON used as test data
 ```
