@@ -34,6 +34,19 @@ def test_chat_text_passes_prompt_and_model():
         assert "format" not in kwargs
 
 
+def test_chat_sets_num_ctx_and_keep_alive():
+    # num_ctx guards against silent truncation of the large parse prompt; keep_alive
+    # keeps the model resident across analyse/format calls of a run.
+    import strivee_btwb.core.config as cfg
+
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("x")) as mock_chat:
+        chat_text("p", "m")
+        kwargs = mock_chat.call_args.kwargs
+        assert kwargs["options"]["num_ctx"] == cfg.OLLAMA_NUM_CTX
+        assert kwargs["options"]["temperature"] == 0
+        assert kwargs["keep_alive"] == cfg.OLLAMA_KEEP_ALIVE
+
+
 def test_chat_json_with_schema_sets_format():
     schema = {"type": "object"}
     with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("{}")) as mock_chat:

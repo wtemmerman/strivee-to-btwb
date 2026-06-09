@@ -22,6 +22,18 @@ from ..prompts import load
 logger = logging.getLogger("vision")
 
 _TEXT_PROMPT_TEMPLATE = load("parse_day.txt")
+_RECOVER_PROMPT_TEMPLATE = load("recover_block.txt")
+
+# Single-block recovery output: just the prescription + coaching notes for one
+# named block (the title is already known from the regex that found it).
+_RECOVER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "content": {"type": "string"},
+        "instruction": {"type": "string"},
+    },
+    "required": ["content"],
+}
 
 # JSON schema passed to Ollama's structured-output `format`. The model is
 # grammar-constrained to emit valid JSON in this shape, which removes almost all
@@ -234,6 +246,43 @@ def count_block_titles(text: str) -> list[str]:
     ]
 
 
+def _norm_title(name: str) -> str:
+    """Normalise a block title for set-membership comparison (case/space-insensitive)."""
+    return " ".join(name.split()).casefold()
+
+
+def _recover_block(text: str, title: str, model: str) -> ProgrammingBlock | None:
+    """Re-extract a single named block the full-text parse merged or dropped.
+
+    The model often fails the boundary between an excluded block and a small real
+    block that follows it (it absorbs the real block's lines into the excluded
+    one). count_block_titles still finds the title via regex, and asking the model
+    for just that one block is a far easier task, so this recovers it reliably.
+
+    Returns None (no block added) when the model yields nothing usable. Raises
+    LLMUnavailableError on infrastructure failure, like every other model call.
+    """
+    prompt = _RECOVER_PROMPT_TEMPLATE.format(title=title, text=text)
+    raw = chat_json(prompt, model, schema=_RECOVER_SCHEMA)
+    if not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            data = json.loads(_extract_json(raw))
+        except (ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(data, dict):
+        return None
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return None
+    return ProgrammingBlock(
+        name=title, content=content, instruction=str(data.get("instruction", "")).strip()
+    )
+
+
 def extract_day_programming_from_text(
     text: str,
     day_label: str,
@@ -286,6 +335,20 @@ def extract_day_programming_from_text(
         logger.debug("%s: %d block(s) dropped by exclusion filter", day_label, excluded_count)
 
     expected_titles = count_block_titles(text)
+
+    # Recover any non-excluded EMF title the model merged into a neighbour or
+    # dropped: the regex above finds the title reliably, and a focused single-block
+    # re-extraction succeeds where the full multi-block parse failed the boundary.
+    present = {_norm_title(b.name) for b in blocks}
+    for title in expected_titles:
+        if _norm_title(title) in present:
+            continue
+        recovered = _recover_block(text, title, model)
+        if recovered is not None:
+            logger.info("%s: recovered dropped block '%s'", day_label, title)
+            blocks.append(recovered)
+            present.add(_norm_title(title))
+
     if len(blocks) < len(expected_titles):
         logger.warning(
             "%s: extracted %d block(s) but the source has %d EMF block title(s) — "

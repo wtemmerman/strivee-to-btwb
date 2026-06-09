@@ -44,13 +44,29 @@ def _adb(
     return subprocess.run(prefix + cmd, capture_output=True, timeout=timeout, check=False)
 
 
+# Screen size never changes mid-session, but it was being re-queried over adb on
+# every swipe (~20 calls/day). Cache the first successful read per serial; a
+# failed read falls back without caching so a later call can retry.
+_DEVICE_SIZE_CACHE: dict[str | None, tuple[int, int]] = {}
+
+
+def reset_device_size_cache() -> None:
+    """Clear the device-size cache (call once at the start of a capture session)."""
+    _DEVICE_SIZE_CACHE.clear()
+
+
 def _device_size(serial: str | None = None) -> tuple[int, int]:
-    """Return (width, height) of the connected device screen in pixels."""
+    """Return (width, height) of the connected device screen in pixels (cached)."""
+    cached = _DEVICE_SIZE_CACHE.get(serial)
+    if cached is not None:
+        return cached
     result = _adb(["shell", "wm", "size"], serial)
     m = re.search(r"(\d+)x(\d+)", result.stdout.decode(errors="replace"))
     if m:
-        return int(m.group(1)), int(m.group(2))
-    return 1080, 2400
+        size = (int(m.group(1)), int(m.group(2)))
+        _DEVICE_SIZE_CACHE[serial] = size
+        return size
+    return 1080, 2400  # transient failure — don't cache, retry next call
 
 
 def _retry_until[T](
@@ -252,7 +268,7 @@ def scroll_to_top(serial: str | None = None, max_swipes: int = 8) -> None:
     """Swipe down repeatedly until the screen stops changing, indicating the top."""
     prev = take_screenshot(serial)
     for _ in range(max_swipes):
-        swipe_down(serial, distance_fraction=0.8, duration_ms=200, sleep_s=0.3)
+        swipe_down(serial, distance_fraction=0.8, duration_ms=200, sleep_s=0.15)
         curr = take_screenshot(serial)
         if _screens_same(prev, curr):
             break
@@ -310,7 +326,7 @@ def _find_element_center(xml_str: str, text: str) -> tuple[int, int] | None:
 def _tap(x: int, y: int, serial: str | None = None) -> None:
     """Tap a point on the device screen and wait for the UI to settle."""
     _adb(["shell", "input", "tap", str(x), str(y)], serial)
-    time.sleep(1.2)
+    time.sleep(0.8)
 
 
 def navigate_to_day(day_short: str, serial: str | None = None) -> bool:

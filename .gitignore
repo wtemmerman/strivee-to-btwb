@@ -30,9 +30,14 @@ htmlcov/
 # Secrets
 .env
 
-# Runtime data (screenshots and parsed JSON cache)
+# Runtime data (screenshots and parsed/formatted JSON caches)
 captures/
 parsed/
+formatted/
+
+# Benchmark artifacts (generated locally from saved captures; model/machine-specific)
+tests/benchmark/baselines/
+tests/benchmark/results/
 
 # Keep fixtures and docs screenshots, ignore any accidental PNGs elsewhere
 *.png

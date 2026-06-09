@@ -349,6 +349,19 @@ uv run strivee-btwb preview
 uv run strivee-btwb post
 ```
 
+To clear a week's planned workouts off BTWB (e.g. to re-post after a fix):
+
+```bash
+# List what would be deleted, without deleting (always safe to run first)
+uv run strivee-btwb delete --dry-run
+
+# Delete all planned workouts for the week (prompts for confirmation)
+uv run strivee-btwb delete
+```
+
+Only *planned* workouts are deleted; completed/logged sessions are left untouched.
+Deletion is keyed on the exact dates requested, so it can never affect another week.
+
 ### Flags available on all commands
 
 ```bash
@@ -363,6 +376,9 @@ uv run strivee-btwb post
 capture --no-scrcpy       # skip launching the screen mirror
 post    --yes             # skip interactive confirmation
 post    --headless        # run browser without a visible window
+delete  --yes             # skip interactive confirmation
+delete  --headless        # run browser without a visible window
+delete  --dry-run         # list workouts that would be deleted, then stop
 ```
 
 ### Examples
@@ -374,6 +390,9 @@ uv run strivee-btwb run --week 2026-04-20 --yes
 # Analyse and post a specific day from a previous week
 uv run strivee-btwb analyse --week 2026-04-20 --days Mon
 uv run strivee-btwb post    --week 2026-04-20 --days Mon --yes
+
+# Delete a specific day's planned workouts from a week
+uv run strivee-btwb delete  --week 2026-04-20 --days Mon --yes
 ```
 
 ---
@@ -431,9 +450,41 @@ tests/
 |---|---|
 | `captures/<week>/` | UI text dumps (.txt) |
 | `parsed/<week>/` | Text-parsed JSON cache |
+| `formatted/<week>/` | Cleaned + LLM-formatted block cache (lets `post` reuse `preview`'s output) |
+| `tests/benchmark/baselines/`, `tests/benchmark/results/` | Benchmark snapshots + timing CSVs |
 | `htmlcov/` | Coverage HTML report |
 
 ---
+
+## Performance
+
+The slow parts are the local LLM stages (analyse, format) and the device/browser
+round-trips (capture, post). Optimizations are gated by an accuracy benchmark
+(`make benchmark`) that re-parses saved captures and diffs against a snapshot of
+the current `qwen3:8b` output — so speed changes are only kept if extraction stays
+identical.
+
+What helps (all output-preserving):
+
+- **Formatted-week cache** — `preview` and `post` previously each ran the LLM
+  formatter over the whole week; the formatted result is now cached per day
+  (`formatted/<week>/`, invalidated when its parsed source is re-analysed), so a
+  `preview` → `post` run formats once, not twice.
+- **One calendar load in `post`** — the duplicate-check now loads the BTWB week
+  view once and scans all days, instead of once per day.
+- **Cached device size + trimmed settle waits in capture** — the screen size is
+  read once per session instead of on every swipe; a couple of conservative sleep
+  reductions. Screenshot-based scroll-end detection is untouched (accuracy-critical).
+- **Explicit `num_ctx` / `keep_alive`** — bounds the context window safely above
+  the largest prompt and keeps the model resident across a run.
+
+What does **not** help here (measured, not assumed): running the per-day analyse
+or per-block format calls **concurrently** is ~5× *slower* on a single GPU because
+these calls are prefill-bound (the ~4K-token parse prompt dominates), so four
+concurrent prefills just contend for the one GPU. The pipeline therefore calls the
+model sequentially. Do **not** set `OLLAMA_NUM_PARALLEL > 1` expecting a speedup
+for this workload. A genuinely faster LLM stage would need a smaller/faster model
+(kept as `qwen3:8b` for accuracy) — evaluate any swap with `make benchmark` first.
 
 ## Design Decisions
 
@@ -453,6 +504,10 @@ Cloud vision APIs (Claude, GPT-4o) were never tested — they would give better 
 ### Text model approach
 
 The text model (`qwen3:8b`) receives the raw accessibility-tree text for one day and returns structured JSON. It uses `think=False` to suppress thinking tokens and ensure the visible output is always the JSON response directly.
+
+### Dropped-block recovery
+
+A `EMF ...` block sandwiched between two excluded blocks (e.g. a short "EMF 60 - Optional RUN" between an excluded "Hebdomadaire" announcement and an excluded "Swim Workout") is sometimes merged into a neighbour by the full-text parse and lost. `count_block_titles` still finds the title with a regex, so after the main parse any non-excluded title that is missing from the result triggers a **focused single-block re-extraction** (`recover_block.txt`) — asking the model for just that one block, which it handles reliably even when the full multi-block parse failed the boundary. Recovery only runs when a block is actually missing, so complete days are untouched.
 
 ### LLM-based BTWB formatting
 

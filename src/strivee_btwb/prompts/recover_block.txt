@@ -1,0 +1,14 @@
+From the Strivee accessibility text below, extract ONLY the single workout block whose title is exactly:
+"{title}"
+
+The full-text parser merged or dropped this block; your job is to recover just this one. It starts at its title line and ends at the next block title (a line starting with "EMF" or with an emoji + sport name). Ignore every other block in the text.
+
+Return ONLY a JSON object, no markdown and no text around it:
+{{"content": "PRESCRIPTION_HERE", "instruction": "COACHING_NOTES_HERE"}}
+
+- content = what the athlete performs for this block: sets, reps, loads, %1RM, time, distances, the workout structure. Keep the RX / top-performance prescription when several levels are present.
+- instruction = this block's coaching notes, objective ("Objectif : ..."), or level adaptations (Inter+, Inter, ...). Use "" if there are none.
+- Do NOT include the title line itself, UI labels (Score, Media, Notes), or any other block's content.
+
+Text:
+{text}
