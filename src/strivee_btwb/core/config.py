@@ -23,6 +23,20 @@ OLLAMA_TEXT_MODEL: str = os.getenv("OLLAMA_TEXT_MODEL", "qwen3:8b")
 OLLAMA_FALLBACK_TEXT_MODEL: str | None = os.getenv("OLLAMA_FALLBACK_TEXT_MODEL") or None
 """Fallback model for text parsing when the primary returns zero blocks. Set to empty to disable."""
 
+OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
+"""Context window (tokens) for every Ollama call.
+
+qwen3:8b's modelfile pins no num_ctx, so Ollama falls back to a small default
+(~4K). The parse_day prompt (~3.7K tokens) plus a day's text dump can exceed that
+and silently truncate the START of the instruction prompt. 16384 covers the
+largest real input with headroom and stays well under the model's 40960 max."""
+
+OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
+"""How long Ollama keeps the model resident between calls. The server already
+defaults to 5m; this is insurance for a manual preview-then-post-later workflow.
+Also keeps one slot warm so the analyse prompt's instruction prefix stays cached
+across the day-by-day loop (sequential calls reuse it; do not run concurrently)."""
+
 # ── BTWB credentials ──────────────────────────────────────────────────────────
 
 BTWB_EMAIL: str = os.getenv("BTWB_EMAIL", "")
@@ -64,3 +78,7 @@ CAPTURES_DIR: Path = Path(os.getenv("CAPTURES_DIR", "captures"))
 
 PARSED_DIR: Path = Path(os.getenv("PARSED_DIR", "parsed"))
 """Root directory for vision-parsed JSON cache (one sub-folder per week)."""
+
+FORMATTED_DIR: Path = Path(os.getenv("FORMATTED_DIR", "formatted"))
+"""Root directory for the cleaned+LLM-formatted block cache (one sub-folder per
+week). Lets `post` reuse `preview`'s formatting instead of re-running the LLM."""

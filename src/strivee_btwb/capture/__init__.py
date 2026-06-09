@@ -3,6 +3,7 @@ from .adb import (
     launch_scrcpy,
     launch_strivee,
     navigate_to_week,
+    reset_device_size_cache,
     scroll_to_top,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "launch_scrcpy",
     "launch_strivee",
     "navigate_to_week",
+    "reset_device_size_cache",
     "scroll_to_top",
 ]

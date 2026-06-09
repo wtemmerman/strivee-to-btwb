@@ -5,6 +5,7 @@ import subprocess
 from datetime import date
 from unittest.mock import patch
 
+import pytest
 from PIL import Image
 
 from strivee_btwb.capture.adb import (
@@ -20,11 +21,22 @@ from strivee_btwb.capture.adb import (
     find_strivee_package,
     launch_strivee,
     navigate_to_day,
+    reset_device_size_cache,
     scroll_to_top,
     swipe_down,
     swipe_up,
     take_screenshot,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_device_size_cache():
+    """Device-size is memoized per serial; clear it around every test so a cached
+    value from one test never leaks into another."""
+    reset_device_size_cache()
+    yield
+    reset_device_size_cache()
+
 
 # ---------------------------------------------------------------------------
 # _change_fraction / _screens_same
@@ -120,6 +132,23 @@ def test_adb_with_serial_prepends_flag():
         cmd = mock_run.call_args[0][0]
         assert "-s" in cmd
         assert "emulator-5554" in cmd
+
+
+def test_device_size_is_cached_after_first_read():
+    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"Physical size: 1080x2400")
+    with patch("strivee_btwb.capture.adb._adb", return_value=fake) as mock_adb:
+        assert _device_size("serial-1") == (1080, 2400)
+        assert _device_size("serial-1") == (1080, 2400)
+    mock_adb.assert_called_once()  # second call served from cache
+
+
+def test_device_size_fallback_is_not_cached():
+    bad = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"garbage")
+    good = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"Physical size: 720x1600")
+    with patch("strivee_btwb.capture.adb._adb", side_effect=[bad, good]) as mock_adb:
+        assert _device_size("s") == (1080, 2400)  # fallback, not cached
+        assert _device_size("s") == (720, 1600)  # retried, now cached
+    assert mock_adb.call_count == 2
 
 
 def test_device_size_parses_output():

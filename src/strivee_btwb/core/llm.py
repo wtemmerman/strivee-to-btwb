@@ -23,6 +23,8 @@ import time
 import httpx
 import ollama
 
+from . import config
+
 logger = logging.getLogger("llm")
 
 
@@ -66,7 +68,11 @@ def _chat(
         "model": model,
         "think": False,  # suppress qwen3 thinking tokens that produce empty visible output
         "messages": [{"role": "user", "content": prompt}],
-        "options": {"temperature": 0},
+        # num_ctx must hold the full prompt + input: qwen3 pins none, so Ollama's
+        # small default would silently truncate the start of the parse prompt.
+        "options": {"temperature": 0, "num_ctx": config.OLLAMA_NUM_CTX},
+        # Keep the model resident across the analyse/format calls of one run.
+        "keep_alive": config.OLLAMA_KEEP_ALIVE,
     }
     if fmt is not None:
         kwargs["format"] = fmt
