@@ -17,13 +17,14 @@ from datetime import date
 
 from strivee_btwb.core import config
 from strivee_btwb.core.log import setup
-from strivee_btwb.pipeline import save_day
+from strivee_btwb.pipeline import clean_week, save_day
 
 from .harness import (
     RESULTS_DIR,
     StageTiming,
     _days_to_week,
     analyse_week,
+    format_fidelity,
     format_week,
     save_baseline,
     text_era_weeks,
@@ -64,6 +65,14 @@ def main() -> None:
         fweek, t_format = time_stage(format_week, week, units=block_count, week=ws, stage="format")
         save_baseline("format", ws, fweek)
         timings.append(t_format)
+
+        # Surface any invented/dropped loadings in the snapshot we are about to
+        # treat as ground truth, so a polluted baseline is caught at creation.
+        fid = format_fidelity(clean_week(week), fweek)
+        if not fid["passed"]:
+            for b in fid["per_block"]:
+                if b["violations"]:
+                    logger.warning("%s fidelity — %s: %s", ws, b["name"], b["violations"])
 
         logger.info(
             "%s — analyse %.1fs (%d days), format %.1fs (%d blocks)",

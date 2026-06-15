@@ -13,7 +13,7 @@ import logging
 
 from strivee_btwb.core import config
 from strivee_btwb.core.log import setup
-from strivee_btwb.pipeline import load_days
+from strivee_btwb.pipeline import clean_week, load_days
 
 from .harness import (
     RESULTS_DIR,
@@ -23,6 +23,7 @@ from .harness import (
     baseline_exists,
     compare_analyse,
     compare_format,
+    format_fidelity,
     format_week,
     load_baseline,
     text_era_weeks,
@@ -70,6 +71,13 @@ def main() -> None:
         if not f_report["passed"]:
             bad = [b for b in f_report["per_block"] if b.get("violations") or b["ratio"] < 0.95]
             failures.append(f"{ws} format: {bad}")
+
+        # Source-grounded fidelity: catches invented or dropped loadings the
+        # same-model baseline cannot. Compares the formatter's input to its output.
+        fid_report = format_fidelity(clean_week(parsed_week), fweek)
+        if not fid_report["passed"]:
+            bad = [b for b in fid_report["per_block"] if b["violations"]]
+            failures.append(f"{ws} fidelity: {bad}")
 
         timings.extend([t_analyse, t_format])
         status = "OK" if a_report["passed"] and f_report["passed"] else "FAIL"
