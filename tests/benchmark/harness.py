@@ -213,11 +213,90 @@ def format_invariants(block: ProgrammingBlock) -> list[str]:
     violations = []
     if not block.content.strip():
         violations.append("empty content")
-    if re.search(r"#\d+(?:\.\d+)?%", block.content):
+    if re.search(r"#\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?%", block.content):
         violations.append("unconverted #NN% (should be @NN%)")
     if re.search(r"\bC\s*&\s*J\b", block.content, re.IGNORECASE):
         violations.append("unexpanded C&J")
     return violations
+
+
+# Athlete-level sub-section headers. Content from the first such line onward is
+# intentionally stripped by the formatter, so loadings below it are not required.
+_LEVEL_HEADER_RE = re.compile(
+    r"^[^\w@#]*(RX|INTER\+?|SCALED|ELITE|D[ÉE]BUTANT|BEGINNER|INTERMEDIATE)\b",
+    re.IGNORECASE,
+)
+
+
+def _load_numbers(text: str) -> set[str]:
+    """Numbers that are part of a LOAD token: %, kg, lb, RM, @N, or N x BW.
+
+    Used to detect invented loads. Reps/cals/distances (numbers not adjacent to a
+    load unit) are deliberately excluded so normal prescriptions don't register.
+    The #NN% -> @NN% normalisation matches the formatter's own post-processing.
+    """
+    norm = re.sub(r"#(\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?)%", r"@\1%", text)
+    nums: set[str] = set()
+    for pat in (
+        r"(\d+(?:\.\d+)?)\s*%",
+        r"(\d+(?:\.\d+)?)\s*(?:kg|lb)\b",
+        r"@\s*(\d+(?:\.\d+)?)",
+        r"(\d+(?:\.\d+)?)\s*RM\b",
+        r"(\d+(?:\.\d+)?)\s*x?\s*BW\b",
+    ):
+        nums.update(re.findall(pat, norm, re.IGNORECASE))
+    return nums
+
+
+def _pre_level_loading_percents(text: str) -> set[str]:
+    """Percentage values from RM-loading lines that precede any level header.
+
+    These are top-level prescription loadings the formatter must keep. Restricted
+    to lines that carry both a '%' and 'RM' so coaching lines like '90% d'effort'
+    (correctly removed) never register as a dropped loading.
+    """
+    out: set[str] = set()
+    for line in text.splitlines():
+        if _LEVEL_HEADER_RE.match(line.strip()):
+            break
+        if re.search(r"\d+\s*%", line) and re.search(r"RM\b", line, re.IGNORECASE):
+            out.update(re.findall(r"(\d+(?:\.\d+)?)\s*%", line))
+    return out
+
+
+def format_fidelity(source: WeeklyProgramming, formatted: WeeklyProgramming) -> dict:
+    """Source-grounded format checks, independent of the (same-model) baseline.
+
+    For each block matched by name between the formatter's INPUT (cleaned analyse
+    output) and its OUTPUT, flags:
+      A. invented load numbers — a %/kg/lb/RM/BW number in the output absent from
+         the input (catches hallucinations like 'Up to a heavy single' -> '1xBW');
+      B. dropped RM-loadings — a percentage on a pre-level-header RM-loading line
+         in the input that does not survive into the output (catches the formatter
+         silently deleting '#90% of your 5RM from week 1').
+    Both directions are safe against the formatter's legitimate removals: stripping
+    sub-level sections only deletes content (never adds numbers), and dropped-load
+    detection ignores anything at or below the first athlete-level header.
+    """
+    s_days = {d.day_label: _index_blocks(d) for d in source.days}
+    f_days = {d.day_label: _index_blocks(d) for d in formatted.days}
+    per_block = []
+    ok = True
+    for label in sorted(set(s_days) | set(f_days)):
+        sidx, fidx = s_days.get(label, {}), f_days.get(label, {})
+        for name in sorted(set(sidx) & set(fidx)):
+            s_content, f_content = sidx[name].content, fidx[name].content
+            f_loads = _load_numbers(f_content)
+            hallucinated = sorted(f_loads - _load_numbers(s_content))
+            dropped = sorted(_pre_level_loading_percents(s_content) - f_loads)
+            violations = []
+            if hallucinated:
+                violations.append(f"invented load number(s): {hallucinated}")
+            if dropped:
+                violations.append(f"dropped RM-loading percent(s): {dropped}")
+            ok = ok and not violations
+            per_block.append({"day": label, "name": sidx[name].name, "violations": violations})
+    return {"passed": ok, "per_block": per_block}
 
 
 def compare_format(baseline: WeeklyProgramming, current: WeeklyProgramming) -> dict:

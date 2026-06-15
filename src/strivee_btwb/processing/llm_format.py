@@ -51,7 +51,8 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
     # by the `if result:` check below (degrade to the original parsed content).
     result = chat_text(prompt, m).strip()
 
-    result = re.sub(r"#(\d+(?:\.\d+)?)%", r"@\1%", result)
+    # Percentages of a RM use @ not # — including ranges like "#85-90%".
+    result = re.sub(r"#(\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?)%", r"@\1%", result)
     result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)
     if result:
         logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)

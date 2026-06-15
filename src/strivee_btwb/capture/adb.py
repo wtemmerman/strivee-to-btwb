@@ -263,6 +263,13 @@ def navigate_to_week(target_week: date, serial: str | None = None) -> None:
         _adb(["shell", "input", "swipe", str(x1), str(y), str(x2), str(y), "300"], serial)
         time.sleep(1.0)
 
+    # After a week-swipe Strivee auto-selects the *current weekday* and re-renders
+    # that day's content. If the first day-tab tap fires before this settles, it
+    # races the transition and the dump comes back as the auto-selected day (e.g.
+    # capturing today's empty Sunday view in place of Monday). Wait for the new
+    # week to finish rendering before the caller taps the first day.
+    time.sleep(2.0)
+
 
 def scroll_to_top(serial: str | None = None, max_swipes: int = 8) -> None:
     """Swipe down repeatedly until the screen stops changing, indicating the top."""
