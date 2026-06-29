@@ -251,6 +251,124 @@ def _norm_title(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
+# ── Deterministic output cleanup ────────────────────────────────────────────
+# The model is told to drop UI chrome (and we want emoji gone for BTWB), but it
+# does neither reliably. Enforce both deterministically on the final
+# content/instruction of every block. Safe by construction: the emoji ranges
+# match only pictographs/dingbats and the chrome regex matches only whole Strivee
+# UI lines — never workout prescription text.
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f000-\U0001faff"  # emoji and pictographs (legs, trident, target, pin, fire)
+    "\U00002600-\U000027bf"  # misc symbols and dingbats (arrows, check, star)
+    "\U00002b00-\U00002bff"  # misc symbols and arrows
+    "\ufe0f\u200d\u2640\u2642\u2122\u2139"  # VS16, ZWJ, gender signs, TM, info
+    "]",
+    flags=re.UNICODE,
+)
+
+# A whole line that is pure Strivee chrome: nav tabs, score/media counters, the
+# "rejoindre Strivee" footer. Anchored to the full line so it never clips content.
+_UI_CHROME_RE = re.compile(
+    r"^(?:wod|box|noter|prs|profil|\d+\s*scores?|\d+\s*medias?|"
+    r"à rejoindre strivee|tous les outils.*)$",
+    re.IGNORECASE,
+)
+
+_INVITE_FOOTER_RE = re.compile(r"\s*inviter un ami", re.IGNORECASE)
+
+# Lines that begin TRAILING coaching/guidance. In Strivee blocks coaching always
+# follows the prescription, so when one of these appears in content, it and every
+# line after it is relocated to instruction. Kept deliberately narrow — only
+# markers that never start a prescription line (NOT e.g. "Max rep ...") — so a
+# real movement line is never moved.
+_TRAILING_COACH_RE = re.compile(
+    r"^\s*-?\s*(?:objectif|gammes?\b|gamme sugg|notes?\b|notez|mat[ée]riel|"
+    r"quel niveau|si vous (?:ratez|manquez)|tentatives lourdes|conseil)\b",
+    re.IGNORECASE,
+)
+
+
+def _resplit_trailing_coaching(content: str, instruction: str) -> tuple[str, str]:
+    """Move trailing coaching that leaked into content over to instruction.
+
+    The model sometimes leaves "Notes :", "Gammes :", "Matériel :", "Objectif",
+    "Quel niveau" etc. in content. These always trail the prescription, so the
+    first such marker line and everything after it is relocated to the front of
+    instruction. No-op until at least one prescription line has been seen, so a
+    block the model mis-split into all-coaching is left for its own judgement.
+    """
+    lines = content.splitlines()
+    seen_prescription = False
+    for i, line in enumerate(lines):
+        if _TRAILING_COACH_RE.match(line):
+            if seen_prescription:
+                kept = "\n".join(lines[:i]).strip()
+                moved = "\n".join(lines[i:]).strip()
+                merged = f"{moved}\n\n{instruction}".strip() if instruction.strip() else moved
+                return kept, merged
+            continue  # leading coaching marker: not a prescription, don't arm the split
+        if line.strip():
+            seen_prescription = True
+    return content, instruction
+
+
+# A placeholder movement slot ("X Gymnastics Movement") and the inline RX value
+# that fills it ("RX - 5 Ring Muscle-up"). When both are present 1:1 in content,
+# substitute the value into the slot and drop the now-redundant "RX - ..." line.
+_PLACEHOLDER_RE = re.compile(r"^\s*X\b.*\bMovement\b\s*$", re.IGNORECASE)
+_RX_VALUE_RE = re.compile(r"^\s*RX\s*[-:]\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def _fill_placeholder_movements(content: str) -> str:
+    """Replace "X ... Movement" slots with their inline RX value, 1:1 only.
+
+    No-op unless the count of placeholders equals the count of "RX - <value>"
+    lines, so an ambiguous layout is never guessed at.
+    """
+    lines = content.splitlines()
+    ph = [i for i, ln in enumerate(lines) if _PLACEHOLDER_RE.match(ln)]
+    rx = [(i, m.group(1)) for i, ln in enumerate(lines) if (m := _RX_VALUE_RE.match(ln))]
+    if not ph or len(ph) != len(rx):
+        return content
+    values = [v for _, v in rx]
+    rx_idx = {i for i, _ in rx}
+    out: list[str] = []
+    vi = 0
+    for i, ln in enumerate(lines):
+        if i in set(ph):
+            out.append(values[vi])
+            vi += 1
+        elif i in rx_idx:
+            continue
+        else:
+            out.append(ln)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _clean_block_text(text: str) -> str:
+    """Strip emoji and Strivee UI chrome from one content/instruction field.
+
+    Drops everything from an "Inviter un ami" line onward (the invite footer ends
+    the real text), removes whole-line nav/score chrome, strips emoji, and tidies
+    the whitespace the removals leave behind while preserving paragraph breaks.
+    """
+    lines: list[str] = []
+    for raw in text.splitlines():
+        if _INVITE_FOOTER_RE.match(raw):
+            break
+        if raw.strip() == "":
+            lines.append("")  # keep intentional paragraph breaks
+            continue
+        line = _EMOJI_RE.sub("", raw)
+        line = re.sub(r"[ \t]{2,}", " ", line).strip()
+        if not line or _UI_CHROME_RE.match(line):
+            continue
+        lines.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def _recover_block(text: str, title: str, model: str) -> ProgrammingBlock | None:
     """Re-extract a single named block the full-text parse merged or dropped.
 
@@ -348,6 +466,20 @@ def extract_day_programming_from_text(
             logger.info("%s: recovered dropped block '%s'", day_label, title)
             blocks.append(recovered)
             present.add(_norm_title(title))
+
+    # Deterministic final cleanup (the model is unreliable at all of this). Order
+    # matters: strip emoji + Strivee UI chrome FIRST so the structural passes see
+    # clean text (e.g. "🔱 RX - ..." must become "RX - ..." before the placeholder
+    # fill can match it), then relocate trailing coaching, then fill "X ... Movement"
+    # slots. Block names are already clean EMF/emoji-category titles — leave them.
+    cleaned: list[ProgrammingBlock] = []
+    for b in blocks:
+        content = _clean_block_text(b.content)
+        instruction = _clean_block_text(b.instruction)
+        content, instruction = _resplit_trailing_coaching(content, instruction)
+        content = _fill_placeholder_movements(content)
+        cleaned.append(b.replace(content=content, instruction=instruction))
+    blocks = cleaned
 
     if len(blocks) < len(expected_titles):
         logger.warning(

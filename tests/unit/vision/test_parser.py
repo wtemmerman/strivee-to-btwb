@@ -8,9 +8,12 @@ import pytest
 
 from strivee_btwb.vision.parser import (
     _BLOCKS_SCHEMA,
+    _clean_block_text,
     _extract_json,
+    _fill_placeholder_movements,
     _is_excluded,
     _recover_block,
+    _resplit_trailing_coaching,
     _sanitize_json_strings,
     _validate_blocks,
     count_block_titles,
@@ -20,6 +23,79 @@ from strivee_btwb.vision.parser import (
 # ---------------------------------------------------------------------------
 # _sanitize_json_strings
 # ---------------------------------------------------------------------------
+
+
+def test_fill_placeholder_substitutes_rx_value():
+    content = "AMRAP 12:00\n\n500m Bike Erg\nX Gymnastics Movement\n\nRX - 5 Ring Muscle-up"
+    assert _fill_placeholder_movements(content) == "AMRAP 12:00\n\n500m Bike Erg\n5 Ring Muscle-up"
+
+
+def test_fill_placeholder_noop_without_placeholder():
+    # An "RX - ..." line with no "X ... Movement" slot must be left untouched.
+    content = "AMRAP 12:00\nRX - 5 Ring Muscle-up"
+    assert _fill_placeholder_movements(content) == content
+
+
+def test_fill_placeholder_noop_on_count_mismatch():
+    content = "X Gymnastics Movement\nX Strength Movement\nRX - 5 Ring Muscle-up"
+    assert _fill_placeholder_movements(content) == content
+
+
+def test_resplit_moves_trailing_coaching_to_instruction():
+    content = (
+        "Build to 5RM Front squat\n\nDépart sol OBLIGATOIRE.\n\n"
+        "Gammes : 5 @60% -> 5 @72% -> 5RM.\n\nNotez votre 5RM.\n\nNotes : coudes hauts."
+    )
+    kept, moved = _resplit_trailing_coaching(content, "Notez Pré VS post.")
+    assert kept == "Build to 5RM Front squat\n\nDépart sol OBLIGATOIRE."
+    assert moved.startswith("Gammes : 5 @60% -> 5 @72% -> 5RM.")
+    assert "Notez votre 5RM." in moved
+    assert moved.endswith("Notez Pré VS post.")
+
+
+def test_resplit_does_not_move_max_rep_prescription():
+    # "Max rep ..." is a prescription, not coaching — must stay in content.
+    content = "2 sets of :\n20 sec Hollow Hold\nMax rep Unbroken Toes to bar"
+    kept, moved = _resplit_trailing_coaching(content, "")
+    assert kept == content
+    assert moved == ""
+
+
+def test_resplit_noop_when_no_marker():
+    content = "AMRAP 12:00\n500m Bike Erg\n5 Ring Muscle-up"
+    assert _resplit_trailing_coaching(content, "x") == (content, "x")
+
+
+def test_resplit_leaves_coaching_only_block_to_model():
+    # First non-empty line is a marker → no prescription seen → leave as-is.
+    content = "Objectif : récupérer\nNotes : easy"
+    assert _resplit_trailing_coaching(content, "") == (content, "")
+
+
+def test_clean_strips_emoji():
+    assert _clean_block_text("Back Squat 🦵") == "Back Squat"
+    assert _clean_block_text("➡️ Clean and jerk") == "Clean and jerk"
+    assert _clean_block_text("🔱 RX - 5 Ring Muscle-up") == "RX - 5 Ring Muscle-up"
+
+
+def test_clean_drops_invite_footer_and_everything_after():
+    txt = "10 sets of :\n2min Row\n\n0 Score\n\nInviter un ami\nà rejoindre Strivee"
+    assert _clean_block_text(txt) == "10 sets of :\n2min Row"
+
+
+def test_clean_drops_nav_and_score_chrome_lines():
+    txt = "AMRAP 12:00\nWOD\nBox\n5 Ring Muscle-up\n2 Scores"
+    assert _clean_block_text(txt) == "AMRAP 12:00\n5 Ring Muscle-up"
+
+
+def test_clean_preserves_paragraph_breaks_and_real_dashes():
+    txt = "3 sets of :\n\n3 Push press\n- Start every 1Min30"
+    assert _clean_block_text(txt) == "3 sets of :\n\n3 Push press\n- Start every 1Min30"
+
+
+def test_clean_collapses_gaps_left_by_removed_emoji_lines():
+    txt = "AMRAP 12:00\n🔥\n\n\n500m Bike Erg"
+    assert _clean_block_text(txt) == "AMRAP 12:00\n\n500m Bike Erg"
 
 
 def test_sanitize_replaces_literal_newline_in_string():

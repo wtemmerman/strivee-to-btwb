@@ -97,8 +97,12 @@ NOT block titles — these are sub-section headers WITHIN the current block, kee
   • If the block has multiple difficulty levels (RX + INTER+ and/or INTER), content contains ONLY the RX prescription. NEVER concatenate RX with INTER+ or INTER content. The INTER+ / INTER prescriptions go to instruction (see DIFFICULTY LEVELS section).
   • Conditioning AND fixed-format strength — the FORMAT line is the time-domain / interval structure and ALWAYS stays in content. This covers "AMRAP", "EMOM", "EMOMx6", "E2MOM", "For Time", "N rounds", "N sets of", "N sets, Every Xmin", "Start Every Xmin", "Every Xmin x N", and Run/Swim sets. Keep that format line together with the movements, distances, reps and weights — for the RX section only. NEVER move an "EMOM" / "N sets of" / "Start Every" / "AMRAP" line into instruction; without it the workout has no format.
     — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
-  • Open-ended strength ONLY (Build to / Find / Work to a max): content is the single goal sentence
-    e.g. "Build to a 1RM Squat Snatch for the day"  ← that one line is the entire content
+  • Open-ended strength ONLY (Build to / Build a / Find / Work to / Up to a max or heavy):
+    content is the single goal sentence and NOTHING else.
+    e.g. "Build to a 1RM Squat Snatch for the day", "Up to a heavy 3 reps back squat @75% of your 1RM",
+    "Build a heavy single for the day Squat Snatch"  ← that one line is the entire content.
+    EVERY line after the goal sentence — coaching, "- Essayez ...", "Matériel :", "Notes :",
+    "On cherche ...", "MAX 2 échecs !" — goes to instruction, NOT content.
     This single-line rule does NOT apply to fixed-format strength (sets × reps @ %, or on an EMOM/interval) — keep its full format + reps + load in content.
   • A standalone working-load line like "#100% of your 5RM from week 1" or "#95% of your 5RM from week 1" belongs in content EVEN WHEN it appears BEFORE the format line — keep it at the top of content with the prescription, never in instruction.
   • Do NOT include Gamme suggéré ramp-up tables (multiple percentage steps), coaching explanations, or Objectif text in content
@@ -124,7 +128,11 @@ These markers ALWAYS begin an instruction section; move the marker line AND ever
   • "Tentatives lourdes"
   • "Si vous ratez" / "Si vous manquez"
   • "Score :"
-  • "Compare" / "RPE" / "Niveau" / "Effort"
+  • "Notes" / "Notes :" / "Notez" (e.g. "Notez votre 5RM", "Notez temps total")
+  • "Matériel" / "Matériel :" (equipment lists)
+  • "Quel niveau" and the level-SELECTION criteria under it ("RX si ...", "INTER+ si ...", "INTER si ...") — this is advice on which level to pick, NOT a prescription
+  • "Compare" / "RPE" / "Niveau" / "Effort" / "Conseil"
+  • A line that opens with a coaching verb — "Essayez", "Pensez", "Gardez", "Gérez", "Maintenez", "Restez", "On cherche", "On veut" — is coaching, EVEN if it is prefixed with "- " (e.g. "- Essayez de monter en charge progressivement"). The leading "- " does NOT make it part of the prescription.
   Any sentence that explains, motivates, or coaches rather than prescribes → instruction.
   When in doubt → instruction.  If no instruction exists → use "".
 
@@ -196,6 +204,24 @@ Example with all three levels separate (THIS IS THE COMMON CASE — pay close at
 
   WRONG output (do NOT do this):
     "content": "AMRAP 12:00\n5 Ring Muscle-up...\n\nAMRAP 12:00\n4 Bar Muscle-up...\n\nAMRAP 12:00\n5 Chest to bar pull-up..."  ← all 3 levels in content is FORBIDDEN
+
+INLINE levels with a placeholder movement (e.g. "X ... Movement"): sometimes the
+shared workout lists a placeholder slot like "X Gymnastics Movement", and the
+levels appear BELOW it as single inline lines "🔱 RX - <value>", "INTER+ - <value>",
+"INTER - <value>". Treat this the same way: SUBSTITUTE the RX value into the
+placeholder slot in content, and move the INTER+/INTER values to instruction
+(dropping the level header emoji; keep the level label as plain text).
+  Input:
+    AMRAP 12:00
+    500m Bike Erg
+    X Gymnastics Movement
+    🔱 RX - 5 Ring Muscle-up
+    🔰 INTER + - 2 Ring Muscle-up
+    🎖️INTER - 5 Chest to bar pull-up (kipping) + 5 strict Ring Dips
+  Output:
+    "content":     "AMRAP 12:00\n500m Bike Erg\n5 Ring Muscle-up"
+    "instruction": "INTER+ - 2 Ring Muscle-up\nINTER - 5 Chest to bar pull-up (kipping) + 5 strict Ring Dips"
+  WRONG: leaving "X Gymnastics Movement" and all three "🔱 RX - .../INTER + - ..." lines in content.
 
 ━━━ IGNORE COMPLETELY ━━━
 - Day-tab labels: LUN, MAR, MER, JEU, VEN, SAM, DIM and Mon/Tue/Wed/Thu/Fri/Sat/Sun
