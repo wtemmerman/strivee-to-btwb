@@ -9,14 +9,24 @@ cached object. Use :meth:`ProgrammingBlock.replace` to derive an edited copy.
 from dataclasses import dataclass, field, replace
 from datetime import date
 
+RX = "rx"
+INTER_PLUS = "inter_plus"
+INTER = "inter"
+
+LEVEL_LABELS = {RX: "RX", INTER_PLUS: "INTER+", INTER: "INTER"}
+"""Display labels for the difficulty levels Strivee publishes, hardest first."""
+
 
 @dataclass(frozen=True)
 class ProgrammingBlock:
     """A named programming block within a day (e.g. 'Back Squat', 'WOD')."""
 
     name: str
-    content: str
+    content: str  # the prescription in play: RX as parsed, the chosen level after selection
     instruction: str = ""  # coach notes / intent, kept separate from the prescription
+    inter_plus: str = ""  # INTER+ variant as published, "" when the source has none
+    inter: str = ""  # INTER variant as published, "" when the source has none
+    level: str = RX  # which level `content` currently holds
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
@@ -25,6 +35,19 @@ class ProgrammingBlock:
     def replace(self, **changes: str) -> "ProgrammingBlock":
         """Return a copy of this block with the given fields replaced."""
         return replace(self, **changes)
+
+    def level_text(self, level: str) -> str:
+        """Return the prescription the source published for *level*.
+
+        RX resolves to ``content`` because that is where the parser puts the RX
+        (or single-level) prescription; selection overwrites it, so call this on
+        a freshly-parsed block.
+        """
+        return {RX: self.content, INTER_PLUS: self.inter_plus, INTER: self.inter}[level]
+
+    def available_levels(self) -> list[str]:
+        """Levels this block offers, hardest first — always at least ``[RX]``."""
+        return [lv for lv in LEVEL_LABELS if self.level_text(lv).strip()] or [RX]
 
 
 @dataclass(frozen=True)

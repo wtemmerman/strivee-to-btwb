@@ -8,7 +8,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from strivee_btwb.core.models import (
+    INTER,
+    INTER_PLUS,
+    RX,
+    DayProgramming,
+    ProgrammingBlock,
+    WeeklyProgramming,
+)
 from strivee_btwb.pipeline import (
     CACHE_SCHEMA_VERSION,
     clean_week,
@@ -26,6 +33,7 @@ from strivee_btwb.pipeline import (
     save_day,
     save_formatted_day,
     save_text_capture,
+    select_levels,
     short_to_date,
     week_start,
 )
@@ -90,6 +98,25 @@ def test_save_day_round_trips(tmp_path, monkeypatch):
     week = load_days(["Mon"], FIXTURE_WEEK)
     assert len(week.days) == 1
     assert week.days[0].blocks[0].content == "21-15-9\nThrusters"
+
+
+def test_save_day_round_trips_scaled_variants(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", tmp_path)
+    day = _make_day(
+        blocks=[
+            ProgrammingBlock(
+                name="WOD", content="20 RMU", inter_plus="10 RMU", inter="20 C2B", instruction="go"
+            )
+        ]
+    )
+    save_day(day, FIXTURE_WEEK)
+
+    block = load_days(["Mon"], FIXTURE_WEEK).days[0].blocks[0]
+    assert block.inter_plus == "10 RMU"
+    assert block.inter == "20 C2B"
+    assert block.available_levels() == [RX, INTER_PLUS, INTER]
 
 
 def test_load_days_reads_real_fixture(monkeypatch):
@@ -200,6 +227,160 @@ def test_clean_week_merges_consecutive_same_name():
     assert "Part B" in result.days[0].blocks[0].content
 
 
+def test_clean_week_merge_composes_variants_across_both_halves():
+    week = _make_week(
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="WOD", content="Part A RX", inter="Part A INTER"),
+                ProgrammingBlock(name="WOD", content="Part B RX", inter="Part B INTER"),
+            ]
+        )
+    )
+    block = clean_week(week).days[0].blocks[0]
+    assert block.inter == "Part A INTER\nPart B INTER"
+
+
+def test_clean_week_merge_falls_back_to_rx_for_unscaled_half():
+    """A half with no INTER of its own contributes its RX, so the variant stays whole."""
+    week = _make_week(
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="WOD", content="Warm-up"),
+                ProgrammingBlock(name="WOD", content="20 RMU", inter="20 C2B"),
+            ]
+        )
+    )
+    block = clean_week(week).days[0].blocks[0]
+    assert block.inter == "Warm-up\n20 C2B"
+
+
+def test_clean_week_merge_leaves_variant_empty_when_neither_half_scales():
+    week = _make_week(
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="WOD", content="Part A"),
+                ProgrammingBlock(name="WOD", content="Part B"),
+            ]
+        )
+    )
+    block = clean_week(week).days[0].blocks[0]
+    assert block.inter == ""
+    assert block.inter_plus == ""
+
+
+def test_select_levels_leaves_single_level_blocks_untouched(monkeypatch):
+    def refuse(_prompt):
+        raise AssertionError("must not prompt for a block with only one level")
+
+    monkeypatch.setattr("builtins.input", refuse)
+    week = _make_week(_make_day(blocks=[ProgrammingBlock(name="WOD", content="21-15-9")]))
+    result = select_levels(week)
+    assert result.days[0].blocks[0].content == "21-15-9"
+    assert result.days[0].blocks[0].level == RX
+
+
+def test_select_levels_swaps_chosen_variant_into_content(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "2")
+    week = _make_week(
+        _make_day(
+            blocks=[
+                ProgrammingBlock(name="WOD", content="20 RMU", inter_plus="10 RMU", inter="20 C2B")
+            ]
+        )
+    )
+    block = select_levels(week).days[0].blocks[0]
+    assert block.content == "10 RMU"
+    assert block.level == INTER_PLUS
+
+
+def test_select_levels_menu_skips_absent_levels(monkeypatch):
+    """With no INTER+ published, choice 2 is INTER — not an empty INTER+."""
+    monkeypatch.setattr("builtins.input", lambda _prompt: "2")
+    week = _make_week(
+        _make_day(blocks=[ProgrammingBlock(name="WOD", content="20 RMU", inter="20 C2B")])
+    )
+    block = select_levels(week).days[0].blocks[0]
+    assert block.content == "20 C2B"
+    assert block.level == INTER
+
+
+def test_select_levels_menu_shows_what_differs(monkeypatch, capsys):
+    """Levels sharing an opening would otherwise print identical menu lines."""
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    shared = "For Quality :\n30 reps ring Swing\n+"
+    week = _make_week(
+        _make_day(
+            blocks=[
+                ProgrammingBlock(
+                    name="WOD",
+                    content=f"{shared}\nFor time :\n20/16 RMU",
+                    inter=f"{shared}\nAMRAP 6:00\nMax Rep RMU",
+                )
+            ]
+        )
+    )
+    select_levels(week)
+    out = capsys.readouterr().out
+    # The shared opening is printed once, in full, above the options — never
+    # repeated under each one, and never elided.
+    assert "every level starts with:" in out
+    assert out.count("30 reps ring Swing") == 1
+    assert "For time :" in out
+    assert "AMRAP 6:00" in out
+
+
+def test_select_levels_menu_prints_prescriptions_in_full(monkeypatch, capsys):
+    """The menu is the decision surface — a truncated option can't be judged."""
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    long_inter = "EMOMx9 :\n" + "\n".join(
+        f"min {i} - 3 Weighted strict chest to ring" for i in range(1, 8)
+    )
+    week = _make_week(
+        _make_day(
+            blocks=[ProgrammingBlock(name="WOD", content="3 sets of :\nMax rep", inter=long_inter)]
+        )
+    )
+    select_levels(week)
+    out = capsys.readouterr().out
+    for line in long_inter.splitlines():
+        assert line in out
+    assert "…" not in out
+
+
+def test_select_levels_bare_enter_keeps_rx(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    week = _make_week(
+        _make_day(blocks=[ProgrammingBlock(name="WOD", content="20 RMU", inter="20 C2B")])
+    )
+    block = select_levels(week).days[0].blocks[0]
+    assert block.content == "20 RMU"
+    assert block.level == RX
+
+
+def test_select_levels_reprompts_on_invalid_answer(monkeypatch):
+    answers = iter(["9", "abc", "2"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    week = _make_week(
+        _make_day(blocks=[ProgrammingBlock(name="WOD", content="20 RMU", inter="20 C2B")])
+    )
+    assert select_levels(week).days[0].blocks[0].content == "20 C2B"
+
+
+def test_select_levels_keeps_rx_and_warns_without_a_tty(monkeypatch, caplog):
+    def no_input(_prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", no_input)
+    week = _make_week(
+        _make_day(blocks=[ProgrammingBlock(name="WOD", content="20 RMU", inter="20 C2B")])
+    )
+    with caplog.at_level(logging.WARNING):
+        block = select_levels(week).days[0].blocks[0]
+    assert block.content == "20 RMU"
+    assert block.level == RX
+    assert any("No input available" in r.message for r in caplog.records)
+
+
 def test_clean_week_does_not_merge_different_names():
     week = _make_week(
         _make_day(
@@ -307,6 +488,19 @@ def test_formatted_cache_roundtrip():
     assert loaded.blocks[0].content == "21-15-9"
 
 
+def test_formatted_cache_records_selected_level():
+    """post reads the level back from the cache, so preview's choice must persist."""
+    day = DayProgramming(
+        date=FIXTURE_WEEK,
+        day_label="Mon",
+        blocks=[ProgrammingBlock(name="WOD", content="20 C2B", level=INTER)],
+    )
+    save_formatted_day(day, FIXTURE_WEEK, source_mtime_ns=1)
+    loaded = load_formatted_day(FIXTURE_WEEK, "Mon", expected_mtime_ns=1)
+    assert loaded is not None
+    assert loaded.blocks[0].level == INTER
+
+
 def test_formatted_cache_stale_when_source_mtime_changes(caplog):
     day = DayProgramming(
         date=FIXTURE_WEEK, day_label="Tue", blocks=[ProgrammingBlock(name="A", content="x")]
@@ -341,6 +535,30 @@ def test_prepare_week_reuses_cache_on_second_call(monkeypatch):
     second = prepare_week_for_btwb(["Mon", "Tue"], FIXTURE_WEEK)
     assert calls["n"] == after_first  # zero additional format calls
     assert [d.day_label for d in second.days] == [d.day_label for d in first.days]
+
+
+def test_prepare_week_asks_levels_only_for_days_it_formats(monkeypatch):
+    """A cached day is neither reformatted nor re-asked about; --relevel forces both."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "PARSED_DIR", FIXTURE_DIR)
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+    asked: list[list[str]] = []
+
+    def record(week):
+        asked.append([d.day_label for d in week.days])
+        return week
+
+    monkeypatch.setattr("strivee_btwb.pipeline.select_levels", record)
+
+    prepare_week_for_btwb(["Mon", "Tue"], FIXTURE_WEEK)
+    assert asked == [["Mon", "Tue"]]
+
+    prepare_week_for_btwb(["Mon", "Tue"], FIXTURE_WEEK)
+    assert len(asked) == 1  # cache hit: no second round of questions
+
+    prepare_week_for_btwb(["Mon", "Tue"], FIXTURE_WEEK, relevel=True)
+    assert asked == [["Mon", "Tue"], ["Mon", "Tue"]]
 
 
 # ── do_analyse ────────────────────────────────────────────────────────────────

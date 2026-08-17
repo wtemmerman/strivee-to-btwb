@@ -33,7 +33,8 @@ Android phone (Strivee app)
         │
         │  qwen3:8b — format for BTWB (same model, same quality)
         ▼
-  3. preview   → terminal log (content + coaching notes, review before posting)
+  3. preview   → asks which level to post per multi-level block, then logs
+                 content + coaching notes for review
         │
         │  Playwright browser automation
         ▼
@@ -167,7 +168,19 @@ The raw dump contains navigation chrome (day tabs, bottom bar), excluded blocks 
 
 ### Step 2 — Analyse
 
-Sends each day's text dump to a local Ollama text model (`qwen3:8b`). The model extracts every programming block by name, content (RX workout prescription only), and instruction (coaching notes + alternate levels) and returns structured JSON. The output JSON has three fields per block: `name`, `content`, `instruction`.
+Sends each day's text dump to a local Ollama text model (`qwen3:8b`). The model extracts every programming block by name, content (RX workout prescription only), instruction (coaching notes and level-selection advice), and the scaled INTER+/INTER prescriptions as their own fields, returning structured JSON. The output JSON has five fields per block: `name`, `content`, `instruction`, `inter_plus`, `inter` — the last two are `""` for blocks the gym publishes at a single level.
+
+Keeping each level in its own field is what lets `preview` post INTER+ or INTER without rewriting the workout by hand (see [Step 3](#step-3--preview)).
+
+The model is asked for that split but does not reliably deliver it — it often leaves all three levels inside `content`, or copies them into `instruction`. So the split is finished deterministically after parsing (`_extract_levels`), which is where the level rules actually live:
+
+- a level's prescription is **every** section naming it, joined in source order — Strivee writes shared work under a combined `RX INTER+ INTER` header and each level's own part below it
+- text above the first header is shared context only when RX has a section of its own; with no RX header that text **is** the RX prescription, and prefixing it onto a scaled variant would make the athlete do the harder work too
+- a dangling `+` at the end of `content` means the prescription was cut in half; the rest is pulled back from `instruction` and the shared half is prefixed onto the variants
+- selection criteria stay in the coaching note verbatim — `EMF - INTER + (Je peux faire 1 Strict Muscle-up)` says *who* picks a level, it is not a prescription
+- a variant identical to RX is dropped (a combined `RX INTER` header is one workout, so there is no choice to make), and prescriptions copied into `instruction` are removed so the note never repeats the workout
+
+Known gap: when the model writes the variants into their fields itself and drops the level headers, nothing marks which part was shared, so a variant can arrive holding only its own half. The parse prompt asks for standalone variants (rule 7) to prevent it — but check the preview, which prints the full text of whatever level you chose.
 
 **Example output** (`parsed/2026-04-27/parsed_2026-04-27_Mon.json`):
 
@@ -192,7 +205,22 @@ Sends each day's text dump to a local Ollama text model (`qwen3:8b`). The model 
 
 ### Step 3 — Preview
 
-Loads the cached JSON, runs the same LLM formatting as the post step, and prints the result for review. What you see is exactly what will be submitted to BTWB: the formatted prescription (`content`) and the coaching note (`instruction`) shown separately.
+Loads the cached JSON, asks which difficulty level to post for every block that offers more than one, runs the same LLM formatting as the post step, and prints the result for review. What you see is exactly what will be submitted to BTWB: the formatted prescription (`content`) and the coaching note (`instruction`) shown separately.
+
+**Choosing a level.** Blocks the gym publishes at a single level are used as-is and never asked about. For the rest, the menu lists only the levels that block actually publishes, so the numbering matches what is on offer:
+
+```
+  Wed 2026-08-19 — EMF 60 : Ring Muscle-up Skill
+    (all levels start with the same 10 line(s))
+    1) RX      For time : / 20/16 Ring Muscle-up
+    2) INTER+  AMRAP 6:00 / Max Rep Ring Muscle-up
+    3) INTER   Accumulated for Quality : / 12 Negative strict Ring Muscle-up
+    Level? [1/2/3, Enter = RX]
+```
+
+Levels normally open with the work everyone does, which would make every menu line read identically, so the menu shows only what differs and says how many opening lines they share.
+
+Only the chosen level is posted — no manual rewriting of the workout. The choices are stored in the formatted cache, so `post` reuses preview's answers instead of asking again; `--relevel` discards them, asks again, and reformats.
 
 <details>
 <summary>Example preview output (Monday)</summary>
@@ -255,7 +283,7 @@ Loads the cached JSON, runs the same LLM formatting as the post step, and prints
       Objectif : DU's unbroken - power clean Tng en 2 séries max - strict HSPU 2 séries max !
 ```
 
-The `content` field (prescription) is posted to the BTWB workout description. The `instruction` field (coaching notes + alternate levels for INTER+/INTER) is posted to the BTWB coaching note field.
+The `content` field (the prescription for the level chosen at preview) is posted to the BTWB workout description. The `instruction` field (coaching notes and level-selection advice) is posted to the BTWB coaching note field. The levels you did not choose are not posted.
 
 </details>
 
@@ -377,6 +405,8 @@ Deletion is keyed on the exact dates requested, so it can never affect another w
 
 ```bash
 capture --no-scrcpy       # skip launching the screen mirror
+preview --relevel         # re-ask the per-block level choice and reformat
+post    --relevel         # same, when posting without a fresh preview
 post    --yes             # skip interactive confirmation
 post    --headless        # run browser without a visible window
 delete  --yes             # skip interactive confirmation
@@ -455,7 +485,7 @@ tests/
 |---|---|
 | `captures/<week>/` | UI text dumps (.txt) |
 | `parsed/<week>/` | Text-parsed JSON cache |
-| `formatted/<week>/` | Cleaned + LLM-formatted block cache (lets `post` reuse `preview`'s output) |
+| `formatted/<week>/` | Cleaned + LLM-formatted block cache, including the chosen level per block (lets `post` reuse `preview`'s output and answers) |
 | `tests/benchmark/baselines/`, `tests/benchmark/results/` | Benchmark snapshots + timing CSVs |
 | `htmlcov/` | Coverage HTML report |
 
@@ -518,7 +548,7 @@ A `EMF ...` block sandwiched between two excluded blocks (e.g. a short "EMF 60 -
 
 After text parsing, each block's `content` (prescription only) is sent to `OLLAMA_FORMAT_MODEL` (`qwen3:8b`) before preview and post. The same model is used for both analyse and format steps — `qwen3:8b` gives reliable output quality for text fidelity; smaller models (e.g. 1.7b) hallucinate movements and leak thinking-token artifacts. Since the text parser already separates content from `instruction` (coaching notes), the formatting model works on already-clean prescription text. The model:
 
-1. Keeps only the RX / top-performance section when multiple athlete levels are present (RX, Inter+, Inter, etc.)
+1. Keeps only the single prescription it was given — the level chosen at preview, since the parser already split RX / Inter+ / Inter into separate fields
 2. Removes Strivee UI artifacts (score labels, media counts, etc.)
 
 The `instruction` field is posted directly to BTWB's dedicated coaching note field without further transformation.

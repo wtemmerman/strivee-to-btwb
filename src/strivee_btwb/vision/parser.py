@@ -16,7 +16,7 @@ from json_repair import repair_json
 
 from ..core import config
 from ..core.llm import chat_json
-from ..core.models import DayProgramming, ProgrammingBlock
+from ..core.models import INTER, INTER_PLUS, RX, DayProgramming, ProgrammingBlock
 from ..prompts import load
 
 logger = logging.getLogger("vision")
@@ -39,6 +39,12 @@ _RECOVER_SCHEMA = {
 # grammar-constrained to emit valid JSON in this shape, which removes almost all
 # of the historical JSON-repair fragility at the source. _extract_json is kept
 # as a fallback for Ollama/model setups that do not honour the schema.
+#
+# Deliberately no inter_plus / inter: asking the model to sort difficulty levels
+# produced steady mislabels (it reads the emoji, which means INTER+ on one day and
+# INTER on the next, and assumes RX comes first) and cost block-boundary accuracy
+# elsewhere in the same response. The model copies each level verbatim into content
+# and _extract_levels does the split from the header text.
 _BLOCKS_SCHEMA = {
     "type": "object",
     "properties": {
@@ -251,6 +257,154 @@ def _norm_title(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
+def _source_slices(text: str) -> dict[str, str]:
+    """Map each EMF title to the raw source lines beneath it, up to the next title.
+
+    The title regex is reliable where the model is not, so these slices are the
+    ground truth for what a block may contain.
+    """
+    lines = text.splitlines()
+    starts = [
+        (i, s) for i, line in enumerate(lines) if (s := line.strip()) and _EMF_TITLE_RE.match(s)
+    ]
+    slices: dict[str, str] = {}
+    for n, (i, title) in enumerate(starts):
+        end = starts[n + 1][0] if n + 1 < len(starts) else len(lines)
+        slices[_norm_title(title)] = "\n".join(lines[i + 1 : end])
+    return slices
+
+
+# Shorter lines ("+", "5x5", "Skill") recur all over a day and prove nothing about
+# which block a prescription came from.
+_DISTINCTIVE_LINE_CHARS = 12
+
+
+def _norm_for_match(text: str) -> str:
+    """Normalise for "did this text come from there?" comparisons.
+
+    Punctuation and spacing are dropped because the model reflows them freely —
+    it returned "possible!" for a source line reading "possible !", which is the
+    same sentence and must not read as text from a different block.
+    """
+    return " ".join(re.sub(r"[^\w\s]", " ", text).split()).casefold()
+
+
+def _content_matches_source(content: str, own_slice: str) -> bool:
+    """True when *content* plausibly came from this block's own source slice.
+
+    Compares distinctive lines against the slice rather than demanding an exact
+    copy: the parser legitimately drops UI chrome, moves coaching out, and fills
+    placeholder movements, so a block is judged by where the bulk of it came from.
+    """
+    haystack = _norm_for_match(_clean_block_text(own_slice))
+    checked = [
+        norm
+        for line in _clean_block_text(content).splitlines()
+        if len(norm := _norm_for_match(line)) >= _DISTINCTIVE_LINE_CHARS
+    ]
+    if not checked:
+        return True  # nothing distinctive enough to judge — leave the block alone
+    return sum(line in haystack for line in checked) / len(checked) >= 0.5
+
+
+def _strip_foreign_lines(
+    content: str, own: str, others: list[str], allow_empty: bool = False
+) -> str:
+    """Drop lines that belong to a different block's section.
+
+    A block can be mostly right and still carry its neighbour's tail — enough of it
+    is genuine that re-extracting the whole thing would be worse than trimming. A
+    line is only removed on positive evidence: absent from this block's own section
+    AND present in another's. Short lines are never removed; "+" and "3 Sets of :"
+    recur everywhere and prove nothing.
+    """
+    own_hay = _norm_for_match(_clean_block_text(own))
+    other_hays = [_norm_for_match(_clean_block_text(o)) for o in others]
+    kept = [
+        line
+        for line in content.splitlines()
+        if not (
+            len(norm := _norm_for_match(line)) >= _DISTINCTIVE_LINE_CHARS
+            and norm not in own_hay
+            and any(norm in hay for hay in other_hays)
+        )
+    ]
+    trimmed = "\n".join(kept).strip()
+    # For a prescription, trimming everything means the evidence was misleading —
+    # keep it whole rather than post an empty workout. A coaching note may legitimately
+    # end up empty (plenty of blocks have none), so there the result stands.
+    return trimmed if (trimmed or allow_empty) else content
+
+
+def _verify_against_source(
+    blocks: list[ProgrammingBlock], text: str, day_label: str, model: str
+) -> list[ProgrammingBlock]:
+    """Re-extract any block whose content came from a different block's section.
+
+    When the model loses a block boundary it does not fail loudly — it hands one
+    block's workout to its neighbour, which posts a plausible-looking but wrong
+    session. Single-block recovery gets these right, so a block that fails the
+    check is simply re-extracted.
+    """
+    slices = _source_slices(text)
+    verified: list[ProgrammingBlock] = []
+    for parsed in blocks:
+        own = slices.get(_norm_title(parsed.name))
+        if own is None:
+            verified.append(parsed)
+            continue
+
+        block = parsed
+        if not _content_matches_source(block.content, own):
+            logger.warning(
+                "%s: '%s' content does not come from its own section — re-extracting",
+                day_label,
+                block.name,
+            )
+            recovered = _recover_block(text, block.name, model)
+            block = recovered if recovered is not None else block
+
+        verified.append(block)
+    return verified
+
+
+def _trim_foreign_content(
+    blocks: list[ProgrammingBlock], text: str, day_label: str
+) -> list[ProgrammingBlock]:
+    """Remove any other block's text from every block. Deterministic, no model call.
+
+    Runs after recovery so it covers recovered blocks too — those are re-extracted
+    from the raw text and can pick up a neighbour's tail just as the first pass can.
+    """
+    slices = _source_slices(text)
+    trimmed_blocks: list[ProgrammingBlock] = []
+    for block in blocks:
+        own = slices.get(_norm_title(block.name))
+        if own is None:
+            trimmed_blocks.append(block)
+            continue
+        others = [s for key, s in slices.items() if key != _norm_title(block.name)]
+        content = _strip_foreign_lines(block.content, own, others)
+        # The coaching note gets the same treatment: a neighbour's level section
+        # landing here is lifted into a difficulty level by _extract_levels, which
+        # would offer a choice belonging to a different workout.
+        instruction = _strip_foreign_lines(block.instruction, own, others, allow_empty=True)
+        if (content, instruction) != (block.content, block.instruction):
+            logger.warning("%s: trimmed another block's text out of '%s'", day_label, block.name)
+        trimmed_blocks.append(block.replace(content=content, instruction=instruction))
+    return trimmed_blocks
+
+
+def _title_position(text: str, name: str) -> int:
+    """Line number where *name* appears as a title in *text*; last if not found."""
+    norm = _norm_title(name)
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if _norm_title(line) == norm:
+            return i
+    return len(lines)
+
+
 # ── Deterministic output cleanup ────────────────────────────────────────────
 # The model is told to drop UI chrome (and we want emoji gone for BTWB), but it
 # does neither reliably. Enforce both deterministically on the final
@@ -312,6 +466,215 @@ def _resplit_trailing_coaching(content: str, instruction: str) -> tuple[str, str
         if line.strip():
             seen_prescription = True
     return content, instruction
+
+
+# A difficulty-level section header standing alone on its line, after emoji have
+# been stripped: "RX", "Rx :", "INTER+", "INTER -", "EMF - INTER +", and the
+# qualifier form Strivee uses ("INTER (Je ne passes pas les RMU)"). Combined
+# headers ("RX INTER", "Rx - INTER+ -") name several levels that share one
+# prescription. A line carrying prescription text after the marker
+# ("RX - 5 Ring Muscle-up") is NOT a header — those inline values are handled by
+# _fill_placeholder_movements.
+_LEVEL_TOKEN = r"INTER\s*\+|INTER|RX"
+_LEVEL_HEADER_RE = re.compile(
+    rf"^\s*(?:EMF\s*[-:]?\s*)?(?P<levels>(?:{_LEVEL_TOKEN})"
+    rf"(?:\s*[-\u2013/&+,]?\s*(?:{_LEVEL_TOKEN}))*)"
+    r"\s*[-\u2013:]?\s*(?:\([^)]*\))?\s*[-\u2013:]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _header_levels(header: str) -> list[str]:
+    """Level keys named by a header line, in order, de-duplicated."""
+    keys: list[str] = []
+    for m in re.finditer(_LEVEL_TOKEN, header, re.IGNORECASE):
+        token = re.sub(r"\s+", "", m.group(0)).upper()
+        key = {"INTER+": INTER_PLUS, "INTER": INTER, "RX": RX}[token]
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _split_level_sections(text: str) -> tuple[str, list[tuple[list[str], str, str]]]:
+    """Split *text* into its pre-header preamble and its per-level sections.
+
+    Each section is ``(level keys, header line as written, body)``. The header is
+    kept verbatim because Strivee writes the selection criteria into it
+    ("EMF - INTER + (Je peux faire 1 Strict Muscle-up)"); a section that turns out
+    to be advice rather than a prescription must go back untouched.
+    """
+    preamble: list[str] = []
+    sections: list[tuple[list[str], str, list[str]]] = []
+    for line in text.splitlines():
+        m = _LEVEL_HEADER_RE.match(line) if line.strip() else None
+        if m:
+            sections.append((_header_levels(m.group("levels")), line.rstrip(), []))
+        elif sections:
+            sections[-1][2].append(line)
+        else:
+            preamble.append(line)
+    return (
+        "\n".join(preamble).strip(),
+        [(levels, header, "\n".join(body).strip()) for levels, header, body in sections],
+    )
+
+
+def _norm_level_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+# Strivee writes the "which level am I?" criterion into the header itself
+# ("EMF - INTER + (Je peux faire 1 Strict Muscle-up)"). That advice is worth keeping
+# in the coaching note even once the prescription moves into its own field.
+_QUALIFIER_RE = re.compile(r"\([^)]*\)")
+
+
+def _levels_from_content(content: str, fields: dict[str, str], advice: list[str]) -> None:
+    """Fill *fields* from level sections written inside content."""
+    preamble, sections = _split_level_sections(content)
+    if not sections:
+        return
+    advice.extend(h for _lv, h, body in sections if body and _QUALIFIER_RE.search(h))
+
+    # A level's prescription is every section naming it, in source order: Strivee
+    # writes shared work under a combined "RX INTER+ INTER" header and then a
+    # per-level part below it, the two joined by a "+" line.
+    collected: dict[str, list[str]] = {}
+    for levels, _header, body in sections:
+        if not body:
+            continue
+        for level in levels:
+            collected.setdefault(level, []).append(body)
+    found = {level: "\n".join(bodies) for level, bodies in collected.items()}
+    if RX not in found and not preamble:
+        return  # no identifiable RX prescription — leave the block as the model left it
+
+    # Text above the first header is shared context ("Volume 4/4 -", a common format
+    # line) and belongs to every level — but only when RX has a section of its own.
+    # With no RX header that text IS the RX prescription, and prefixing it onto a
+    # scaled variant would make the athlete do the harder work too.
+    shared = preamble if RX in found else ""
+    fields[RX] = f"{shared}\n{found[RX]}".strip() if RX in found else preamble
+    for level in (INTER_PLUS, INTER):
+        if not fields[level].strip() and level in found:
+            fields[level] = f"{shared}\n{found[level]}".strip() if shared else found[level]
+
+
+def _levels_from_instruction(instruction: str, fields: dict[str, str]) -> str:
+    """Fill *fields* from level sections folded into instruction; return what's left."""
+    preamble, sections = _split_level_sections(instruction)
+    if not sections:
+        return instruction
+    kept = [preamble] if preamble else []
+    for levels, header, body in sections:
+        placed = []
+        for level in (lv for lv in levels if lv != RX and body.strip()):
+            if not fields[level].strip():
+                fields[level] = body
+                placed.append(level)
+            elif _norm_level_text(fields[level]) == _norm_level_text(body):
+                placed.append(level)  # the model already extracted it; this is a copy
+        if placed:
+            # The prescription lives in its own field now. Keep only the header, and
+            # only when it carries selection advice — never a duplicate of the workout.
+            if _QUALIFIER_RE.search(header):
+                kept.append(header)
+        else:
+            # Advice-only sections, and levels we could not place, stay as written.
+            kept.append(f"{header}\n{body}".strip() if body else header)
+    return "\n\n".join(p for p in kept if p).strip()
+
+
+def _paragraphs(text: str) -> list[str]:
+    return [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+
+def _drop_duplicate_paragraphs(instruction: str, fields: dict[str, str]) -> str:
+    """Remove instruction paragraphs that merely repeat a level's prescription.
+
+    The model sometimes emits a level into its own field AND leaves a copy in
+    instruction, which would post every level into BTWB's coaching note.
+    """
+    known = {_norm_level_text(v) for v in fields.values() if v.strip()}
+    return "\n\n".join(p for p in _paragraphs(instruction) if _norm_level_text(p) not in known)
+
+
+# A lone "+" is Strivee's join between two parts of one workout. Left dangling at the
+# end of content it means the model cut the prescription in half.
+_CONTINUATION_RE = re.compile(r"^\s*\+\s*$")
+
+
+def _rejoin_continuation(fields: dict[str, str], instruction: str) -> str:
+    """Reattach a prescription the model split off after a dangling "+".
+
+    Everything up to that "+" is work shared by all levels, so it is prefixed onto
+    the scaled variants too — otherwise picking INTER would post only the second
+    half of the session. Returns the instruction with the moved paragraph removed.
+    """
+    lines = fields[RX].rstrip().splitlines()
+    if not lines or not _CONTINUATION_RE.match(lines[-1]):
+        return instruction
+    paragraphs = _paragraphs(instruction)
+    if not paragraphs or _TRAILING_COACH_RE.match(paragraphs[0]):
+        return instruction  # nothing to reattach, or what follows is coaching
+    shared = fields[RX].rstrip()
+    fields[RX] = f"{shared}\n{paragraphs[0]}"
+    for level in (INTER_PLUS, INTER):
+        if fields[level].strip():
+            fields[level] = f"{shared}\n{fields[level].strip()}"
+    return "\n\n".join(paragraphs[1:])
+
+
+def _extract_levels(block: ProgrammingBlock) -> ProgrammingBlock:
+    """Move per-level prescriptions out of content/instruction into their fields.
+
+    The model is asked to emit ``inter_plus`` / ``inter`` directly but often leaves
+    every level inside content (or folds them into instruction, as the pre-level
+    prompt did), which would post the wrong workout — or all three at once. The
+    headers are unambiguous once emoji are stripped, so the split is done here
+    deterministically rather than trusted to the model.
+
+    Levels the model already extracted win; only empty fields are filled. Content
+    is left untouched when no RX prescription can be identified, since an empty
+    content would drop the block entirely.
+    """
+    fields = {RX: block.content, INTER_PLUS: block.inter_plus, INTER: block.inter}
+    advice: list[str] = []
+    _levels_from_content(block.content, fields, advice)
+    instruction = _levels_from_instruction(block.instruction, fields)
+    # Strivee writes the coaching for a level inside that level's own section, so
+    # it arrives glued to the prescription — and would be posted AS the workout
+    # when that level is the one selected.
+    for level, text in fields.items():
+        fields[level], instruction = _resplit_trailing_coaching(text, instruction)
+    instruction = _drop_duplicate_paragraphs(instruction, fields)
+    instruction = _rejoin_continuation(fields, instruction)
+    # Criteria lifted out of content join the coaching note, unless already there.
+    for line in advice:
+        if _norm_level_text(line) not in _norm_level_text(instruction):
+            instruction = f"{instruction}\n\n{line}".strip() if instruction.strip() else line
+
+    # A variant holding only a dangling sub-section label ("For quality -", "Skill :")
+    # is leftover scaffolding, not a workout. Offering it as a choice would post the
+    # label as the session.
+    for level in (INTER_PLUS, INTER):
+        body = fields[level].strip()
+        if body and len(body.splitlines()) == 1 and body.endswith(("-", ":")):
+            fields[level] = ""
+
+    # An identical variant carries no choice — the source wrote one prescription
+    # under a combined "RX INTER" header. Empty means "same as RX" downstream, and
+    # keeping the copy would prompt for a decision that has no effect.
+    for level in (INTER_PLUS, INTER):
+        if fields[level].strip() == fields[RX].strip():
+            fields[level] = ""
+
+    return block.replace(
+        content=fields[RX],
+        inter_plus=fields[INTER_PLUS],
+        inter=fields[INTER],
+        instruction=instruction,
+    )
 
 
 # A placeholder movement slot ("X Gymnastics Movement") and the inline RX value
@@ -397,7 +760,9 @@ def _recover_block(text: str, title: str, model: str) -> ProgrammingBlock | None
     if not content:
         return None
     return ProgrammingBlock(
-        name=title, content=content, instruction=str(data.get("instruction", "")).strip()
+        name=title,
+        content=content,
+        instruction=str(data.get("instruction", "")).strip(),
     )
 
 
@@ -454,6 +819,11 @@ def extract_day_programming_from_text(
 
     expected_titles = count_block_titles(text)
 
+    # Check what survived the parse before filling gaps: a block holding its
+    # neighbour's workout still counts as "present", so this has to run before the
+    # missing-title pass or the wrong content is kept.
+    blocks = _verify_against_source(blocks, text, day_label, model)
+
     # Recover any non-excluded EMF title the model merged into a neighbour or
     # dropped: the regex above finds the title reliably, and a focused single-block
     # re-extraction succeeds where the full multi-block parse failed the boundary.
@@ -467,6 +837,13 @@ def extract_day_programming_from_text(
             blocks.append(recovered)
             present.add(_norm_title(title))
 
+    # Recovered blocks are appended, so a day that needed recovery would otherwise
+    # be posted out of order (BTWB lists blocks in the order they are created).
+    # Sorting by where each title appears in the source restores the day as written.
+    blocks.sort(key=lambda b: _title_position(text, b.name))
+
+    blocks = _trim_foreign_content(blocks, text, day_label)
+
     # Deterministic final cleanup (the model is unreliable at all of this). Order
     # matters: strip emoji + Strivee UI chrome FIRST so the structural passes see
     # clean text (e.g. "🔱 RX - ..." must become "RX - ..." before the placeholder
@@ -474,11 +851,13 @@ def extract_day_programming_from_text(
     # slots. Block names are already clean EMF/emoji-category titles — leave them.
     cleaned: list[ProgrammingBlock] = []
     for b in blocks:
-        content = _clean_block_text(b.content)
+        content = _fill_placeholder_movements(_clean_block_text(b.content))
         instruction = _clean_block_text(b.instruction)
-        content, instruction = _resplit_trailing_coaching(content, instruction)
-        content = _fill_placeholder_movements(content)
-        cleaned.append(b.replace(content=content, instruction=instruction))
+        # _extract_levels both splits the levels and relocates each one's trailing
+        # coaching, so coaching is NOT resplit before it: content now holds every
+        # level, and splitting at the first "Objectif" line would cut the block
+        # mid-way and sweep the levels below it into instruction.
+        cleaned.append(_extract_levels(b.replace(content=content, instruction=instruction)))
     blocks = cleaned
 
     if len(blocks) < len(expected_titles):

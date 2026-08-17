@@ -1,13 +1,16 @@
 From the Strivee accessibility text below, extract ONLY the single workout block whose title is exactly:
 "{title}"
 
-The full-text parser merged or dropped this block; your job is to recover just this one. It starts at its title line and ends at the next block title (a line starting with "EMF" or with an emoji + sport name). Ignore every other block in the text.
+The full-text parser merged or dropped this block; your job is to recover just this one. It starts at its title line and ends at the next BLOCK TITLE. Ignore every other block in the text.
+
+A block title looks like "EMF 60 : Snatch", "EMF RX - Optional RUN" (EMF, then a number or RX, then a name) or an emoji followed by a sport name. A difficulty-level header does NOT end the block, even though it can also start with EMF: "🔱 EMF - RX 🔱 (Je peux faire + de 2 Strict Muscle-up)", "🔰 EMF - INTER + 🔰", "🎖️ EMF - INTER 🎖️", "🔱 Rx", "🔰INTER 🔰 :". Those belong INSIDE this block and the workout under each one is part of it.
 
 Return ONLY a JSON object, no markdown and no text around it:
 {{"content": "PRESCRIPTION_HERE", "instruction": "COACHING_NOTES_HERE"}}
 
-- content = what the athlete performs for this block: sets, reps, loads, %1RM, time, distances, the workout structure. Keep the RX / top-performance prescription when several levels are present.
-- instruction = this block's coaching notes, objective ("Objectif : ..."), or level adaptations (Inter+, Inter, ...). Use "" if there are none.
+- content = what the athlete performs for this block: sets, reps, loads, %1RM, time, distances, the workout structure. When the block publishes several difficulty levels, keep ALL of them here, in source order, each under its own level header copied verbatim onto its own line — a later deterministic step splits them apart. Never keep just one level, and never move a level header into instruction.
+- instruction = this block's coaching notes and objectives, plus any advice about which level to pick. Use "" if there are none.
+- Copy text from the workout only. Never invent a line, and never reuse the wording of these instructions.
 - Do NOT include the title line itself, UI labels (Score, Media, Notes), or any other block's content.
 
 Text:

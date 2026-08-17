@@ -5,7 +5,37 @@ from datetime import date
 
 import pytest
 
-from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from strivee_btwb.core.models import (
+    INTER,
+    INTER_PLUS,
+    RX,
+    DayProgramming,
+    ProgrammingBlock,
+    WeeklyProgramming,
+)
+
+
+def test_block_without_variants_offers_only_rx():
+    block = ProgrammingBlock(name="Back Squat", content="5x5 @ 80%")
+    assert block.available_levels() == [RX]
+    assert block.level == RX
+
+
+def test_available_levels_lists_published_levels_hardest_first():
+    block = ProgrammingBlock(name="WOD", content="20 RMU", inter_plus="10 RMU", inter="20 C2B")
+    assert block.available_levels() == [RX, INTER_PLUS, INTER]
+
+
+def test_available_levels_skips_blank_variants():
+    block = ProgrammingBlock(name="WOD", content="20 RMU", inter_plus="   ", inter="20 C2B")
+    assert block.available_levels() == [RX, INTER]
+
+
+def test_level_text_reads_each_published_level():
+    block = ProgrammingBlock(name="WOD", content="20 RMU", inter_plus="10 RMU", inter="20 C2B")
+    assert block.level_text(RX) == "20 RMU"
+    assert block.level_text(INTER_PLUS) == "10 RMU"
+    assert block.level_text(INTER) == "20 C2B"
 
 
 def test_programming_block_fields():

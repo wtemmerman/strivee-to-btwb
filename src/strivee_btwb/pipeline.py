@@ -24,7 +24,15 @@ from .capture import (
 )
 from .core import config
 from .core.llm import LLMUnavailableError
-from .core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from .core.models import (
+    INTER,
+    INTER_PLUS,
+    LEVEL_LABELS,
+    RX,
+    DayProgramming,
+    ProgrammingBlock,
+    WeeklyProgramming,
+)
 from .processing import format_for_btwb
 from .vision import count_block_titles, extract_day_programming_from_text
 
@@ -34,11 +42,14 @@ WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # Bump when the parsed-cache JSON shape or the parser semantics change, so that
 # preview/post warn instead of silently consuming output from an older parser.
-CACHE_SCHEMA_VERSION = 1
+# 2: blocks carry the INTER+/INTER prescriptions in their own fields instead of
+# having them folded into instruction.
+CACHE_SCHEMA_VERSION = 2
 
 # Bump when the formatting (clean_week / format_for_btwb / format prompt) changes,
 # so a stale formatted cache is recomputed instead of silently reused.
-FORMATTED_SCHEMA_VERSION = 1
+# 2: blocks record the difficulty level their content was selected from.
+FORMATTED_SCHEMA_VERSION = 2
 
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
@@ -73,7 +84,13 @@ def save_day(day: DayProgramming, ws: date) -> Path:
                 "date": day.date.isoformat(),
                 "day_label": day.day_label,
                 "blocks": [
-                    {"name": b.name, "content": b.content, "instruction": b.instruction}
+                    {
+                        "name": b.name,
+                        "content": b.content,
+                        "instruction": b.instruction,
+                        "inter_plus": b.inter_plus,
+                        "inter": b.inter,
+                    }
                     for b in day.blocks
                 ],
             },
@@ -109,7 +126,11 @@ def load_days(days: list[str], ws: date) -> WeeklyProgramming:
                 day_label=data["day_label"],
                 blocks=[
                     ProgrammingBlock(
-                        name=b["name"], content=b["content"], instruction=b.get("instruction", "")
+                        name=b["name"],
+                        content=b["content"],
+                        instruction=b.get("instruction", ""),
+                        inter_plus=b.get("inter_plus", ""),
+                        inter=b.get("inter", ""),
                     )
                     for b in data["blocks"]
                 ],
@@ -152,7 +173,12 @@ def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | Non
                 "date": day.date.isoformat(),
                 "day_label": day.day_label,
                 "blocks": [
-                    {"name": b.name, "content": b.content, "instruction": b.instruction}
+                    {
+                        "name": b.name,
+                        "content": b.content,
+                        "instruction": b.instruction,
+                        "level": b.level,
+                    }
                     for b in day.blocks
                 ],
             },
@@ -190,7 +216,10 @@ def load_formatted_day(
         day_label=data["day_label"],
         blocks=[
             ProgrammingBlock(
-                name=b["name"], content=b["content"], instruction=b.get("instruction", "")
+                name=b["name"],
+                content=b["content"],
+                instruction=b.get("instruction", ""),
+                level=b.get("level", RX),
             )
             for b in data["blocks"]
         ],
@@ -251,6 +280,20 @@ def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
     return WeeklyProgramming(week_start=week.week_start, days=days)
 
 
+def _merge_level(first: ProgrammingBlock, second: ProgrammingBlock, level: str) -> str:
+    """Concatenate two merged blocks' prescriptions for *level*.
+
+    A half that does not publish this level contributes its RX content instead, so
+    the merged variant stays a complete workout rather than only the part that
+    happened to be scaled. Empty when neither half publishes it.
+    """
+    if not first.level_text(level).strip() and not second.level_text(level).strip():
+        return ""
+    return "\n".join(
+        b.level_text(level).strip() or b.content.strip() for b in (first, second)
+    ).strip()
+
+
 def clean_week(week: WeeklyProgramming) -> WeeklyProgramming:
     """Remove empty blocks and merge consecutive blocks with the same name."""
     cleaned_days = []
@@ -266,6 +309,8 @@ def clean_week(week: WeeklyProgramming) -> WeeklyProgramming:
                 merged[-1] = merged[-1].replace(
                     content=merged[-1].content + "\n" + block.content,
                     instruction=merged_instruction,
+                    inter_plus=_merge_level(merged[-1], block, INTER_PLUS),
+                    inter=_merge_level(merged[-1], block, INTER),
                 )
             else:
                 # Blocks are immutable, so the original can be shared as-is.
@@ -277,20 +322,102 @@ def clean_week(week: WeeklyProgramming) -> WeeklyProgramming:
     return WeeklyProgramming(week_start=week.week_start, days=cleaned_days)
 
 
-def prepare_week_for_btwb(days: list[str], ws: date) -> WeeklyProgramming:
+def _print_prescription(lines: list[str], indent: str) -> None:
+    """Print a prescription in full — the choice is unreadable when it is elided."""
+    for line in lines:
+        print(f"{indent}{line}" if line.strip() else "")
+
+
+def _shared_lead(texts: list[list[str]]) -> int:
+    """Number of leading lines every level has in common."""
+    shortest = min(len(t) for t in texts)
+    n = 0
+    # Stop one line short: every option must still show something of its own.
+    while n < shortest - 1 and len({tuple(t[: n + 1]) for t in texts}) == 1:
+        n += 1
+    return n
+
+
+def _ask_level(block: ProgrammingBlock, day: DayProgramming) -> str:
+    """Prompt for which published level of *block* to post; RX on a bare Enter."""
+    levels = block.available_levels()
+    print(f"\n  {day.day_label} {day.date} — {block.name}")
+
+    # Levels usually open with the work everyone does, which would make every menu
+    # line read the same. Show only what differs.
+    bodies = [block.level_text(lv).splitlines() for lv in levels]
+    lead = _shared_lead(bodies)
+    if lead:
+        print("    every level starts with:")
+        _print_prescription(bodies[0][:lead], "      ")
+    for i, (lv, body) in enumerate(zip(levels, bodies), start=1):
+        print(f"\n    {i}) {LEVEL_LABELS[lv]}")
+        _print_prescription(body[lead:], "       ")
+    print()
+    choices = "/".join(str(i) for i in range(1, len(levels) + 1))
+    while True:
+        try:
+            answer = input(f"    Level? [{choices}, Enter = RX] ").strip()
+        except EOFError:
+            # No tty (cron, piped input): posting RX matches the pre-selection
+            # behaviour, but say so rather than appearing to have asked.
+            logger.warning("No input available — keeping RX for '%s'", block.name)
+            return RX
+        if not answer:
+            return RX
+        if answer.isdigit() and 1 <= int(answer) <= len(levels):
+            return levels[int(answer) - 1]
+        print(f"    Enter {choices}, or Enter for RX.")
+
+
+def select_levels(week: WeeklyProgramming) -> WeeklyProgramming:
+    """Ask which difficulty level to post for every block offering more than one.
+
+    Single-level blocks are used as published and never prompted for. The chosen
+    prescription is moved into ``content`` so every later stage (formatting,
+    preview, posting) works on the selected level and nothing else.
+    """
+    multi = sum(len(b.available_levels()) > 1 for d in week.days for b in d.blocks)
+    if not multi:
+        logger.info("No block offers a scaled level this week — posting as published.")
+        return week
+
+    logger.info("%d block(s) offer more than one level — choose which to post:", multi)
+    days = []
+    for day in week.days:
+        blocks = []
+        for block in day.blocks:
+            if len(block.available_levels()) == 1:
+                blocks.append(block)
+                continue
+            level = _ask_level(block, day)
+            blocks.append(block.replace(content=block.level_text(level), level=level))
+        days.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=blocks))
+    return WeeklyProgramming(week_start=week.week_start, days=days)
+
+
+def prepare_week_for_btwb(days: list[str], ws: date, relevel: bool = False) -> WeeklyProgramming:
     """Load parsed days, clean them, and LLM-format them — reusing a fresh cache.
 
     Both ``preview`` and ``post`` need the cleaned+formatted week, so without a
     cache the LLM formatting runs twice per ``run``. This formats only the days
     whose formatted cache is missing or stale (parsed re-analysed), reusing the
     rest, then persists the result. Output is identical to formatting every time.
+
+    The level choice rides on that same cache: a day is only asked about when it
+    is being formatted, so ``preview`` asks and ``post`` reuses the answers.
+    ``relevel`` discards the cache to ask again and reformat.
     """
     cleaned = clean_week(load_days(days, ws))
 
     cached: dict[str, DayProgramming] = {}
     to_format: list[DayProgramming] = []
     for day in cleaned.days:
-        hit = load_formatted_day(ws, day.day_label, _parsed_source_mtime_ns(ws, day.day_label))
+        hit = (
+            None
+            if relevel
+            else load_formatted_day(ws, day.day_label, _parsed_source_mtime_ns(ws, day.day_label))
+        )
         if hit is not None:
             logger.info("Reusing cached formatting for %s", day.day_label)
             cached[day.day_label] = hit
@@ -298,7 +425,8 @@ def prepare_week_for_btwb(days: list[str], ws: date) -> WeeklyProgramming:
             to_format.append(day)
 
     if to_format:
-        formatted = llm_format_week(WeeklyProgramming(week_start=ws, days=to_format))
+        selected = select_levels(WeeklyProgramming(week_start=ws, days=to_format))
+        formatted = llm_format_week(selected)
         for day in formatted.days:
             save_formatted_day(day, ws, _parsed_source_mtime_ns(ws, day.day_label))
             cached[day.day_label] = day
@@ -330,7 +458,8 @@ def log_preview(week: WeeklyProgramming) -> None:
     for day in week.days:
         logger.info("  %s — %s  (%d block(s))", day.day_label.upper(), day.date, len(day.blocks))
         for block in day.blocks:
-            logger.info("  [%s]", block.name)
+            level = "" if block.level == RX else f"  ({LEVEL_LABELS[block.level]})"
+            logger.info("  [%s]%s", block.name, level)
             for line in block.content.splitlines():
                 logger.info("      %s", line)
             if block.instruction.strip():
@@ -494,10 +623,10 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
     logger.info("Analysis done (%d day(s) cached)", saved)
 
 
-def do_preview(days: list[str], ws: date | None = None) -> None:
+def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> None:
     ws = ws or week_start()
     try:
-        week = prepare_week_for_btwb(days, ws)
+        week = prepare_week_for_btwb(days, ws, relevel)
     except LLMUnavailableError as e:
         logger.error("%s", e)
         sys.exit(1)
@@ -508,11 +637,18 @@ def do_preview(days: list[str], ws: date | None = None) -> None:
     log_preview(week)
 
 
-def do_post(days: list[str], yes: bool, headless: bool, ws: date | None = None) -> None:
+def do_post(
+    days: list[str],
+    yes: bool,
+    headless: bool,
+    ws: date | None = None,
+    relevel: bool = False,
+) -> None:
     ws = ws or week_start()
     try:
-        # Reuses preview's formatted cache when fresh, so post does not re-run the LLM.
-        week = prepare_week_for_btwb(days, ws)
+        # Reuses preview's formatted cache when fresh, so post does not re-run the
+        # LLM and does not re-ask the level choices preview already collected.
+        week = prepare_week_for_btwb(days, ws, relevel)
     except LLMUnavailableError as e:
         # Abort before opening a browser / posting anything to BTWB.
         logger.error("%s", e)
