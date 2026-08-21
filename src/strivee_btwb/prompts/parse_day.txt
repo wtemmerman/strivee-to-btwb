@@ -92,9 +92,9 @@ NOT block titles — these are sub-section headers WITHIN the current block, kee
   • Any other short label that does not match the EMF / emoji-category patterns above
 
 ━━━ CONTENT (prescription only) ━━━
-"content" = the minimal statement of what to DO for the RX 🔱 level ONLY, copied exactly:
+"content" = the minimal statement of what the athlete DOES for this block, copied exactly:
   • Never include the block title line itself in content
-  • If the block has multiple difficulty levels (RX + INTER+ and/or INTER), content contains ONLY the RX prescription. NEVER concatenate RX with INTER+ or INTER content. The INTER+ / INTER prescriptions go to instruction (see DIFFICULTY LEVELS section).
+  • If the block has multiple difficulty levels (RX + INTER+ and/or INTER), content holds ALL of them in source order, each under its own header line, copied verbatim (see DIFFICULTY LEVELS section). Never move a level into instruction, and never keep just one.
   • Conditioning AND fixed-format strength — the FORMAT line is the time-domain / interval structure and ALWAYS stays in content. This covers "AMRAP", "EMOM", "EMOMx6", "E2MOM", "For Time", "N rounds", "N sets of", "N sets, Every Xmin", "Start Every Xmin", "Every Xmin x N", and Run/Swim sets. Keep that format line together with the movements, distances, reps and weights — for the RX section only. NEVER move an "EMOM" / "N sets of" / "Start Every" / "AMRAP" line into instruction; without it the workout has no format.
     — Include sub-section labels like "Warm-up -", "Main Part -", "Cooldown -" as structural markers in content
   • Open-ended strength ONLY (Build to / Build a / Find / Work to / Up to a max or heavy):
@@ -121,7 +121,7 @@ Example — working-load line FIRST, then EMOM format (keep the whole prescripti
   WRONG: content = "1 Push press" alone, with "#100% of your 5RM from week 1" and "EMOMx6 :" pushed to instruction — that discards the working load and the workout format. The EMOM line MUST stay in content; a leading "#...% of 5RM" load line is part of the prescription, not a coaching note.
 
 ━━━ INSTRUCTION (everything else) ━━━
-"instruction" = all coaching, guidance, and context — NOT the core RX prescription.
+"instruction" = all coaching, guidance, and context — NOT the core RX prescription, and NOT the INTER+ / INTER prescriptions (those have their own fields).
 These markers ALWAYS begin an instruction section; move the marker line AND everything after it to instruction:
   • "Objectif"
   • "Gamme suggéré" / "Gammes suggéré"
@@ -139,89 +139,17 @@ These markers ALWAYS begin an instruction section; move the marker line AND ever
 PRESERVE FORMATTING: keep the original line breaks and blank lines from the source text inside instruction. Multi-paragraph instructions stay multi-paragraph (use \n between lines, \n\n between sections).
 
 ━━━ DIFFICULTY LEVELS (RX vs INTER+ vs INTER) ━━━
-Strivee blocks often present multiple difficulty levels:
-  • RX 🔱 (or "🔱 Rx", "Rx 🔱", "RX 🔱") — the prescribed/main version
-  • INTER+ 🪖 (or "🪖 INTER+ 🪖", "🪖 INTER+ -") — scaled intermediate-plus
-  • INTER 🎖️ (or "🎖️ INTER 🎖️", "🎖️ INTER -") — scaled intermediate
+Strivee blocks often publish the same work at several levels, under a header line:
+"🔱 Rx", "RX 🔱 :", "🔱 EMF - RX 🔱 (Je peux faire + de 2 Strict Muscle-up)", "🪖 INTER+ -",
+"🔰 EMF - INTER + 🔰", "🎖️ INTER 🎖️", "🔰INTER 🔰 :", "🔱 RX 🔱 🔰 INTER + 🔰".
 
-How to map them:
-  1. RX 🔱 prescription → "content". SKIP the RX header line itself; do not write "RX 🔱" anywhere.
-  2. INTER+ 🪖 and INTER 🎖️ sections → "instruction". KEEP their header lines as visible section markers (e.g. "🪖 INTER+ 🪖", "🎖️ INTER -") and include their full prescription text below the header.
-  3. Combined headers like "🔱 Rx - 🪖 INTER+ -" mean RX and INTER+ share the SAME content — put it once in "content", do NOT duplicate it in instruction. Only the separate "🎖️ INTER -" section (if present) goes to instruction.
-  4. If only ONE level exists, its content goes to "content"; no level header anywhere.
+These header lines are NOT block titles and they do NOT start a new block. Copy them, and
+everything under them, into "content" exactly as written and in source order — headers
+included, nothing reordered, nothing dropped, nothing merged. Sorting the levels is not your
+job: a later deterministic step reads the headers and splits them out.
 
-Example with separate RX and INTER sections:
-  Input:
-    🔱 Rx
-    AMRAP 12:00
-    24 DU
-    6 PC #50kg
-    🎖️ INTER -
-    AMRAP 12:00
-    24 DU
-    6 PC #40kg with abmat
-    Objectif : Tenir les DU unbroken
-  Output:
-    "content":     "AMRAP 12:00\n24 DU\n6 PC #50kg"
-    "instruction": "🎖️ INTER -\nAMRAP 12:00\n24 DU\n6 PC #40kg with abmat\n\nObjectif : Tenir les DU unbroken"
-
-Example with combined RX/INTER+ header:
-  Input:
-    🔱 Rx - 🪖 INTER+ -
-    AMRAP 12:00
-    24 DU
-    🎖️ INTER -
-    AMRAP 12:00
-    20 DU with abmat
-  Output:
-    "content":     "AMRAP 12:00\n24 DU"
-    "instruction": "🎖️ INTER -\nAMRAP 12:00\n20 DU with abmat"
-
-Example with all three levels separate (THIS IS THE COMMON CASE — pay close attention):
-  Input:
-    RX 🔱
-    AMRAP 12:00
-    5 Ring Muscle-up
-    8 Strict HSPU
-    15 Toes to Bar
-    200m Run
-    INTER+ 🪖
-    AMRAP 12:00
-    4 Bar Muscle-up
-    6 Strict HSPU
-    12 Toes to Bar
-    200m Run
-    INTER 🎖️
-    AMRAP 12:00
-    5 Chest to bar pull-up
-    6 Strict HSPU Abmat
-    10 Toes to Bar
-    200m Run
-    Objectif : Unbroken sur chaque mouvement gym
-  Output:
-    "content":     "AMRAP 12:00\n5 Ring Muscle-up\n8 Strict HSPU\n15 Toes to Bar\n200m Run"
-    "instruction": "🪖 INTER+ 🪖\nAMRAP 12:00\n4 Bar Muscle-up\n6 Strict HSPU\n12 Toes to Bar\n200m Run\n\n🎖️ INTER 🎖️\nAMRAP 12:00\n5 Chest to bar pull-up\n6 Strict HSPU Abmat\n10 Toes to Bar\n200m Run\n\nObjectif : Unbroken sur chaque mouvement gym"
-
-  WRONG output (do NOT do this):
-    "content": "AMRAP 12:00\n5 Ring Muscle-up...\n\nAMRAP 12:00\n4 Bar Muscle-up...\n\nAMRAP 12:00\n5 Chest to bar pull-up..."  ← all 3 levels in content is FORBIDDEN
-
-INLINE levels with a placeholder movement (e.g. "X ... Movement"): sometimes the
-shared workout lists a placeholder slot like "X Gymnastics Movement", and the
-levels appear BELOW it as single inline lines "🔱 RX - <value>", "INTER+ - <value>",
-"INTER - <value>". Treat this the same way: SUBSTITUTE the RX value into the
-placeholder slot in content, and move the INTER+/INTER values to instruction
-(dropping the level header emoji; keep the level label as plain text).
-  Input:
-    AMRAP 12:00
-    500m Bike Erg
-    X Gymnastics Movement
-    🔱 RX - 5 Ring Muscle-up
-    🔰 INTER + - 2 Ring Muscle-up
-    🎖️INTER - 5 Chest to bar pull-up (kipping) + 5 strict Ring Dips
-  Output:
-    "content":     "AMRAP 12:00\n500m Bike Erg\n5 Ring Muscle-up"
-    "instruction": "INTER+ - 2 Ring Muscle-up\nINTER - 5 Chest to bar pull-up (kipping) + 5 strict Ring Dips"
-  WRONG: leaving "X Gymnastics Movement" and all three "🔱 RX - .../INTER + - ..." lines in content.
+Coaching still goes to "instruction", even when it sits inside a level's section:
+"Objectif ...", "Notes ...", "Gamme suggéré ...", and a "Quel niveau ?" list of criteria.
 
 ━━━ IGNORE COMPLETELY ━━━
 - Day-tab labels: LUN, MAR, MER, JEU, VEN, SAM, DIM and Mon/Tue/Wed/Thu/Fri/Sat/Sun

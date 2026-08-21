@@ -6,10 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from strivee_btwb.core.models import INTER, INTER_PLUS, RX, ProgrammingBlock
 from strivee_btwb.vision.parser import (
     _BLOCKS_SCHEMA,
     _clean_block_text,
     _extract_json,
+    _extract_levels,
     _fill_placeholder_movements,
     _is_excluded,
     _recover_block,
@@ -39,6 +41,220 @@ def test_fill_placeholder_noop_without_placeholder():
 def test_fill_placeholder_noop_on_count_mismatch():
     content = "X Gymnastics Movement\nX Strength Movement\nRX - 5 Ring Muscle-up"
     assert _fill_placeholder_movements(content) == content
+
+
+# ---------------------------------------------------------------------------
+# _extract_levels — deterministic RX / INTER+ / INTER split
+# ---------------------------------------------------------------------------
+
+
+def test_extract_levels_splits_three_levels_left_in_content():
+    """The shape that defeated the prompt: all three levels inside content."""
+    block = ProgrammingBlock(
+        name="EMF 60 : Gymnastic Volume Building",
+        content=(
+            "Volume 4/4 -\n\nRX\nAMRAP 16:00\n4-6 Ring Muscle-up\n\n"
+            "INTER+\nAMRAP 16:00\n4/6 Bar Muscle-up\n\nINTER\nAMRAP 16:00\n4/6 Chest to bar"
+        ),
+        instruction="Objectif : tout Unbroken.",
+    )
+    r = _extract_levels(block)
+    assert r.content == "Volume 4/4 -\nAMRAP 16:00\n4-6 Ring Muscle-up"
+    assert r.inter_plus == "Volume 4/4 -\nAMRAP 16:00\n4/6 Bar Muscle-up"
+    assert r.inter == "Volume 4/4 -\nAMRAP 16:00\n4/6 Chest to bar"
+    assert r.instruction == "Objectif : tout Unbroken."
+    assert r.available_levels() == [RX, INTER_PLUS, INTER]
+
+
+def test_extract_levels_shared_preamble_prefixes_every_variant():
+    """With an RX section of its own, text above the headers is shared context."""
+    block = ProgrammingBlock(
+        name="A", content="AMRAP 12:00\n500m Bike Erg\n\nRX\n5 Ring Muscle-up\n\nINTER\n20 C2B"
+    )
+    r = _extract_levels(block)
+    assert r.content == "AMRAP 12:00\n500m Bike Erg\n5 Ring Muscle-up"
+    assert r.inter == "AMRAP 12:00\n500m Bike Erg\n20 C2B"
+
+
+def test_extract_levels_without_rx_header_keeps_variant_standalone():
+    """Real Sat block: the text above INTER is RX's own work, not shared context.
+
+    Prefixing it would have the INTER athlete do the 10 strict bar muscle-ups they
+    picked INTER to avoid.
+    """
+    block = ProgrammingBlock(
+        name="EMF 60 : Strict Bar Muscle-up",
+        content=(
+            "For Quality :\nAccumulated 10 Strict Bar Muscle-up / Banded Bar Muscle-up\n\n"
+            "INTER (Je suis capable de faire plus de 4-8 Strict Pull-up)\n\n"
+            "Accumulated 6-8 Reps Banded Bar Muscle-up"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.content == "For Quality :\nAccumulated 10 Strict Bar Muscle-up / Banded Bar Muscle-up"
+    assert r.inter == "Accumulated 6-8 Reps Banded Bar Muscle-up"
+
+
+def test_extract_levels_lifts_variant_out_of_instruction():
+    block = ProgrammingBlock(
+        name="A",
+        content="AMRAP 12:00\n24 DU\n6 PC #50kg",
+        instruction="Objectif : DU unbroken\n\nINTER -\nAMRAP 12:00\n24 DU\n6 PC #40kg",
+    )
+    r = _extract_levels(block)
+    assert r.content == "AMRAP 12:00\n24 DU\n6 PC #50kg"
+    assert r.inter == "AMRAP 12:00\n24 DU\n6 PC #40kg"
+    assert r.instruction == "Objectif : DU unbroken"
+
+
+def test_extract_levels_keeps_selection_criteria_verbatim():
+    """Header-only lines are advice on which level to pick, not prescriptions."""
+    instruction = (
+        "EMF - INTER (Je ne suis pas à l'aise sur les anneaux)\n"
+        "EMF - INTER + (Je peux faire 1 Strict Muscle-up)\n"
+        "EMF - RX (Je peux faire + de 2 Strict Muscle-up)"
+    )
+    r = _extract_levels(
+        ProgrammingBlock(name="A", content="EMOMx9 :\n3 Reps", instruction=instruction)
+    )
+    assert r.available_levels() == [RX]
+    for line in instruction.splitlines():
+        assert line in r.instruction
+
+
+def test_extract_levels_combined_header_offers_one_choice():
+    """ "RX INTER" is one shared prescription — an identical variant is not a choice."""
+    r = _extract_levels(ProgrammingBlock(name="A", content="RX INTER\n\nAMRAP 1:00\nMax rep C2B"))
+    assert r.content == "AMRAP 1:00\nMax rep C2B"
+    assert r.inter == ""
+    assert r.available_levels() == [RX]
+
+
+def test_extract_levels_ignores_inline_rx_value():
+    """ "RX - 5 Ring Muscle-up" is a placeholder value, not a section header."""
+    content = "AMRAP 12:00\n500m Bike Erg\nRX - 5 Ring Muscle-up"
+    assert _extract_levels(ProgrammingBlock(name="A", content=content)).content == content
+
+
+def test_extract_levels_keeps_model_supplied_fields():
+    """A level the model extracted correctly is not overwritten by the split."""
+    block = ProgrammingBlock(name="A", content="RX\n10 RMU\nINTER\n10 C2B", inter_plus="8 BMU")
+    r = _extract_levels(block)
+    assert r.inter_plus == "8 BMU"
+    assert r.inter == "10 C2B"
+
+
+def test_extract_levels_drops_duplicate_body_but_keeps_the_criterion():
+    """The model wrote the variant into both its field and instruction (real Friday case)."""
+    block = ProgrammingBlock(
+        name="EMF 60 : Gymnastic strength",
+        content="3 sets of :\nMax rep Unbroken strict Ring Muscle-up",
+        inter_plus="EMOMx6 :\n1 strict Ring muscle-up",
+        instruction=(
+            "EMF - INTER + (Je peux faire 1 Strict Muscle-up)\nEMOMx6 :\n1 strict Ring muscle-up"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.inter_plus == "EMOMx6 :\n1 strict Ring muscle-up"
+    assert r.instruction == "EMF - INTER + (Je peux faire 1 Strict Muscle-up)"
+    assert "EMOMx6" not in r.instruction  # the workout is not repeated in the coaching note
+
+
+def test_extract_levels_moves_content_criterion_into_the_note():
+    """A qualifier on a content-side header is advice, so it survives the split."""
+    block = ProgrammingBlock(
+        name="A",
+        content="10 Strict BMU\n\nINTER (Je fais 4-8 Strict Pull-up)\n6-8 Banded BMU",
+        instruction="Objectif : force stricte",
+    )
+    r = _extract_levels(block)
+    assert r.inter == "6-8 Banded BMU"
+    assert r.instruction.startswith("Objectif : force stricte")
+    assert "INTER (Je fais 4-8 Strict Pull-up)" in r.instruction
+
+
+def test_extract_levels_no_rx_section_keeps_preamble_as_content():
+    """The variant leaked into content below the prescription; RX is the preamble."""
+    block = ProgrammingBlock(
+        name="A",
+        content=(
+            "For Quality :\nAccumulated 10 Strict BMU\n\n"
+            "INTER (Je fais 4-8 Pull-up)\n\n6-8 Banded BMU"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.content == "For Quality :\nAccumulated 10 Strict BMU"
+    assert "6-8 Banded BMU" in r.inter
+
+
+def test_extract_levels_joins_every_section_naming_a_level():
+    """Real Wed shape: shared work under a combined header, then a per-level part."""
+    block = ProgrammingBlock(
+        name="EMF 60 : Ring Muscle-up Skill",
+        content=(
+            "RX INTER+ INTER\nFor Quality :\n30 reps High Amplitude ring Swing\n\n+\n\n"
+            "RX\nFor time :\n20/16 Ring Muscle-up\n\n"
+            "INTER+\nAMRAP 6:00\nMax Rep Ring Muscle-up"
+        ),
+    )
+    r = _extract_levels(block)
+    shared = "For Quality :\n30 reps High Amplitude ring Swing\n\n+"
+    assert r.content == f"{shared}\nFor time :\n20/16 Ring Muscle-up"
+    assert r.inter_plus == f"{shared}\nAMRAP 6:00\nMax Rep Ring Muscle-up"
+    # INTER was named only by the shared header, so it is the shared work alone.
+    assert r.inter == shared
+
+
+def test_extract_levels_drops_prescriptions_copied_into_instruction():
+    """The model filled the fields and left copies in instruction (real Wed case)."""
+    block = ProgrammingBlock(
+        name="A",
+        content="For Quality :\n30 reps ring Swing",
+        inter_plus="AMRAP 6:00\nMax Rep Ring Muscle-up",
+        instruction="AMRAP 6:00\nMax Rep Ring Muscle-up\n\nObjectif : technique parfaite",
+    )
+    r = _extract_levels(block)
+    assert r.instruction == "Objectif : technique parfaite"
+
+
+def test_extract_levels_reattaches_prescription_split_after_a_plus():
+    """A dangling "+" means the model cut the workout in half; the rest is in instruction."""
+    block = ProgrammingBlock(
+        name="A",
+        content="For Quality :\n30 reps ring Swing\n\n+",
+        inter_plus="AMRAP 6:00\nMax Rep Ring Muscle-up",
+        instruction="For time :\n20/16 Ring Muscle-up",
+    )
+    r = _extract_levels(block)
+    assert r.content == "For Quality :\n30 reps ring Swing\n\n+\nFor time :\n20/16 Ring Muscle-up"
+    # The shared half is prefixed onto the variant too, else INTER+ loses the skill work.
+    assert (
+        r.inter_plus == "For Quality :\n30 reps ring Swing\n\n+\nAMRAP 6:00\nMax Rep Ring Muscle-up"
+    )
+    assert r.instruction == ""
+
+
+def test_extract_levels_does_not_reattach_coaching_after_a_plus():
+    block = ProgrammingBlock(
+        name="A", content="30 reps ring Swing\n\n+", instruction="Objectif : technique parfaite"
+    )
+    r = _extract_levels(block)
+    assert r.content == "30 reps ring Swing\n\n+"
+    assert r.instruction == "Objectif : technique parfaite"
+
+
+def test_extract_levels_is_a_noop_without_level_headers():
+    block = ProgrammingBlock(
+        name="A", content="EMOMx5 :\n3 Power snatch", instruction="Objectif : x"
+    )
+    assert _extract_levels(block) == block
+
+
+def test_extract_levels_never_empties_content():
+    """A block whose content is only a level header keeps its text rather than vanishing."""
+    block = ProgrammingBlock(name="A", content="INTER\n10 C2B")
+    r = _extract_levels(block)
+    assert r.content.strip()
 
 
 def test_resplit_moves_trailing_coaching_to_instruction():
@@ -217,6 +433,14 @@ def test_validate_blocks_keeps_wellformed():
 def test_validate_blocks_defaults_missing_fields():
     result = _validate_blocks([{"name": "Squat"}], "Mon")
     assert result == [{"name": "Squat", "content": "", "instruction": ""}]
+
+
+def test_validate_blocks_ignores_model_supplied_level_fields():
+    """Levels come from _extract_levels only — the model does not get a say."""
+    raw = [{"name": "WOD", "content": "21-15-9", "inter_plus": "15-12-9", "inter": "12-9-6"}]
+    assert _validate_blocks(raw, "Mon") == [
+        {"name": "WOD", "content": "21-15-9", "instruction": ""}
+    ]
 
 
 def test_validate_blocks_drops_non_objects_and_empty_names(caplog):
@@ -567,3 +791,173 @@ def test_extract_from_text_excluded_blocks_logged(monkeypatch, caplog):
     assert any(
         "dropped" in r.message.lower() or "exclusion" in r.message.lower() for r in caplog.records
     )
+
+
+def test_recovered_block_is_restored_to_source_order(monkeypatch):
+    """Recovery appends; BTWB posts in list order, so the day must be re-sorted."""
+    from datetime import date
+
+    from strivee_btwb.vision.parser import extract_day_programming_from_text
+
+    text = "EMF 60 : Squat\n5x5\nEMF 60 : Bench\n3x3\nEMF 60 : Row\n500m"
+
+    def fake_chat(prompt, model=None, schema=None, **_):
+        if "extract ONLY the single workout block" in prompt:
+            return json.dumps({"content": "3x3"})  # the recovered middle block
+        return json.dumps(
+            {
+                "blocks": [
+                    {"name": "EMF 60 : Squat", "content": "5x5"},
+                    {"name": "EMF 60 : Row", "content": "500m"},
+                ]
+            }
+        )
+
+    monkeypatch.setattr("strivee_btwb.vision.parser.chat_json", fake_chat)
+    day = extract_day_programming_from_text(text, "Mon", date(2026, 8, 17))
+    assert [b.name for b in day.blocks] == ["EMF 60 : Squat", "EMF 60 : Bench", "EMF 60 : Row"]
+
+
+# ---------------------------------------------------------------------------
+# source-slice verification
+# ---------------------------------------------------------------------------
+
+_SAT_TEXT = (
+    "EMF 60 : Strict Bar Muscle-up\n"
+    "For Quality :\nAccumulated 10 Strict Bar Muscle-up / Banded Bar Muscle-up\n"
+    "EMF 60 : Bench press\n"
+    "3 Sets of :\n4 Reps RPE 9\n- Rest 2min between sets -\n"
+)
+
+
+def test_content_matches_its_own_slice():
+    from strivee_btwb.vision.parser import (
+        _content_matches_source,
+        _norm_title,
+        _source_slices,
+    )
+
+    slices = _source_slices(_SAT_TEXT)
+    own = slices[_norm_title("EMF 60 : Strict Bar Muscle-up")]
+    assert _content_matches_source(
+        "For Quality :\nAccumulated 10 Strict Bar Muscle-up / Banded Bar Muscle-up", own
+    )
+
+
+def test_content_from_a_neighbour_slice_is_rejected():
+    """The real Saturday failure: block 1 came back holding the Bench press workout."""
+    from strivee_btwb.vision.parser import (
+        _content_matches_source,
+        _norm_title,
+        _source_slices,
+    )
+
+    slices = _source_slices(_SAT_TEXT)
+    own = slices[_norm_title("EMF 60 : Strict Bar Muscle-up")]
+    assert not _content_matches_source("3 Sets of :\n4 Reps RPE 9\n- Rest 2min between sets -", own)
+
+
+def test_short_content_is_never_second_guessed():
+    """Nothing distinctive to check — re-extracting on a hunch would cost accuracy."""
+    from strivee_btwb.vision.parser import _content_matches_source
+
+    assert _content_matches_source("5x5\n+\nRest", "totally unrelated source text")
+
+
+def test_verify_re_extracts_only_the_mismatched_block(monkeypatch):
+    from strivee_btwb.vision.parser import _verify_against_source
+
+    calls = []
+
+    def fake_chat(prompt, model=None, schema=None, **_):
+        calls.append(prompt)
+        return json.dumps({"content": "For Quality :\nAccumulated 10 Strict Bar Muscle-up"})
+
+    monkeypatch.setattr("strivee_btwb.vision.parser.chat_json", fake_chat)
+    blocks = [
+        # Holds its neighbour's workout — must be re-extracted.
+        ProgrammingBlock(name="EMF 60 : Strict Bar Muscle-up", content="3 Sets of :\n4 Reps RPE 9"),
+        # Correct — must be left untouched.
+        ProgrammingBlock(
+            name="EMF 60 : Bench press",
+            content="3 Sets of :\n4 Reps RPE 9\n- Rest 2min between sets -",
+        ),
+    ]
+    result = _verify_against_source(blocks, _SAT_TEXT, "Sat", "qwen3:8b")
+    assert len(calls) == 1
+    assert "EMF 60 : Strict Bar Muscle-up" in calls[0]
+    assert result[0].content == "For Quality :\nAccumulated 10 Strict Bar Muscle-up"
+    assert result[1] is blocks[1]
+
+
+def test_verify_keeps_the_block_when_recovery_fails(monkeypatch):
+    """A failed re-extraction must not drop or blank the block — the warning is the signal."""
+    from strivee_btwb.vision.parser import _verify_against_source
+
+    monkeypatch.setattr("strivee_btwb.vision.parser.chat_json", lambda *a, **k: "")
+    block = ProgrammingBlock(
+        name="EMF 60 : Strict Bar Muscle-up", content="3 Sets of :\n4 Reps RPE 9"
+    )
+    result = _verify_against_source([block], _SAT_TEXT, "Sat", "qwen3:8b")
+    assert len(result) == 1
+    assert result[0].name == block.name
+    assert result[0].content.strip()
+
+
+def test_foreign_tail_is_trimmed_without_re_extracting():
+    """Real Saturday case: Bench press kept its own workout plus Handstand Walk's."""
+    from strivee_btwb.vision.parser import _trim_foreign_content
+
+    text = (
+        "EMF 60 : Bench press\n"
+        "3 Sets of :\n4 Reps RPE 9\n- Rest 2min between sets -\n"
+        "EMF RX : Handstand Walk\n"
+        "For quality -\n50-100m Handstand Walk\n- On cherche ici a augmenter le volume !\n"
+    )
+    block = ProgrammingBlock(
+        name="EMF 60 : Bench press",
+        content="3 Sets of :\n4 Reps RPE 9\n- Rest 2min between sets -\n50-100m Handstand Walk",
+    )
+    result = _trim_foreign_content([block], text, "Sat")[0]
+    assert "Handstand Walk" not in result.content
+    assert "- Rest 2min between sets -" in result.content
+
+
+def test_trimming_never_empties_a_block():
+    """If every line looks foreign the evidence is wrong — keep the block whole."""
+    from strivee_btwb.vision.parser import _strip_foreign_lines
+
+    content = "For quality - 50-100m Handstand Walk\nAccumulated 6-8 Reps Banded Bar Muscle-up"
+    assert _strip_foreign_lines(content, "", [content]) == content
+
+
+def test_foreign_level_section_is_trimmed_out_of_the_coaching_note():
+    """Left in the note, _extract_levels lifts it into a level from another workout."""
+    from strivee_btwb.vision.parser import _trim_foreign_content
+
+    text = (
+        "EMF 60 : Bench press\n3 Sets of :\n4 Reps RPE 9\n"
+        "EMF RX : Handstand Walk\nINTER\nFor quality -\n50-100m Handstand Walk\n"
+    )
+    block = ProgrammingBlock(
+        name="EMF 60 : Bench press",
+        content="3 Sets of :\n4 Reps RPE 9",
+        instruction="Objectif : apprentissage du RPE\nFor quality -\n50-100m Handstand Walk",
+    )
+    result = _trim_foreign_content([block], text, "Sat")[0]
+    assert "Handstand Walk" not in result.instruction
+    assert "Objectif : apprentissage du RPE" in result.instruction
+    assert result.content == "3 Sets of :\n4 Reps RPE 9"
+
+
+def test_variant_holding_only_a_section_label_is_not_a_level():
+    """Trim residue: "For quality -" alone would offer a level that posts a label."""
+    block = ProgrammingBlock(name="A", content="3 Sets of :\n4 Reps RPE 9", inter="For quality -")
+    assert _extract_levels(block).available_levels() == [RX]
+
+
+def test_variant_with_a_real_prescription_survives():
+    block = ProgrammingBlock(
+        name="A", content="3 Sets of :\n4 Reps", inter="For quality -\n50m HSW"
+    )
+    assert _extract_levels(block).available_levels() == [RX, INTER]

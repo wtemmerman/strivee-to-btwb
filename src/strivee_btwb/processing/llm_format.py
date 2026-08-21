@@ -12,6 +12,7 @@ from ..core import config
 from ..core.llm import chat_text
 from ..core.models import ProgrammingBlock
 from ..prompts import load
+from .btwb_movements import apply_movement_aliases
 
 logger = logging.getLogger("processing")
 
@@ -54,6 +55,7 @@ def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> Progra
     # Percentages of a RM use @ not # — including ranges like "#85-90%".
     result = re.sub(r"#(\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?)%", r"@\1%", result)
     result = re.sub(r"\bC\s*&\s*J\b", "Clean and Jerk", result, flags=re.IGNORECASE)
+    result = apply_movement_aliases(result)
     if result:
         logger.debug("[%s] output (%d chars):\n%s", block.name, len(result), result)
         return block.replace(content=result)

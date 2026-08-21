@@ -96,7 +96,13 @@ def _week_to_dict(week: WeeklyProgramming) -> dict:
                 "date": d.date.isoformat(),
                 "day_label": d.day_label,
                 "blocks": [
-                    {"name": b.name, "content": b.content, "instruction": b.instruction}
+                    {
+                        "name": b.name,
+                        "content": b.content,
+                        "instruction": b.instruction,
+                        "inter_plus": b.inter_plus,
+                        "inter": b.inter,
+                    }
                     for b in d.blocks
                 ],
             }
@@ -128,7 +134,11 @@ def load_baseline(kind: str, ws_iso: str) -> WeeklyProgramming:
             day_label=d["day_label"],
             blocks=[
                 ProgrammingBlock(
-                    name=b["name"], content=b["content"], instruction=b.get("instruction", "")
+                    name=b["name"],
+                    content=b["content"],
+                    instruction=b.get("instruction", ""),
+                    inter_plus=b.get("inter_plus", ""),
+                    inter=b.get("inter", ""),
                 )
                 for b in d["blocks"]
             ],
