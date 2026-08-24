@@ -1,0 +1,458 @@
+{
+  "schema_version": 1,
+  "_about": "Accessory pool to complement EMF CrossFit programming. Muscles listed are the ones EMF does not train; targets are weekly HARD sets (0-2 RIR). btwb_name values are drafts until btwb_verified is true.",
+  "muscles": {
+    "side_delt": {
+      "label": "Side delts",
+      "weekly_target_sets": 5,
+      "rationale": "Zero coverage from CrossFit. No pressing or pulling pattern trains abduction.",
+      "movements": [
+        {
+          "id": "cable_lateral_raise",
+          "btwb_name": "Cable Lateral Raise",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": "Crossover set to the lowest pin, cable across the body. Tension at the bottom is the reason this beats dumbbells."
+        },
+        {
+          "id": "leaning_cable_lateral_raise",
+          "btwb_name": "Cable Lateral Raise",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": "Hold the upright, lean away. Longer moment arm at the stretch."
+        },
+        {
+          "id": "db_lateral_raise",
+          "btwb_name": "Dumbbell Lateral Raise",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "10-12",
+          "note": "The 25 lb pair is the working weight. Strict - if you need a swing to start it, drop to the plates."
+        },
+        {
+          "id": "plate_lateral_raise",
+          "btwb_name": "Plate Lateral Raise",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "15-20",
+          "note": "A 10 lb plate per hand, held by the rim. Fills the gap between the 25s and nothing."
+        },
+        {
+          "id": "band_lateral_raise",
+          "btwb_name": "Single Arm Banded Lateral Raise",
+          "btwb_verified": true,
+          "locations": [
+            "basement"
+          ],
+          "reps": "15-20",
+          "note": "Third option, and BTWB only lists it single-arm - hold the rack with the free hand. Band is lightest where the muscle is strongest, so pause 1s at the top."
+        }
+      ]
+    },
+    "rear_delt": {
+      "label": "Rear delts",
+      "weekly_target_sets": 3,
+      "rationale": "Cleans and snatches load the traps, not the rear delt. Balances the front-delt volume from overhead work.",
+      "movements": [
+        {
+          "id": "cable_reverse_fly",
+          "btwb_name": "Reverse Fly",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": "Crossover at shoulder height, arms crossed at the start for the stretch."
+        },
+        {
+          "id": "reverse_pec_deck",
+          "btwb_name": "Reverse Pec Dec",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": ""
+        },
+        {
+          "id": "face_pull",
+          "btwb_name": "Face Pull",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "15-20",
+          "note": "Rope at the gym, rings or band in the basement. External rotation at the end doubles as cuff work."
+        },
+        {
+          "id": "prone_db_reverse_fly",
+          "btwb_name": "Dumbbell Reverse Fly",
+          "btwb_verified": true,
+          "locations": [
+            "basement"
+          ],
+          "reps": "15-20",
+          "note": "Face down on the flat bench. ROM is cut short by the floor - stop at bench height rather than swinging."
+        }
+      ]
+    },
+    "chest": {
+      "label": "Chest",
+      "weekly_target_sets": 3,
+      "rationale": "EMF presses overhead constantly and horizontally rarely. It does program bench some weeks but never a fly, so the fly is the set that is always missing.",
+      "movements": [
+        {
+          "id": "cable_fly",
+          "btwb_name": "Cable Fly",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": "Crossover, pins at shoulder height. EMF never programs this pattern - the stretch at the bottom is the point, do not shorten it to add load."
+        },
+        {
+          "id": "incline_db_press",
+          "btwb_name": "Incline Dumbbell Bench Press",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "8-12",
+          "note": "Gym only - the basement bench has no angle."
+        },
+        {
+          "id": "pec_deck_fly",
+          "btwb_name": "Pec Deck",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": ""
+        },
+        {
+          "id": "flat_db_press",
+          "btwb_name": "Dumbbell Bench Press",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "8-12",
+          "note": "35 lb pair is light - use it at the 12-15 end. The barbell is the loadable option, but EMF programs bench some weeks: check the week before spending a set here."
+        },
+        {
+          "id": "ring_push_up",
+          "btwb_name": "Ring Push-up",
+          "btwb_verified": true,
+          "locations": [
+            "basement"
+          ],
+          "reps": "10-15",
+          "note": "Only basement movement that loads the stretch. Let the rings drift wide at the bottom, turn them out at the top."
+        }
+      ]
+    },
+    "biceps": {
+      "label": "Biceps",
+      "weekly_target_sets": 3,
+      "rationale": "Strict pulling volume in EMF swings week to week; kipping contributes almost nothing.",
+      "movements": [
+        {
+          "id": "behind_body_cable_curl",
+          "btwb_name": "Cable Curl",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "10-15",
+          "note": "Stand a step in front of the low pulley so the elbow sits behind the torso. Replaces the incline curl you cannot do at home."
+        },
+        {
+          "id": "db_hammer_curl",
+          "btwb_name": "Dumbbell Hammer Curl",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "10-15",
+          "note": "Brachialis - this is what adds visible arm thickness."
+        },
+        {
+          "id": "db_curl",
+          "btwb_name": "Dumbbell Curl",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "10-15",
+          "note": ""
+        },
+        {
+          "id": "band_curl",
+          "btwb_name": "Banded Curl",
+          "btwb_verified": true,
+          "locations": [
+            "basement"
+          ],
+          "reps": "15-20",
+          "note": "Fallback if the 25s are kg and too heavy to control."
+        }
+      ]
+    },
+    "triceps_long": {
+      "label": "Triceps (long head)",
+      "weekly_target_sets": 2,
+      "rationale": "Maintenance only. EMF pressing covers lockout, but nothing reaches the long head at length.",
+      "movements": [
+        {
+          "id": "overhead_cable_extension",
+          "btwb_name": "Overhead Cable Tricep Extension",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "10-15",
+          "note": "Rope, facing away from the stack. Overhead position is what separates this from a pushdown."
+        },
+        {
+          "id": "db_overhead_extension",
+          "btwb_name": "Dumbbell Overhead Tricep Extension",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "10-15",
+          "note": "Two hands on one 25."
+        },
+        {
+          "id": "skullcrusher",
+          "btwb_name": "Barbell Skull Crusher",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "10-12",
+          "note": "Bar to behind the head, not the forehead - keeps the long head loaded."
+        }
+      ]
+    },
+    "hamstring": {
+      "label": "Hamstrings (knee flexion)",
+      "weekly_target_sets": 3,
+      "rationale": "Deadlifts and swings are hip extension. Knee flexion is untrained in EMF.",
+      "movements": [
+        {
+          "id": "seated_leg_curl",
+          "btwb_name": "Seated Leg Curl",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "10-15",
+          "note": "Best option you have - hip flexed means the hamstring works at long length."
+        },
+        {
+          "id": "lying_leg_curl",
+          "btwb_name": "Lying Leg Curl Machine",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "10-15",
+          "note": ""
+        },
+        {
+          "id": "ghd_nordic_curl",
+          "btwb_name": "Nordic Hamstring Curl",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "5-8",
+          "note": ""
+        },
+        {
+          "id": "nordic_curl",
+          "btwb_name": "Nordic Hamstring Curl",
+          "btwb_verified": true,
+          "locations": [
+            "basement"
+          ],
+          "reps": "5-8",
+          "note": "Heels hooked under the rack safeties set low. Control the descent, push off the floor to reset."
+        },
+        {
+          "id": "rower_seat_leg_curl",
+          "btwb_name": "Sliding Hamstring Curl",
+          "btwb_verified": true,
+          "locations": [
+            "basement"
+          ],
+          "reps": "8-12",
+          "note": "Heels on the rower seat, hips bridged, curl the seat in. Hold the bridge - if the hips drop the hamstring stops working."
+        }
+      ]
+    },
+    "quad_rf": {
+      "label": "Quads (rectus femoris)",
+      "weekly_target_sets": 3,
+      "rationale": "Squats miss the rectus femoris because it also crosses the hip and stays shortened there.",
+      "movements": [
+        {
+          "id": "leg_extension",
+          "btwb_name": "Leg Extension",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "12-15",
+          "note": "Sit upright rather than reclined to keep the hip extended."
+        },
+        {
+          "id": "pendulum_squat",
+          "btwb_name": "Pendulum Squat",
+          "btwb_verified": true,
+          "locations": [
+            "gym"
+          ],
+          "reps": "8-12",
+          "note": ""
+        },
+        {
+          "id": "reverse_nordic",
+          "btwb_name": "Reverse Nordic Curl",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "8-12",
+          "note": "Kneeling, lean back with hips locked out. The basement substitute for a leg extension."
+        },
+        {
+          "id": "bulgarian_split_squat",
+          "btwb_name": "Bulgarian Split Squat",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "8-12",
+          "note": "Rear foot on the bench, dumbbells in hand."
+        }
+      ]
+    },
+    "calf": {
+      "label": "Calves",
+      "weekly_target_sets": 6,
+      "rationale": "Untrained by EMF. Needs both a straight-knee and a bent-knee movement - the soleus only works with the knee bent.",
+      "movements": [
+        {
+          "id": "standing_calf_raise",
+          "btwb_name": "Standing Calf Raise",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "12-20",
+          "note": "Toes on a plate for the stretch. Hold the 50, or the barbell on your back in the rack."
+        },
+        {
+          "id": "seated_calf_raise",
+          "btwb_name": "Seated Calf Raise",
+          "btwb_verified": true,
+          "locations": [
+            "gym",
+            "basement"
+          ],
+          "reps": "15-20",
+          "note": "Barbell across the knees on the flat bench, feet on a plate. Bent knee is the whole point - this is the half everyone skips."
+        }
+      ]
+    }
+  },
+  "sessions": {
+    "A": {
+      "label": "Push + side delts",
+      "duration_min": 13,
+      "prescription": [
+        {
+          "muscle": "chest",
+          "sets": 3
+        },
+        {
+          "muscle": "side_delt",
+          "sets": 3
+        },
+        {
+          "muscle": "triceps_long",
+          "sets": 2
+        },
+        {
+          "muscle": "calf",
+          "sets": 2
+        }
+      ]
+    },
+    "B": {
+      "label": "Pull + arms",
+      "duration_min": 13,
+      "prescription": [
+        {
+          "muscle": "rear_delt",
+          "sets": 3
+        },
+        {
+          "muscle": "biceps",
+          "sets": 3
+        },
+        {
+          "muscle": "side_delt",
+          "sets": 2
+        },
+        {
+          "muscle": "calf",
+          "sets": 2
+        }
+      ]
+    },
+    "C": {
+      "label": "Legs",
+      "duration_min": 11,
+      "prescription": [
+        {
+          "muscle": "hamstring",
+          "sets": 3
+        },
+        {
+          "muscle": "quad_rf",
+          "sets": 3
+        },
+        {
+          "muscle": "calf",
+          "sets": 2
+        }
+      ]
+    }
+  }
+}
