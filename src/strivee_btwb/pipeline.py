@@ -36,7 +36,7 @@ from .core.models import (
     WeeklyProgramming,
 )
 from .processing import extract_sets, format_for_btwb
-from .processing.accessory import Prescription, build_block, plan_accessory
+from .processing.accessory import Prescription, build_block, plan_accessory, target_reps
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,
@@ -916,7 +916,7 @@ def log_audit(
             # up two ways), and printing it twice reads as a bug in the report.
             by_name: dict[str, str] = {}
             for movement in options:
-                by_name.setdefault(movement["btwb_name"], movement["reps"])
+                by_name.setdefault(movement["btwb_name"], target_reps(movement["reps"]))
             picks = " / ".join(f"{name} {reps}" for name, reps in list(by_name.items())[:2])
             logger.info("  %-26s %2d sets   %s", vol.label, math.ceil(vol.gap), picks)
 

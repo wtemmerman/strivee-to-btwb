@@ -4,6 +4,7 @@ from strivee_btwb.processing.accessory import (
     ACCESSORY_BLOCK_NAME,
     build_block,
     plan_accessory,
+    target_reps,
 )
 from strivee_btwb.processing.volume import MuscleVolume
 
@@ -135,7 +136,7 @@ def test_the_block_title_is_constant():
 def test_the_content_is_one_line_per_movement_in_btwb_wording():
     plan = plan_accessory({"calf": _short("calf", "Calves", 6.0)}, "gym", ["Tue"])
     assert build_block(plan["Tue"]).content == (
-        "3 sets of 12-20 Standing Calf Raise\n3 sets of 15-20 Seated Calf Raise"
+        "3 sets of 12 Standing Calf Raise\n3 sets of 15 Seated Calf Raise"
     )
 
 
@@ -143,4 +144,16 @@ def test_the_coaching_note_names_the_targets_and_the_effort():
     plan = plan_accessory({"calf": _short("calf", "Calves", 6.0)}, "gym", ["Tue"])
     instruction = build_block(plan["Tue"]).instruction
     assert "Calves" in instruction
-    assert "0-2 reps in reserve" in instruction
+    assert "to failure" in instruction
+    assert "The rep number sets the load" in instruction
+
+
+def test_a_rep_range_becomes_its_lower_bound():
+    """Sets go to failure, so one number fixes the load and says when to add weight."""
+    assert target_reps("12-15") == "12"
+    assert target_reps("5-8") == "5"
+
+
+def test_a_single_rep_value_is_left_alone():
+    assert target_reps("12") == "12"
+    assert target_reps("max") == "max"

@@ -8,6 +8,7 @@ for it to break. This block must never be routed through ``llm_format_week``.
 
 import logging
 import math
+import re
 from dataclasses import dataclass
 
 from ..core.models import ProgrammingBlock
@@ -31,6 +32,22 @@ Six straight sets of the same calf raise is both dull and incomplete — the poo
 pairs a straight-knee movement with a bent-knee one precisely because they train
 different heads. Below this many sets there is nothing worth splitting.
 """
+
+
+_REP_RANGE = re.compile(r"^\s*(\d+)\s*-\s*\d+\s*$")
+
+
+def target_reps(reps: str) -> str:
+    """Collapse a published rep range to the single number to train against.
+
+    Every set here goes to failure, so the rep target's only job is to fix the
+    load: hit the number, and when you clear it, add weight. A range leaves that
+    ambiguous — "12-15" does not say when to load up, "12" does. The pool keeps
+    the range because it still documents where a movement belongs; the
+    prescription takes the bottom of it.
+    """
+    match = _REP_RANGE.match(reps)
+    return match.group(1) if match else reps.strip()
 
 
 @dataclass(frozen=True)
@@ -65,7 +82,8 @@ def _prescribe(volume: MuscleVolume, location: str) -> list[Prescription]:
     else:
         chosen = [(options[0], sets)]
     return [
-        Prescription(volume.muscle, volume.label, m["btwb_name"], n, m["reps"]) for m, n in chosen
+        Prescription(volume.muscle, volume.label, m["btwb_name"], n, target_reps(m["reps"]))
+        for m, n in chosen
     ]
 
 
@@ -104,7 +122,9 @@ def build_block(entries: list[Prescription]) -> ProgrammingBlock:
     instruction = (
         "Accessory work balancing what this week's CrossFit programming left untrained.\n"
         f"Targets: {targets}.\n"
-        "Every set 0-2 reps in reserve — the volume is this low because the effort is high.\n"
+        "Take every set to failure — the volume is this low because the effort is high.\n"
+        "The rep number sets the load: pick a weight that fails you there, and go up "
+        "once you clear it on every set.\n"
         "Rest 60-90s, or superset two movements that do not share a muscle."
     )
     return ProgrammingBlock(name=ACCESSORY_BLOCK_NAME, content=content, instruction=instruction)

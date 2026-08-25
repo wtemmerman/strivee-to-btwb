@@ -336,15 +336,19 @@ uv run strivee-btwb audit --on Tue,Fri --post     # post them (prompts for confi
 ```
   ── Accessory blocks to post ──
   TUE 2026-08-25 — [Accessory]
-      3 sets of 12-20 Standing Calf Raise
-      3 sets of 15-20 Seated Calf Raise
-      3 sets of 12-15 Leg Extension
+      3 sets of 12 Standing Calf Raise
+      3 sets of 15 Seated Calf Raise
+      3 sets of 12 Leg Extension
   FRI 2026-08-28 — [Accessory]
-      3 sets of 12-15 Cable Lateral Raise
-      2 sets of 10-12 Dumbbell Lateral Raise
-      3 sets of 12-15 Reverse Fly
-      3 sets of 10-15 Seated Leg Curl
+      3 sets of 12 Cable Lateral Raise
+      2 sets of 10 Dumbbell Lateral Raise
+      3 sets of 12 Reverse Fly
+      3 sets of 10 Seated Leg Curl
 ```
+
+Every set goes to failure, so the prescription takes the bottom of the pool's rep range
+rather than the range itself. One number fixes the load and says when to add weight; a
+range does not. The pool keeps the range, which still documents where a movement belongs.
 
 Whole muscles move together rather than being sliced across days — five sets of lateral
 raises in one session beat two on Tuesday and three on Friday — and a muscle needing four
