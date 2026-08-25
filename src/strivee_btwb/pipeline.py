@@ -5,8 +5,10 @@ Each step (capture, analyse, preview, post) is a standalone function that reads
 from the previous step's cache, so steps can be run independently or restarted.
 """
 
+import hashlib
 import json
 import logging
+import math
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -33,7 +35,14 @@ from .core.models import (
     ProgrammingBlock,
     WeeklyProgramming,
 )
-from .processing import format_for_btwb
+from .processing import extract_sets, format_for_btwb
+from .processing.volume import (
+    METCON_CAP,
+    MuscleVolume,
+    WorkSet,
+    pool_movements,
+    weekly_volume,
+)
 from .vision import count_block_titles, extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
@@ -50,6 +59,10 @@ CACHE_SCHEMA_VERSION = 2
 # so a stale formatted cache is recomputed instead of silently reused.
 # 2: blocks record the difficulty level their content was selected from.
 FORMATTED_SCHEMA_VERSION = 2
+
+# Bump when the set-extraction prompt or WorkSet shape changes, so a stale
+# per-day set cache is re-extracted instead of silently reused by the audit.
+SETS_SCHEMA_VERSION = 4
 
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
@@ -741,3 +754,189 @@ def do_delete(
         logger.info("Dry run — %d workout(s) would be deleted", len(results))
     else:
         logger.info("Done — %d workout(s) deleted", sum(1 for r in results if r.get("ok")))
+
+
+# ── Accessory audit ───────────────────────────────────────────────────────────
+
+
+def _sets_fingerprint(day: DayProgramming) -> str:
+    """Identify the exact block text a day's set extraction was made from.
+
+    The audit reads whichever of the two caches is available, and the formatted
+    one changes with the level choice as well as with re-analysis. Hashing the
+    text that was actually read covers both without the sets cache having to know
+    which cache it came from.
+    """
+    payload = "\x00".join(f"{b.name}\x01{b.content}" for b in day.blocks)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def save_sets_day(day: DayProgramming, ws: date, fingerprint: str, sets: list[WorkSet]) -> Path:
+    """Cache a day's extracted sets so re-running the audit costs no LLM calls."""
+    out = config.PARSED_DIR / ws.isoformat()
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"sets_{day.date.isoformat()}_{day.day_label}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": SETS_SCHEMA_VERSION,
+                "fingerprint": fingerprint,
+                "date": day.date.isoformat(),
+                "day_label": day.day_label,
+                "sets": [
+                    {
+                        "movement": s.movement,
+                        "sets": s.sets,
+                        "reps": s.reps,
+                        "block_type": s.block_type,
+                        "source": s.source,
+                    }
+                    for s in sets
+                ],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return path
+
+
+def load_sets_day(day: DayProgramming, ws: date, fingerprint: str) -> list[WorkSet] | None:
+    """Return a day's cached sets iff they were extracted from this exact text."""
+    path = config.PARSED_DIR / ws.isoformat() / f"sets_{day.date.isoformat()}_{day.day_label}.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if data.get("schema_version") != SETS_SCHEMA_VERSION:
+        return None
+    if data.get("fingerprint") != fingerprint:
+        logger.info("Set cache for %s is stale — re-extracting", day.day_label)
+        return None
+    return [
+        WorkSet(
+            movement=s["movement"],
+            sets=s["sets"],
+            reps=s.get("reps", ""),
+            block_type=s["block_type"],
+            source=s.get("source", ""),
+        )
+        for s in data["sets"]
+    ]
+
+
+def week_for_audit(days: list[str], ws: date) -> tuple[WeeklyProgramming, list[str]]:
+    """Load the week to audit, preferring each day's level-selected formatting.
+
+    A day that has been previewed is counted as the athlete will actually train
+    it; one that has not falls back to the parsed RX text. Returns the week plus
+    the day labels that fell back, so the report can say so rather than quietly
+    counting a level the athlete does not do.
+    """
+    parsed = {d.day_label: d for d in load_days(days, ws).days}
+    ordered: list[DayProgramming] = []
+    fell_back: list[str] = []
+    for label in days:
+        formatted = load_formatted_day(ws, label, _parsed_source_mtime_ns(ws, label))
+        if formatted is not None:
+            ordered.append(formatted)
+        elif label in parsed:
+            ordered.append(parsed[label])
+            fell_back.append(label)
+    return WeeklyProgramming(week_start=ws, days=ordered), fell_back
+
+
+def week_work_sets(week: WeeklyProgramming) -> list[WorkSet]:
+    """Extract every block's sets for the week, reusing the per-day cache."""
+    collected: list[WorkSet] = []
+    for day in week.days:
+        fingerprint = _sets_fingerprint(day)
+        cached = load_sets_day(day, week.week_start, fingerprint)
+        if cached is not None:
+            logger.info("Reusing cached set extraction for %s", day.day_label)
+            collected.extend(cached)
+            continue
+        logger.info("Extracting sets for %s (%d block(s))", day.day_label, len(day.blocks))
+        day_sets = [s for block in day.blocks for s in extract_sets(block)]
+        save_sets_day(day, week.week_start, fingerprint, day_sets)
+        collected.extend(day_sets)
+    return collected
+
+
+def log_audit(
+    ws: date,
+    volumes: dict[str, MuscleVolume],
+    unlisted: list[str],
+    location: str,
+    fell_back: list[str],
+) -> None:
+    """Print the week's per-muscle volume and what it would take to close the gap."""
+    logger.info("=" * 68)
+    logger.info("  Accessory audit — week starting %s  (%s)", ws, location)
+    logger.info("=" * 68)
+    logger.info("  Hard sets at 0-2 RIR. Conditioning counts 0.25/set, capped at")
+    logger.info("  %.1f per muscle per week; heavy singles and skill work count 0.", METCON_CAP)
+    if fell_back:
+        logger.warning(
+            "  %s counted at RX — not previewed, so no level was chosen.", ", ".join(fell_back)
+        )
+    logger.info("")
+    logger.info("  %-26s %6s %6s %6s", "MUSCLE", "TARGET", "EMF", "GAP")
+    for vol in volumes.values():
+        logger.info("  %-26s %6.1f %6.1f %6.1f", vol.label, vol.target, vol.credited, vol.gap)
+        if vol.sources:
+            top = ", ".join(f"{name} {credit:.1f}" for name, credit in vol.sources[:3])
+            logger.info("  %-26s        from %s", "", top)
+        if vol.metcon_raw > METCON_CAP:
+            logger.info(
+                "  %-26s        conditioning capped: %.1f → %.1f",
+                "",
+                vol.metcon_raw,
+                vol.metcon,
+            )
+
+    gaps = [v for v in volumes.values() if v.gap > 0]
+    logger.info("")
+    if not gaps:
+        logger.info("  Every muscle is at target — no accessory work needed this week.")
+    else:
+        logger.info("  ── To close the gap at the %s ──", location)
+        for vol in gaps:
+            options = pool_movements(vol.muscle, location)
+            if not options:
+                logger.warning(
+                    "  %-26s %2d sets   no %s option in the pool",
+                    vol.label,
+                    math.ceil(vol.gap),
+                    location,
+                )
+                continue
+            # Two pool entries can share one BTWB name (the same cable movement set
+            # up two ways), and printing it twice reads as a bug in the report.
+            by_name: dict[str, str] = {}
+            for movement in options:
+                by_name.setdefault(movement["btwb_name"], movement["reps"])
+            picks = " / ".join(f"{name} {reps}" for name, reps in list(by_name.items())[:2])
+            logger.info("  %-26s %2d sets   %s", vol.label, math.ceil(vol.gap), picks)
+
+    if unlisted:
+        logger.info("")
+        logger.info("  ── Not credited (absent from movement_muscles.json) ──")
+        for name in unlisted:
+            logger.info("      %s", name)
+        logger.info("  Add any of these that train a tracked muscle, then re-run.")
+
+
+def do_audit(days: list[str], ws: date | None = None, location: str = "gym") -> None:
+    ws = ws or week_start()
+    week, fell_back = week_for_audit(days, ws)
+    if not week.days:
+        logger.error("No cached analysis found — run: strivee-btwb analyse")
+        sys.exit(1)
+    try:
+        work_sets = week_work_sets(week)
+    except LLMUnavailableError as e:
+        logger.error("%s", e)
+        sys.exit(1)
+    volumes, unlisted = weekly_volume(work_sets)
+    log_audit(ws, volumes, unlisted, location, fell_back)

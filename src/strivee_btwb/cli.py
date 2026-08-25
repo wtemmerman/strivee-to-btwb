@@ -6,6 +6,7 @@ from datetime import date
 from .core import log
 from .pipeline import (
     do_analyse,
+    do_audit,
     do_capture,
     do_delete,
     do_post,
@@ -55,6 +56,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
 
+    p = sub.add_parser(
+        "audit",
+        help="Report EMF's per-muscle set volume for a week and the accessory work it leaves",
+    )
+    p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
+    p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
+    p.add_argument(
+        "--location",
+        choices=("gym", "basement"),
+        default="gym",
+        help="Where the accessory work will be done, which decides the movements suggested",
+    )
+
     p = sub.add_parser("preview", help="Step 3 — show formatted block content before posting")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
@@ -98,6 +112,8 @@ def main() -> None:
         do_capture(days, getattr(args, "no_scrcpy", False), ws)
     elif args.command == "analyse":
         do_analyse(days, ws)
+    elif args.command == "audit":
+        do_audit(days, ws, getattr(args, "location", "gym"))
     elif args.command == "preview":
         do_preview(days, ws, getattr(args, "relevel", False))
     elif args.command == "post":

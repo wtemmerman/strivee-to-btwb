@@ -41,6 +41,10 @@ Android phone (Strivee app)
   4. post      → workouts + coaching notes created on BTWB
 ```
 
+An optional fifth step, `audit`, branches off the same caches to measure what the
+week's programming leaves untrained and what accessory work would fill it. It
+reports and writes nothing to BTWB.
+
 ### Step 1 — Capture
 
 Connects to the Android phone via ADB, launches Strivee, navigates to each day tab, and uses `adb shell uiautomator dump` at each scroll position to extract all visible text from Android's accessibility tree. Text elements are deduplicated across scroll positions. Saves one `.txt` file per day — no screenshots, no stitching, no overlap possible.
@@ -298,6 +302,46 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 
 </details>
 
+### Optional — Accessory audit
+
+CrossFit programming trains some muscles hard and others not at all. `audit` counts
+how many hard sets a week actually delivered to each of eight muscles the
+programming tends to miss, and names the accessory work that would close the gap.
+
+```bash
+uv run strivee-btwb audit --week 2026-08-24 --location basement
+```
+
+```
+  MUSCLE                   TARGET    EMF    GAP
+  Side delts                  5.0    0.0    5.0
+  Chest                       3.0    3.0    0.0
+                                  from Weighted Strict Ring Dips 1.8, Barbell Bench Press 1.0
+                                  conditioning capped: 2.1 → 2.0
+  Calves                      6.0    0.0    6.0
+
+  ── To close the gap at the basement ──
+  Side delts                5 sets   Dumbbell Lateral Raise 10-12 / Plate Lateral Raise 15-20
+  Calves                    6 sets   Standing Calf Raise 12-20 / Seated Calf Raise 15-20
+```
+
+It reads each day at the level `preview` selected, falling back to RX (and saying
+so) for days that were never previewed. Two hand-maintained tables drive it:
+
+| File | Holds |
+|---|---|
+| `data/exercise_pool.json` | The accessory movements available per muscle, tagged gym/basement, with the weekly set target for each muscle |
+| `data/movement_muscles.json` | What one credited set of a CrossFit movement is worth to each of those muscles |
+
+The counting rules live in `processing/volume.py`, deliberately apart from the model.
+The model only reads coach shorthand into a list of movements and set counts; what a
+set is *worth* stays a table. Conditioning counts 0.25 per set and is capped at 2.0
+per muscle per week — without that cap a single high-rep metcon reports every muscle
+as covered. Heavy singles and "for quality" work count zero.
+
+A movement the tables do not recognise is printed under **Not credited** rather than
+scored as zero, so a gap in the table shows up instead of hiding.
+
 ---
 
 ## Prerequisites
@@ -378,6 +422,9 @@ uv run strivee-btwb preview
 
 # Step 4 — post to BTWB (prompts for confirmation)
 uv run strivee-btwb post
+
+# Optional — report the week's per-muscle volume and the accessory work it leaves
+uv run strivee-btwb audit --location basement
 ```
 
 To clear a week's planned workouts off BTWB (e.g. to re-post after a fix):
@@ -453,12 +500,15 @@ tests on every push to `main` and on pull requests.
 ### Project Structure
 
 ```
+data/             hand-maintained accessory tables (exercise pool, movement→muscle credits)
+
 src/strivee_btwb/
   core/           config, logging, data models, Ollama wrapper (llm.py)
   prompts/        LLM prompt templates as .txt files
   capture/        ADB UI accessibility text dump (adb.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
+                  accessory audit — set extraction (set_extract.py), counting rules (volume.py)
   btwb/           BTWB Playwright automation — post + delete (client.py)
   pipeline.py     step orchestration and cache I/O
   cli.py          argparse wiring
@@ -469,10 +519,11 @@ tests/
     core/           model tests
     capture/        UI text helpers, element detection, capture_day_as_text
     vision/         JSON extraction, mock Ollama tests
-    processing/     Rx extraction, coaching strip
+    processing/     Rx extraction, coaching strip, set counting + credit rules
     btwb/           dry-run posting, delete, calendar dedup
     benchmark/      benchmark comparator tests
     test_pipeline   cache I/O, week processing
+    test_audit_cache  set-cache invalidation, which level the audit counts
     test_cli        argument parsing
   benchmark/        accuracy + timing harness (run via `make benchmark`)
   fixtures/
@@ -486,6 +537,7 @@ tests/
 | `captures/<week>/` | UI text dumps (.txt) |
 | `parsed/<week>/` | Text-parsed JSON cache |
 | `formatted/<week>/` | Cleaned + LLM-formatted block cache, including the chosen level per block (lets `post` reuse `preview`'s output and answers) |
+| `parsed/<week>/sets_*.json` | Per-day set extraction for `audit`, keyed on a hash of the block text it was read from |
 | `tests/benchmark/baselines/`, `tests/benchmark/results/` | Benchmark snapshots + timing CSVs |
 | `htmlcov/` | Coverage HTML report |
 
