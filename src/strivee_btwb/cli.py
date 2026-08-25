@@ -6,6 +6,7 @@ from datetime import date
 from .core import log
 from .pipeline import (
     do_analyse,
+    do_audit,
     do_capture,
     do_delete,
     do_post,
@@ -55,6 +56,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
 
+    p = sub.add_parser(
+        "audit",
+        help="Report EMF's per-muscle set volume for a week and the accessory work it leaves",
+    )
+    p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
+    p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
+    p.add_argument(
+        "--location",
+        choices=("gym", "basement"),
+        default="gym",
+        help="Where the accessory work will be done, which decides the movements suggested",
+    )
+    p.add_argument(
+        "--on",
+        metavar="Tue,Fri",
+        help="Day(s) to put the accessory work on; shows the blocks that would close the gap",
+    )
+    p.add_argument("--post", action="store_true", help="Post those blocks to BTWB (needs --on)")
+    p.add_argument("--yes", "-y", action="store_true", help="Skip the confirmation before posting")
+    p.add_argument("--headless", action="store_true", help="Run browser without a visible window")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Show what --post would send, without posting"
+    )
+
     p = sub.add_parser("preview", help="Step 3 — show formatted block content before posting")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
@@ -98,6 +123,18 @@ def main() -> None:
         do_capture(days, getattr(args, "no_scrcpy", False), ws)
     elif args.command == "analyse":
         do_analyse(days, ws)
+    elif args.command == "audit":
+        raw_on = getattr(args, "on", None)
+        do_audit(
+            days,
+            ws,
+            getattr(args, "location", "gym"),
+            [d.strip() for d in raw_on.split(",") if d.strip()] if raw_on else None,
+            getattr(args, "post", False),
+            getattr(args, "yes", False),
+            getattr(args, "headless", False),
+            getattr(args, "dry_run", False),
+        )
     elif args.command == "preview":
         do_preview(days, ws, getattr(args, "relevel", False))
     elif args.command == "post":

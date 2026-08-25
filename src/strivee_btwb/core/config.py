@@ -73,6 +73,11 @@ EXCLUDED_BLOCKS: list[str] = [b.strip() for b in _excluded_raw.split(",") if b.s
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
+DATA_DIR: Path = Path(os.getenv("DATA_DIR", "data"))
+"""Root directory for the hand-maintained accessory tables (`exercise_pool.json`,
+`movement_muscles.json`). Checked into the repo and edited by hand, unlike the
+cache directories below."""
+
 CAPTURES_DIR: Path = Path(os.getenv("CAPTURES_DIR", "captures"))
 """Root directory for raw ADB screenshots (PNG files, one sub-folder per week)."""
 

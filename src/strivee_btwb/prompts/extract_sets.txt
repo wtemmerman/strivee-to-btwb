@@ -1,0 +1,64 @@
+From the CrossFit programming block below, list every movement the athlete performs and how many SETS of it the block prescribes.
+
+Return ONLY a JSON object, no markdown and no text around it:
+{{"sets": [{{"movement": "NAME", "sets": 3, "reps": "8-10", "block_type": "TYPE"}}]}}
+
+THE ONE RULE THAT MATTERS: a number written next to a movement is REPS, not sets. "3 Ring Dip" is three reps of ONE set. "5RM Bench press" is ONE set of five. Count how many separate times the athlete stops and starts, and put that in "sets".
+
+Fields:
+- movement: the movement name on its own. Strip rep counts, loads, percentages and "/" alternatives — write "Bar Muscle-up", not "2 Bar Muscle-up / CTB #50/35kg". Keep qualifiers that change the movement: "Strict", "Negative", "Weighted", "Hang", "Squat", "Wall Facing".
+- sets: an integer, always at least 1.
+- reps: reps per set as published — "5", "8-10", "1", or "max" for a set taken to failure. Never leave it out.
+- block_type: exactly one of
+    strength        sets of 3+ reps against a load, taken close to failure
+    heavy_single    1-2 reps, or "build to a heavy / 1RM / top set"
+    gymnastics_max  a bodyweight set taken to failure ("Max rep strict Bar muscle-up")
+    accessory       isolation work for one muscle ("3x12 Lateral raise")
+    skill           technique work, or anything labelled "For Quality" / "Practice"
+    metcon          conditioning: for time, AMRAP, EMOM, intervals, "1min ON / 1min OFF"
+
+How to count sets in the formats this programming uses:
+
+  "5RM Barbell bench press"
+    → one working set. {{"movement": "Barbell Bench Press", "sets": 1, "reps": "5", "block_type": "strength"}}
+
+  "A. Top Set - Build a set of 3 Reps RPE 8 / B. Back Off - 2 Sets of 3 Reps"
+    → the top set plus two back-off sets. sets: 3, reps: "3", block_type: "strength"
+
+  "A. Top Set - Build a set of 1 Rep RPE 9 / B. Back Off - 2 Sets of 2 Reps"
+    → sets: 3, reps: "1-2", block_type: "heavy_single"
+
+  "EMOMx12 :
+   min 1 to 4 - 3 Weighted Strict Chest-to-Ring Pull-up
+   min 5 to 8 - 3 Weighted strict Ring Dips
+   min 9 to 12 - 1 Negative Ring Muscle-up"
+    → each movement gets ONLY ITS OWN minutes, never all twelve:
+      {{"movement": "Weighted Strict Chest-to-Ring Pull-up", "sets": 4, "reps": "3", "block_type": "metcon"}},
+      {{"movement": "Weighted Strict Ring Dips", "sets": 4, "reps": "3", "block_type": "metcon"}},
+      {{"movement": "Negative Ring Muscle-up", "sets": 4, "reps": "1", "block_type": "metcon"}}
+    The number after "EMOMx" is how long the block lasts, never how many sets one movement gets.
+
+  "6 sets of : 1min ON / 1min OFF -- Set A: 2 Clean and jerk, 2 Bar Muscle-up, Max calories echo bike"
+    → every movement is performed in all six sets. sets: 6 for each, block_type: "metcon"
+
+  "For time : 50 Strict Pull-up"
+    → a rep total the athlete breaks up. Divide by 10 and round: sets: 5, reps: "10", block_type: "metcon"
+
+  "Accumulated for Quality : 8 Negative Ring Muscle-up"
+    → "for quality" means stopped well short of failure. sets: 1, reps: "8", block_type: "skill"
+
+  "1 set of : Max rep strict Bar muscle-up"
+    → sets: 1, reps: "max", block_type: "gymnastics_max"
+
+  "Build to a 1RM Squat Snatch for the day"
+    → sets: 1, reps: "1", block_type: "heavy_single"
+
+Also:
+- One entry per movement. If a movement appears twice in the block, add its sets together into a single entry.
+- Warm-up, cool-down, stretching and mobility drills are not sets. Skip them.
+- List a movement only if it appears in the text. Never invent one, and never reuse the wording of these instructions.
+- Return {{"sets": []}} when the block prescribes no movement at all.
+
+Block title: {name}
+
+{content}
