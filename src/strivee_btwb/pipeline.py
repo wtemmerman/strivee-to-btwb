@@ -36,6 +36,7 @@ from .core.models import (
     WeeklyProgramming,
 )
 from .processing import extract_sets, format_for_btwb
+from .processing.accessory import Prescription, build_block, plan_accessory
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,
@@ -927,8 +928,59 @@ def log_audit(
         logger.info("  Add any of these that train a tracked muscle, then re-run.")
 
 
-def do_audit(days: list[str], ws: date | None = None, location: str = "gym") -> None:
+def accessory_week(ws: date, plan: dict[str, list[Prescription]]) -> WeeklyProgramming:
+    """Wrap the planned accessory work as a week ``post_week`` can take as-is."""
+    days = [
+        DayProgramming(
+            date=short_to_date(label, ws),
+            day_label=label,
+            blocks=[build_block(entries)],
+        )
+        for label, entries in plan.items()
+        if entries
+    ]
+    return WeeklyProgramming(week_start=ws, days=days)
+
+
+def log_accessory_plan(week: WeeklyProgramming) -> None:
+    """Show the accessory blocks exactly as BTWB will receive them."""
+    logger.info("")
+    logger.info("  ── Accessory blocks to post ──")
+    for day in week.days:
+        for block in day.blocks:
+            logger.info("  %s %s — [%s]", day.day_label.upper(), day.date, block.name)
+            for line in block.content.splitlines():
+                logger.info("      %s", line)
+
+
+def _confirm_accessory(week: WeeklyProgramming) -> bool:
+    total = sum(len(d.blocks) for d in week.days)
+    dates = ", ".join(f"{d.day_label} {d.date}" for d in week.days)
+    answer = input(f"\nPost {total} accessory block(s) to BTWB on {dates}? [y/N] ")
+    return answer.strip().lower() in ("y", "yes")
+
+
+def do_audit(
+    days: list[str],
+    ws: date | None = None,
+    location: str = "gym",
+    on: list[str] | None = None,
+    post: bool = False,
+    yes: bool = False,
+    headless: bool = False,
+    dry_run: bool = False,
+) -> None:
     ws = ws or week_start()
+    if post and not on:
+        logger.error("--post needs --on to say which day(s) the accessory work goes on")
+        sys.exit(1)
+    if on:
+        # A typo like "Tues" would otherwise plan a day that silently never posts.
+        unknown = [label for label in on if label not in WEEKDAYS]
+        if unknown:
+            logger.error("Unknown day(s) in --on: %s (expected %s)", unknown, ", ".join(WEEKDAYS))
+            sys.exit(1)
+
     week, fell_back = week_for_audit(days, ws)
     if not week.days:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
@@ -940,3 +992,40 @@ def do_audit(days: list[str], ws: date | None = None, location: str = "gym") -> 
         sys.exit(1)
     volumes, unlisted = weekly_volume(work_sets)
     log_audit(ws, volumes, unlisted, location, fell_back)
+
+    if not on:
+        return
+
+    planned = accessory_week(ws, plan_accessory(volumes, location, on))
+    if not planned.days:
+        logger.info("")
+        logger.info("  Nothing to add — every muscle is already at target.")
+        return
+    log_accessory_plan(planned)
+
+    if not post:
+        logger.info("")
+        logger.info("  Re-run with --post to send these to BTWB.")
+        return
+
+    if not dry_run and (not config.BTWB_EMAIL or not config.BTWB_PASSWORD):
+        logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
+        sys.exit(1)
+    if not dry_run and not yes and not _confirm_accessory(planned):
+        logger.info("Nothing posted.")
+        return
+
+    try:
+        results = post_week(
+            week=planned,
+            email=config.BTWB_EMAIL,
+            password=config.BTWB_PASSWORD,
+            headless=headless,
+            dry_run=dry_run,
+        )
+    except Exception as e:  # AuthenticationError included — every failure aborts the same way
+        logger.error("%s", e)
+        sys.exit(1)
+
+    verb = "would be posted" if dry_run else "posted"
+    logger.info("Done — %d accessory block(s) %s", len(results), verb)

@@ -325,6 +325,38 @@ uv run strivee-btwb audit --week 2026-08-24 --location basement
   Calves                    6 sets   Standing Calf Raise 12-20 / Seated Calf Raise 15-20
 ```
 
+Add `--on` to turn the gap into the block to train, spread across the days you name,
+and `--post` to send it to BTWB through the same Playwright flow as the EMF blocks:
+
+```bash
+uv run strivee-btwb audit --on Tue,Fri            # show the blocks that would close the gap
+uv run strivee-btwb audit --on Tue,Fri --post     # post them (prompts for confirmation)
+```
+
+```
+  ── Accessory blocks to post ──
+  TUE 2026-08-25 — [Accessory]
+      3 sets of 12-20 Standing Calf Raise
+      3 sets of 15-20 Seated Calf Raise
+      3 sets of 12-15 Leg Extension
+  FRI 2026-08-28 — [Accessory]
+      3 sets of 12-15 Cable Lateral Raise
+      2 sets of 10-12 Dumbbell Lateral Raise
+      3 sets of 12-15 Reverse Fly
+      3 sets of 10-15 Seated Leg Curl
+```
+
+Whole muscles move together rather than being sliced across days — five sets of lateral
+raises in one session beat two on Tuesday and three on Friday — and a muscle needing four
+or more sets is split across two pool movements, because six straight sets of the same
+calf raise never reach the soleus.
+
+The block is built deterministically and **never passed through the format model**: the
+pool already stores BTWB's own movement names, so there is nothing for the formatter to
+improve and a great deal for it to break. Every block is titled `Accessory` on every date;
+BTWB dedupes on the title, so re-posting is a no-op. That also means an edited plan will
+be *skipped* rather than updated — clear it with `delete` first.
+
 It reads each day at the level `preview` selected, falling back to RX (and saying
 so) for days that were never previewed. Two hand-maintained tables drive it:
 
@@ -425,6 +457,9 @@ uv run strivee-btwb post
 
 # Optional — report the week's per-muscle volume and the accessory work it leaves
 uv run strivee-btwb audit --location basement
+
+# ...and post that accessory work to BTWB on the days you choose
+uv run strivee-btwb audit --location basement --on Tue,Fri --post
 ```
 
 To clear a week's planned workouts off BTWB (e.g. to re-post after a fix):
@@ -508,7 +543,8 @@ src/strivee_btwb/
   capture/        ADB UI accessibility text dump (adb.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
-                  accessory audit — set extraction (set_extract.py), counting rules (volume.py)
+                  accessory audit — set extraction (set_extract.py), counting rules (volume.py),
+                  gap → postable block (accessory.py)
   btwb/           BTWB Playwright automation — post + delete (client.py)
   pipeline.py     step orchestration and cache I/O
   cli.py          argparse wiring
@@ -519,7 +555,7 @@ tests/
     core/           model tests
     capture/        UI text helpers, element detection, capture_day_as_text
     vision/         JSON extraction, mock Ollama tests
-    processing/     Rx extraction, coaching strip, set counting + credit rules
+    processing/     Rx extraction, coaching strip, set counting + credit rules, accessory planning
     btwb/           dry-run posting, delete, calendar dedup
     benchmark/      benchmark comparator tests
     test_pipeline   cache I/O, week processing

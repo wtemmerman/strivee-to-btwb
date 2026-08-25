@@ -10,6 +10,7 @@ from strivee_btwb.pipeline import (
     SETS_SCHEMA_VERSION,
     _parsed_source_mtime_ns,
     _sets_fingerprint,
+    do_audit,
     load_sets_day,
     save_day,
     save_formatted_day,
@@ -124,3 +125,25 @@ def test_days_with_no_analysis_at_all_are_skipped():
     save_day(_day(), WEEK)
     week, fell_back = week_for_audit(["Mon", "Sat"], WEEK)
     assert [d.day_label for d in week.days] == ["Sat"]
+
+
+# ── Guard rails on the accessory flags ────────────────────────────────────────
+
+
+def test_post_without_on_is_refused_before_anything_loads():
+    """--post has no date to post to without --on; failing late would open a browser first."""
+    with pytest.raises(SystemExit) as exit_info:
+        do_audit(["Sat"], WEEK, "gym", on=None, post=True)
+    assert exit_info.value.code == 1
+
+
+def test_a_misspelled_day_is_refused_rather_than_silently_planned():
+    with pytest.raises(SystemExit) as exit_info:
+        do_audit(["Sat"], WEEK, "gym", on=["Tues"])
+    assert exit_info.value.code == 1
+
+
+def test_a_valid_day_gets_past_the_guards():
+    """No analysis cached, so it must fail on that rather than on the day name."""
+    with pytest.raises(SystemExit):
+        do_audit(["Sat"], WEEK, "gym", on=["Tue"])
