@@ -336,19 +336,26 @@ uv run strivee-btwb audit --on Tue,Fri --post     # post them (prompts for confi
 ```
   ── Accessory blocks to post ──
   TUE 2026-08-25 — [Accessory]
-      3 sets of 12 Standing Calf Raise
-      3 sets of 15 Seated Calf Raise
-      3 sets of 12 Leg Extension
-  FRI 2026-08-28 — [Accessory]
-      3 sets of 12 Cable Lateral Raise
-      2 sets of 10 Dumbbell Lateral Raise
-      3 sets of 12 Reverse Fly
-      3 sets of 10 Seated Leg Curl
+      12 Standing Calf Raise
+      12 Standing Calf Raise
+      12 Standing Calf Raise
+      15 Seated Calf Raise
+      15 Seated Calf Raise
+      15 Seated Calf Raise
+      12 Leg Extension
+      12 Leg Extension
+      12 Leg Extension
 ```
 
-Every set goes to failure, so the prescription takes the bottom of the pool's rep range
-rather than the range itself. One number fixes the load and says when to add weight; a
-range does not. The pool keeps the range, which still documents where a movement belongs.
+Two things about that shape, both driven by training to failure:
+
+- **The rep target is a single number, not the pool's range.** One number fixes the load
+  and says when to add weight; `12-15` does not. The pool keeps the full range, which
+  still documents where a movement belongs.
+- **One line per set, not per movement.** BTWB gives a written round a single load field,
+  so `3 sets of 12 Cable Lateral Raise` can only ever record one weight for all three.
+  Written out, every set gets its own row to log a load and a rep count into — which is
+  the entire record when the load is the thing being progressed.
 
 Whole muscles move together rather than being sliced across days — five sets of lateral
 raises in one session beat two on Tuesday and three on Friday — and a muscle needing four

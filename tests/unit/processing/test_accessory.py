@@ -133,11 +133,23 @@ def test_the_block_title_is_constant():
     assert a.name == b.name == ACCESSORY_BLOCK_NAME
 
 
-def test_the_content_is_one_line_per_movement_in_btwb_wording():
+def test_the_content_is_one_line_per_set_so_btwb_can_hold_a_load_for_each():
+    """A written round gets one load field on BTWB; separate rows get one each."""
     plan = plan_accessory({"calf": _short("calf", "Calves", 6.0)}, "gym", ["Tue"])
-    assert build_block(plan["Tue"]).content == (
-        "3 sets of 12 Standing Calf Raise\n3 sets of 15 Seated Calf Raise"
-    )
+    assert build_block(plan["Tue"]).content.splitlines() == [
+        "12 Standing Calf Raise",
+        "12 Standing Calf Raise",
+        "12 Standing Calf Raise",
+        "15 Seated Calf Raise",
+        "15 Seated Calf Raise",
+        "15 Seated Calf Raise",
+    ]
+
+
+def test_the_line_count_matches_the_prescribed_set_count():
+    plan = plan_accessory({"side_delt": _short("side_delt", "Side delts", 5.0)}, "gym", ["Tue"])
+    block = build_block(plan["Tue"])
+    assert len(block.content.splitlines()) == sum(p.sets for p in plan["Tue"]) == 5
 
 
 def test_the_coaching_note_names_the_targets_and_the_effort():

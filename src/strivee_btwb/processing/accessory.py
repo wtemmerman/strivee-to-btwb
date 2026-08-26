@@ -116,8 +116,16 @@ def plan_accessory(
 
 
 def build_block(entries: list[Prescription]) -> ProgrammingBlock:
-    """Render one day's prescriptions as the block BTWB will receive."""
-    content = "\n".join(f"{e.sets} sets of {e.reps} {e.btwb_name}" for e in entries)
+    """Render one day's prescriptions as the block BTWB will receive.
+
+    One line per SET, not per movement, even though that repeats the same line
+    three times. BTWB gives a written round its own single load field, so
+    "3 sets of 12 Cable Lateral Raise" can only ever record one weight for all
+    three. Written out, each set gets its own row to log a load and a rep count
+    into — which is the whole record when the sets go to failure and the load is
+    what is being progressed.
+    """
+    content = "\n".join(f"{e.reps} {e.btwb_name}" for e in entries for _ in range(e.sets))
     targets = ", ".join(dict.fromkeys(e.label for e in entries))
     instruction = (
         "Accessory work balancing what this week's CrossFit programming left untrained.\n"
