@@ -84,6 +84,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Count only blocks logged as done on BTWB, instead of everything programmed",
     )
+    p.add_argument(
+        "--from-last-week",
+        action="store_true",
+        help="Measure the previous week's completed work as the baseline for --week (implies"
+        " --actual); this week's delivery is not knowable until it is over",
+    )
 
     p = sub.add_parser("preview", help="Step 3 — show formatted block content before posting")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
@@ -140,6 +146,7 @@ def main() -> None:
             getattr(args, "headless", False),
             getattr(args, "dry_run", False),
             getattr(args, "actual", False),
+            getattr(args, "from_last_week", False),
         )
     elif args.command == "preview":
         do_preview(days, ws, getattr(args, "relevel", False))

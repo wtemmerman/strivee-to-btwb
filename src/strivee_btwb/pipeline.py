@@ -36,7 +36,13 @@ from .core.models import (
     WeeklyProgramming,
 )
 from .processing import extract_sets, format_for_btwb
-from .processing.accessory import Prescription, build_block, plan_accessory, target_reps
+from .processing.accessory import (
+    ACCESSORY_BLOCK_NAME,
+    Prescription,
+    build_block,
+    plan_accessory,
+    target_reps,
+)
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,
@@ -897,11 +903,14 @@ def log_audit(
     location: str,
     fell_back: list[str],
     actual: bool = False,
+    plan_ws: date | None = None,
 ) -> None:
     """Print the week's per-muscle volume and what it would take to close the gap."""
     counted = "logged as done" if actual else "as programmed"
     logger.info("=" * 68)
     logger.info("  Accessory audit — week starting %s  (%s, %s)", ws, location, counted)
+    if plan_ws is not None and plan_ws != ws:
+        logger.info("  Measured as the baseline for the week starting %s", plan_ws)
     logger.info("=" * 68)
     logger.info("  Hard sets at 0-2 RIR. Conditioning counts 0.25/set, capped at")
     logger.info("  %.1f per muscle per week; heavy singles and skill work count 0.", METCON_CAP)
@@ -987,6 +996,35 @@ def _confirm_accessory(week: WeeklyProgramming) -> bool:
     return answer.strip().lower() in ("y", "yes")
 
 
+def _audit_weeks(ws: date, from_last_week: bool) -> tuple[date, date]:
+    """Return (week to measure, week to plan into).
+
+    They are normally the same week. ``--from-last-week`` separates them because
+    this week's delivery is not knowable until this week is over: the most recent
+    finished week is the best available estimate of what the coming one will
+    leave untrained, and the gap it measures is structural enough for that to
+    hold — side delts and calves get nothing every week regardless.
+    """
+    return (ws - timedelta(days=7), ws) if from_last_week else (ws, ws)
+
+
+def _crossfit_only(week: WeeklyProgramming) -> WeeklyProgramming:
+    """Drop accessory blocks from a week being measured as the baseline.
+
+    The baseline has to be what CrossFit delivered and nothing else. Counting
+    last week's accessory work into it makes the system undo itself: five sets
+    one week, a satisfied target and zero the next, five again the week after —
+    half the target on average, in a loop that looks correct at every step.
+    """
+    trimmed = []
+    for day in week.days:
+        keep = [b for b in day.blocks if b.name != ACCESSORY_BLOCK_NAME]
+        if len(keep) != len(day.blocks):
+            logger.info("%s — accessory work excluded from the baseline", day.day_label)
+        trimmed.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=keep))
+    return WeeklyProgramming(week_start=week.week_start, days=trimmed)
+
+
 def _completion_for(week: WeeklyProgramming) -> dict[str, set[str]]:
     """Read from BTWB which of the week's blocks were actually logged as done."""
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
@@ -1040,8 +1078,12 @@ def do_audit(
     headless: bool = False,
     dry_run: bool = False,
     actual: bool = False,
+    from_last_week: bool = False,
 ) -> None:
     ws = ws or week_start()
+    measure_ws, plan_ws = _audit_weeks(ws, from_last_week)
+    # Measuring a past week only makes sense against what was actually done there.
+    actual = actual or from_last_week
     if post and not on:
         logger.error("--post needs --on to say which day(s) the accessory work goes on")
         sys.exit(1)
@@ -1052,10 +1094,15 @@ def do_audit(
             logger.error("Unknown day(s) in --on: %s (expected %s)", unknown, ", ".join(WEEKDAYS))
             sys.exit(1)
 
-    week, fell_back = week_for_audit(days, ws)
+    week, fell_back = week_for_audit(days, measure_ws)
     if not week.days:
-        logger.error("No cached analysis found — run: strivee-btwb analyse")
+        logger.error(
+            "No cached analysis for the week of %s — run: strivee-btwb analyse --week %s",
+            measure_ws,
+            measure_ws,
+        )
         sys.exit(1)
+    week = _crossfit_only(week)
     completed = _completion_for(week) if actual else None
 
     try:
@@ -1064,12 +1111,12 @@ def do_audit(
         logger.error("%s", e)
         sys.exit(1)
     volumes, unlisted = weekly_volume(work_sets)
-    log_audit(ws, volumes, unlisted, location, fell_back, actual)
+    log_audit(measure_ws, volumes, unlisted, location, fell_back, actual, plan_ws)
 
     if not on:
         return
 
-    planned = accessory_week(ws, plan_accessory(volumes, location, on))
+    planned = accessory_week(plan_ws, plan_accessory(volumes, location, on))
     if not planned.days:
         logger.info("")
         logger.info("  Nothing to add — every muscle is already at target.")

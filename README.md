@@ -400,6 +400,30 @@ Two things worth knowing:
 The filter is applied after the extraction cache, so `--actual` costs no extra model
 calls over a plain run.
 
+### Planning this week from last week
+
+`--from-last-week` measures the previous week's *completed* work and uses it as the
+baseline for the week you are planning (it implies `--actual`):
+
+```bash
+uv run strivee-btwb audit --from-last-week --on Tue,Fri --post
+```
+
+```
+  Accessory audit — week starting 2026-08-17  (gym, logged as done)
+  Measured as the baseline for the week starting 2026-08-24
+```
+
+This is the form to use week to week. This week's delivery is not knowable until this
+week is over, and the most recent finished week is the best available estimate of what
+the coming one will leave untrained — the gap is structural enough for that to hold, since
+side delts and calves get nothing regardless of which sessions you make.
+
+**Accessory blocks are excluded from the baseline**, and that is not cosmetic. Counting
+last week's accessory work into it makes the system undo itself: five sets one week, a
+satisfied target and zero the next, five again the week after — half the target on
+average, in a loop that looks correct at every step.
+
 It reads each day at the level `preview` selected, falling back to RX (and saying
 so) for days that were never previewed. Two hand-maintained tables drive it:
 
@@ -503,6 +527,9 @@ uv run strivee-btwb audit --location basement
 
 # ...and post that accessory work to BTWB on the days you choose
 uv run strivee-btwb audit --location basement --on Tue,Fri --post
+
+# Week to week: plan from what you actually completed last week
+uv run strivee-btwb audit --from-last-week --on Tue,Fri --post
 ```
 
 To clear a week's planned workouts off BTWB (e.g. to re-post after a fix):

@@ -8,6 +8,8 @@ from strivee_btwb.core import config as cfg
 from strivee_btwb.core.models import INTER, DayProgramming, ProgrammingBlock, WeeklyProgramming
 from strivee_btwb.pipeline import (
     SETS_SCHEMA_VERSION,
+    _audit_weeks,
+    _crossfit_only,
     _parsed_source_mtime_ns,
     _sets_fingerprint,
     do_audit,
@@ -18,6 +20,7 @@ from strivee_btwb.pipeline import (
     week_for_audit,
     week_work_sets,
 )
+from strivee_btwb.processing.accessory import ACCESSORY_BLOCK_NAME
 from strivee_btwb.processing.volume import METCON, STRENGTH, WorkSet
 
 WEEK = date(2026, 8, 24)
@@ -215,3 +218,58 @@ def test_filtering_does_not_invalidate_the_extraction_cache():
     week_work_sets(week, {"2026-08-29": {"EMF 60 : Bench press"}})
     assert load_sets_day(day, WEEK, _sets_fingerprint(day)) is not None
     assert len(week_work_sets(week)) == 2
+
+
+# ── Planning this week from last week ─────────────────────────────────────────
+
+
+def test_by_default_the_measured_and_planned_weeks_are_the_same():
+    assert _audit_weeks(WEEK, from_last_week=False) == (WEEK, WEEK)
+
+
+def test_from_last_week_measures_the_week_before_the_one_being_planned():
+    """This week's delivery is not knowable until this week is over."""
+    assert _audit_weeks(WEEK, from_last_week=True) == (date(2026, 8, 17), WEEK)
+
+
+def test_accessory_work_is_excluded_from_the_baseline():
+    """Counting it in makes the system undo itself: 5 sets, then 0, then 5 again."""
+    day = DayProgramming(
+        date=date(2026, 8, 25),
+        day_label="Tue",
+        blocks=[
+            ProgrammingBlock(name="EMF 60 : Back Squat", content="5x5"),
+            ProgrammingBlock(name=ACCESSORY_BLOCK_NAME, content="12 Cable Lateral Raise"),
+        ],
+    )
+    trimmed = _crossfit_only(WeeklyProgramming(week_start=WEEK, days=[day]))
+    assert [b.name for b in trimmed.days[0].blocks] == ["EMF 60 : Back Squat"]
+
+
+def test_a_week_with_no_accessory_work_passes_through_unchanged():
+    day = DayProgramming(
+        date=date(2026, 8, 25),
+        day_label="Tue",
+        blocks=[ProgrammingBlock(name="EMF 60 : Back Squat", content="5x5")],
+    )
+    week = WeeklyProgramming(week_start=WEEK, days=[day])
+    assert [b.name for b in _crossfit_only(week).days[0].blocks] == ["EMF 60 : Back Squat"]
+
+
+def test_days_survive_the_baseline_trim_even_when_emptied_by_it():
+    """An accessory-only day still belongs to the week; it just contributes nothing."""
+    day = DayProgramming(
+        date=date(2026, 8, 25),
+        day_label="Tue",
+        blocks=[ProgrammingBlock(name=ACCESSORY_BLOCK_NAME, content="12 Cable Lateral Raise")],
+    )
+    trimmed = _crossfit_only(WeeklyProgramming(week_start=WEEK, days=[day]))
+    assert len(trimmed.days) == 1
+    assert trimmed.days[0].blocks == []
+
+
+def test_from_last_week_reports_the_week_it_could_not_find():
+    """The error has to name the measured week, not the one that was asked for."""
+    with pytest.raises(SystemExit) as exit_info:
+        do_audit(["Mon"], WEEK, "gym", from_last_week=True)
+    assert exit_info.value.code == 1
