@@ -244,6 +244,29 @@ _SCAN_TITLES_JS = """
 """
 
 
+# A completed event carries a check badge inside its title row, and BTWB also
+# nests it under .track-event-event-results. Both were verified to agree on every
+# event of a real week; the badge is used because it is the narrower claim.
+_SCAN_COMPLETED_JS = """
+(dates) => {
+  const out = {};
+  dates.forEach(d => { out[d] = []; });
+  document.querySelectorAll('[data-date]').forEach(el => {
+    const raw = el.getAttribute('data-date') || '';
+    const d = dates.find(x => raw.includes(x));
+    if (!d) return;
+    el.querySelectorAll('.title_track_event').forEach(node => {
+      if (!node.querySelector('.badge-track-orange .mdi-check')) return;
+      const s = node.querySelector('strong');
+      const t = ((s && (s.getAttribute('title') || s.textContent)) || '').trim();
+      if (t) out[d].push(t);
+    });
+  });
+  return out;
+}
+"""
+
+
 def _settle_calendar(page: Page) -> None:
     """Wait for the calendar day containers, then best-effort settle AJAX.
 
@@ -477,6 +500,38 @@ def delete_week(
         browser.close()
 
     return results
+
+
+def fetch_completed_titles(
+    email: str,
+    password: str,
+    dates: list[str],
+    headless: bool = True,
+) -> dict[str, set[str]]:
+    """Return {date: titles of blocks logged as done} for *dates*.
+
+    Reads the same week view the duplicate check already loads, so this is one
+    page load rather than a new way into BTWB. Only completion is read — nothing
+    about what was actually lifted — which is all the audit needs to stop
+    counting a session that was planned and skipped.
+
+    Like the duplicate check, this assumes *dates* fall in one week and loads the
+    week containing the first of them.
+    """
+    if not dates:
+        return {}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=headless)
+        page = browser.new_context(locale="fr-FR").new_page()
+        try:
+            _login(page, email, password)
+            page.goto(_calendar_week_url(dates[0]), wait_until="domcontentloaded")
+            _ensure_track_selected(page)
+            _settle_calendar(page)
+            done: dict[str, list[str]] = page.evaluate(_SCAN_COMPLETED_JS, dates)
+        finally:
+            browser.close()
+    return {d: set(done.get(d, [])) for d in dates}
 
 
 def post_week(

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import ollama
 
-from .btwb import AuthenticationError, delete_week, post_week
+from .btwb import AuthenticationError, delete_week, fetch_completed_titles, post_week
 from .capture import (
     capture_day_as_text,
     launch_scrcpy,
@@ -847,19 +847,45 @@ def week_for_audit(days: list[str], ws: date) -> tuple[WeeklyProgramming, list[s
     return WeeklyProgramming(week_start=ws, days=ordered), fell_back
 
 
-def week_work_sets(week: WeeklyProgramming) -> list[WorkSet]:
-    """Extract every block's sets for the week, reusing the per-day cache."""
+def _norm_title(name: str) -> str:
+    """Collapse whitespace so a title matches across our cache and BTWB's calendar.
+
+    Block names carry the source's own spacing — "EMF 60 :  Handstand Walk" has a
+    double space — and it survives into both, but comparing them raw would break
+    the moment either side tidied it.
+    """
+    return " ".join(name.split())
+
+
+def week_work_sets(
+    week: WeeklyProgramming, completed: dict[str, set[str]] | None = None
+) -> list[WorkSet]:
+    """Extract every block's sets for the week, reusing the per-day cache.
+
+    When *completed* is given, only sets from blocks logged as done on BTWB are
+    returned. The filter is applied after caching, not before: the cache stays
+    keyed on the whole day's text, so running with and without it costs no extra
+    model calls.
+    """
     collected: list[WorkSet] = []
     for day in week.days:
         fingerprint = _sets_fingerprint(day)
         cached = load_sets_day(day, week.week_start, fingerprint)
         if cached is not None:
             logger.info("Reusing cached set extraction for %s", day.day_label)
-            collected.extend(cached)
-            continue
-        logger.info("Extracting sets for %s (%d block(s))", day.day_label, len(day.blocks))
-        day_sets = [s for block in day.blocks for s in extract_sets(block)]
-        save_sets_day(day, week.week_start, fingerprint, day_sets)
+            day_sets = cached
+        else:
+            logger.info("Extracting sets for %s (%d block(s))", day.day_label, len(day.blocks))
+            day_sets = [s for block in day.blocks for s in extract_sets(block)]
+            save_sets_day(day, week.week_start, fingerprint, day_sets)
+        if completed is not None:
+            done = {_norm_title(t) for t in completed.get(day.date.isoformat(), set())}
+            skipped = {b.name for b in day.blocks if _norm_title(b.name) not in done}
+            if skipped:
+                logger.info(
+                    "%s — not logged as done: %s", day.day_label, ", ".join(sorted(skipped))
+                )
+            day_sets = [s for s in day_sets if _norm_title(s.source) in done]
         collected.extend(day_sets)
     return collected
 
@@ -870,10 +896,12 @@ def log_audit(
     unlisted: list[str],
     location: str,
     fell_back: list[str],
+    actual: bool = False,
 ) -> None:
     """Print the week's per-muscle volume and what it would take to close the gap."""
+    counted = "logged as done" if actual else "as programmed"
     logger.info("=" * 68)
-    logger.info("  Accessory audit — week starting %s  (%s)", ws, location)
+    logger.info("  Accessory audit — week starting %s  (%s, %s)", ws, location, counted)
     logger.info("=" * 68)
     logger.info("  Hard sets at 0-2 RIR. Conditioning counts 0.25/set, capped at")
     logger.info("  %.1f per muscle per week; heavy singles and skill work count 0.", METCON_CAP)
@@ -904,12 +932,11 @@ def log_audit(
         logger.info("  ── To close the gap at the %s ──", location)
         for vol in gaps:
             options = pool_movements(vol.muscle, location)
+            count = math.ceil(vol.gap)
+            unit = "set " if count == 1 else "sets"  # trailing space keeps the column aligned
             if not options:
                 logger.warning(
-                    "  %-26s %2d sets   no %s option in the pool",
-                    vol.label,
-                    math.ceil(vol.gap),
-                    location,
+                    "  %-26s %2d %s   no %s option in the pool", vol.label, count, unit, location
                 )
                 continue
             # Two pool entries can share one BTWB name (the same cable movement set
@@ -918,7 +945,7 @@ def log_audit(
             for movement in options:
                 by_name.setdefault(movement["btwb_name"], target_reps(movement["reps"]))
             picks = " / ".join(f"{name} {reps}" for name, reps in list(by_name.items())[:2])
-            logger.info("  %-26s %2d sets   %s", vol.label, math.ceil(vol.gap), picks)
+            logger.info("  %-26s %2d %s   %s", vol.label, count, unit, picks)
 
     if unlisted:
         logger.info("")
@@ -960,6 +987,49 @@ def _confirm_accessory(week: WeeklyProgramming) -> bool:
     return answer.strip().lower() in ("y", "yes")
 
 
+def _completion_for(week: WeeklyProgramming) -> dict[str, set[str]]:
+    """Read from BTWB which of the week's blocks were actually logged as done."""
+    if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
+        logger.error("--actual reads your BTWB calendar; set BTWB_EMAIL / BTWB_PASSWORD in .env")
+        sys.exit(1)
+    logger.info("Reading BTWB for what was actually logged as done…")
+    try:
+        return fetch_completed_titles(
+            config.BTWB_EMAIL,
+            config.BTWB_PASSWORD,
+            [d.date.isoformat() for d in week.days],
+            headless=True,
+        )
+    except Exception as e:
+        # Falling back to the plan while the header still says "logged as done"
+        # would be a silent lie about what the numbers mean.
+        logger.error("Could not read completion from BTWB: %s", e)
+        sys.exit(1)
+
+
+def _post_accessory(planned: WeeklyProgramming, yes: bool, headless: bool, dry_run: bool) -> None:
+    """Send the planned accessory blocks to BTWB, confirming first unless told not to."""
+    if not dry_run and (not config.BTWB_EMAIL or not config.BTWB_PASSWORD):
+        logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
+        sys.exit(1)
+    if not dry_run and not yes and not _confirm_accessory(planned):
+        logger.info("Nothing posted.")
+        return
+    try:
+        results = post_week(
+            week=planned,
+            email=config.BTWB_EMAIL,
+            password=config.BTWB_PASSWORD,
+            headless=headless,
+            dry_run=dry_run,
+        )
+    except Exception as e:  # AuthenticationError included — every failure aborts the same way
+        logger.error("%s", e)
+        sys.exit(1)
+    verb = "would be posted" if dry_run else "posted"
+    logger.info("Done — %d accessory block(s) %s", len(results), verb)
+
+
 def do_audit(
     days: list[str],
     ws: date | None = None,
@@ -969,6 +1039,7 @@ def do_audit(
     yes: bool = False,
     headless: bool = False,
     dry_run: bool = False,
+    actual: bool = False,
 ) -> None:
     ws = ws or week_start()
     if post and not on:
@@ -985,13 +1056,15 @@ def do_audit(
     if not week.days:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
+    completed = _completion_for(week) if actual else None
+
     try:
-        work_sets = week_work_sets(week)
+        work_sets = week_work_sets(week, completed)
     except LLMUnavailableError as e:
         logger.error("%s", e)
         sys.exit(1)
     volumes, unlisted = weekly_volume(work_sets)
-    log_audit(ws, volumes, unlisted, location, fell_back)
+    log_audit(ws, volumes, unlisted, location, fell_back, actual)
 
     if not on:
         return
@@ -1008,24 +1081,4 @@ def do_audit(
         logger.info("  Re-run with --post to send these to BTWB.")
         return
 
-    if not dry_run and (not config.BTWB_EMAIL or not config.BTWB_PASSWORD):
-        logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
-        sys.exit(1)
-    if not dry_run and not yes and not _confirm_accessory(planned):
-        logger.info("Nothing posted.")
-        return
-
-    try:
-        results = post_week(
-            week=planned,
-            email=config.BTWB_EMAIL,
-            password=config.BTWB_PASSWORD,
-            headless=headless,
-            dry_run=dry_run,
-        )
-    except Exception as e:  # AuthenticationError included — every failure aborts the same way
-        logger.error("%s", e)
-        sys.exit(1)
-
-    verb = "would be posted" if dry_run else "posted"
-    logger.info("Done — %d accessory block(s) %s", len(results), verb)
+    _post_accessory(planned, yes, headless, dry_run)

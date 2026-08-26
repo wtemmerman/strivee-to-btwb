@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from strivee_btwb.core import config as cfg
-from strivee_btwb.core.models import INTER, DayProgramming, ProgrammingBlock
+from strivee_btwb.core.models import INTER, DayProgramming, ProgrammingBlock, WeeklyProgramming
 from strivee_btwb.pipeline import (
     SETS_SCHEMA_VERSION,
     _parsed_source_mtime_ns,
@@ -16,6 +16,7 @@ from strivee_btwb.pipeline import (
     save_formatted_day,
     save_sets_day,
     week_for_audit,
+    week_work_sets,
 )
 from strivee_btwb.processing.volume import METCON, STRENGTH, WorkSet
 
@@ -147,3 +148,70 @@ def test_a_valid_day_gets_past_the_guards():
     """No analysis cached, so it must fail on that rather than on the day name."""
     with pytest.raises(SystemExit):
         do_audit(["Sat"], WEEK, "gym", on=["Tue"])
+
+
+# ── Counting only what was actually done ──────────────────────────────────────
+
+
+def _two_block_day() -> DayProgramming:
+    return DayProgramming(
+        date=date(2026, 8, 29),
+        day_label="Sat",
+        blocks=[
+            ProgrammingBlock(name="EMF 60 : Bench press", content="5RM Barbell bench press"),
+            ProgrammingBlock(name="EMF 60 :  Handstand Walk", content="60m Handstand Walk"),
+        ],
+    )
+
+
+def _cache_sets(day: DayProgramming) -> None:
+    save_sets_day(
+        day,
+        WEEK,
+        _sets_fingerprint(day),
+        [
+            WorkSet("Barbell Bench Press", 1, "5", STRENGTH, source="EMF 60 : Bench press"),
+            WorkSet("Handstand Walk", 1, "60m", METCON, source="EMF 60 :  Handstand Walk"),
+        ],
+    )
+
+
+def test_without_completion_data_everything_programmed_is_counted():
+    day = _two_block_day()
+    _cache_sets(day)
+    week = WeeklyProgramming(week_start=WEEK, days=[day])
+    assert len(week_work_sets(week)) == 2
+
+
+def test_a_block_that_was_not_logged_as_done_is_not_counted():
+    day = _two_block_day()
+    _cache_sets(day)
+    week = WeeklyProgramming(week_start=WEEK, days=[day])
+    done = {"2026-08-29": {"EMF 60 : Bench press"}}
+    assert [s.movement for s in week_work_sets(week, done)] == ["Barbell Bench Press"]
+
+
+def test_a_day_absent_from_the_completion_data_counts_as_nothing_done():
+    day = _two_block_day()
+    _cache_sets(day)
+    week = WeeklyProgramming(week_start=WEEK, days=[day])
+    assert week_work_sets(week, {}) == []
+
+
+def test_title_matching_survives_the_double_space_btwb_carries():
+    """'EMF 60 :  Handstand Walk' keeps the source's own spacing on both sides."""
+    day = _two_block_day()
+    _cache_sets(day)
+    week = WeeklyProgramming(week_start=WEEK, days=[day])
+    done = {"2026-08-29": {"EMF 60 : Handstand Walk"}}  # single space
+    assert [s.movement for s in week_work_sets(week, done)] == ["Handstand Walk"]
+
+
+def test_filtering_does_not_invalidate_the_extraction_cache():
+    """The cache is keyed on the day's text, so --actual costs no extra model calls."""
+    day = _two_block_day()
+    _cache_sets(day)
+    week = WeeklyProgramming(week_start=WEEK, days=[day])
+    week_work_sets(week, {"2026-08-29": {"EMF 60 : Bench press"}})
+    assert load_sets_day(day, WEEK, _sets_fingerprint(day)) is not None
+    assert len(week_work_sets(week)) == 2
