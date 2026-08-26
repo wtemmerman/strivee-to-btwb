@@ -79,6 +79,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dry-run", action="store_true", help="Show what --post would send, without posting"
     )
+    p.add_argument(
+        "--actual",
+        action="store_true",
+        help="Count only blocks logged as done on BTWB, instead of everything programmed",
+    )
 
     p = sub.add_parser("preview", help="Step 3 — show formatted block content before posting")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
@@ -134,6 +139,7 @@ def main() -> None:
             getattr(args, "yes", False),
             getattr(args, "headless", False),
             getattr(args, "dry_run", False),
+            getattr(args, "actual", False),
         )
     elif args.command == "preview":
         do_preview(days, ws, getattr(args, "relevel", False))

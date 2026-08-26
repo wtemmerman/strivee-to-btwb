@@ -368,6 +368,38 @@ improve and a great deal for it to break. Every block is titled `Accessory` on e
 BTWB dedupes on the title, so re-posting is a no-op. That also means an edited plan will
 be *skipped* rather than updated — clear it with `delete` first.
 
+### Counting what you actually did
+
+By default the audit counts everything the week *programmed*. `--actual` counts only the
+blocks logged as done on BTWB:
+
+```bash
+uv run strivee-btwb audit --week 2026-08-17 --actual
+```
+
+```
+Mon — not logged as done: EMF 60 : Weighted Pull-up
+Tue — not logged as done: EMF 60 : Deadlift, EMF 60 : Energy System Training
+...
+  Accessory audit — week starting 2026-08-17  (gym, logged as done)
+```
+
+It reads completion from the same week view the duplicate check already loads — a
+completed block carries a check badge inside its title row (`.badge-track-orange
+.mdi-check`, which BTWB also nests under `.track-event-event-results`). Nothing about
+what was lifted is read, only whether the session happened.
+
+Two things worth knowing:
+
+- **Use it on a finished week.** Run mid-week and it correctly reports the days that have
+  not happened yet as not done, which makes the gap look enormous.
+- **Titles are matched with whitespace collapsed.** Block names carry the source's own
+  spacing (`EMF 60 :  Handstand Walk` has a double space) on both sides, and comparing
+  them raw would break the moment either side tidied it.
+
+The filter is applied after the extraction cache, so `--actual` costs no extra model
+calls over a plain run.
+
 It reads each day at the level `preview` selected, falling back to RX (and saying
 so) for days that were never previewed. Two hand-maintained tables drive it:
 
