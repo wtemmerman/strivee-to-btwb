@@ -19,6 +19,7 @@ from .btwb import (
     AuthenticationError,
     delete_week,
     fetch_completed_titles,
+    fetch_logged_loads,
     fetch_planned_workouts,
     post_week,
 )
@@ -49,6 +50,7 @@ from .processing.accessory import (
     plan_accessory,
     target_reps,
 )
+from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
 from .processing.volume import (
     METCON_CAP,
@@ -983,6 +985,45 @@ def week_work_sets(
     return collected
 
 
+def _log_gap_prescription(
+    volumes: dict[str, MuscleVolume],
+    location: str,
+    lifted: dict[str, list[Load]] | None,
+) -> None:
+    """List what to do to close each muscle's gap, with last session's load."""
+    gaps = [v for v in volumes.values() if v.gap > 0]
+    logger.info("")
+    if not gaps:
+        logger.info("  Every muscle is at target — no accessory work needed this week.")
+        return
+    logger.info("  ── To close the gap at the %s ──", location)
+    for vol in gaps:
+        options = pool_movements(vol.muscle, location)
+        count = math.ceil(vol.gap)
+        unit = "set " if count == 1 else "sets"  # trailing space keeps the column aligned
+        if not options:
+            logger.warning(
+                "  %-26s %2d %s   no %s option in the pool", vol.label, count, unit, location
+            )
+            continue
+        # Two pool entries can share one BTWB name (the same cable movement set
+        # up two ways), and printing it twice reads as a bug in the report.
+        by_name: dict[str, str] = {}
+        for movement in options:
+            by_name.setdefault(movement["btwb_name"], target_reps(movement["reps"]))
+        picks = " / ".join(f"{name} {reps}" for name, reps in list(by_name.items())[:2])
+        logger.info("  %-26s %2d %s   %s", vol.label, count, unit, picks)
+        for name in list(by_name)[:2]:
+            previous = (lifted or {}).get(name.casefold())
+            if previous:
+                logger.info(
+                    "  %-26s          last %s: %s",
+                    "",
+                    name,
+                    ", ".join(str(load) for load in previous),
+                )
+
+
 def log_audit(
     ws: date,
     volumes: dict[str, MuscleVolume],
@@ -991,6 +1032,7 @@ def log_audit(
     fell_back: list[str],
     actual: bool = False,
     plan_ws: date | None = None,
+    lifted: dict[str, list[Load]] | None = None,
 ) -> None:
     """Print the week's per-muscle volume and what it would take to close the gap."""
     counted = "logged as done" if actual else "as programmed"
@@ -1020,28 +1062,7 @@ def log_audit(
                 vol.metcon,
             )
 
-    gaps = [v for v in volumes.values() if v.gap > 0]
-    logger.info("")
-    if not gaps:
-        logger.info("  Every muscle is at target — no accessory work needed this week.")
-    else:
-        logger.info("  ── To close the gap at the %s ──", location)
-        for vol in gaps:
-            options = pool_movements(vol.muscle, location)
-            count = math.ceil(vol.gap)
-            unit = "set " if count == 1 else "sets"  # trailing space keeps the column aligned
-            if not options:
-                logger.warning(
-                    "  %-26s %2d %s   no %s option in the pool", vol.label, count, unit, location
-                )
-                continue
-            # Two pool entries can share one BTWB name (the same cable movement set
-            # up two ways), and printing it twice reads as a bug in the report.
-            by_name: dict[str, str] = {}
-            for movement in options:
-                by_name.setdefault(movement["btwb_name"], target_reps(movement["reps"]))
-            picks = " / ".join(f"{name} {reps}" for name, reps in list(by_name.items())[:2])
-            logger.info("  %-26s %2d %s   %s", vol.label, count, unit, picks)
+    _log_gap_prescription(volumes, location, lifted)
 
     if unlisted:
         logger.info("")
@@ -1110,6 +1131,29 @@ def _crossfit_only(week: WeeklyProgramming) -> WeeklyProgramming:
             logger.info("%s — accessory work excluded from the baseline", day.day_label)
         trimmed.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=keep))
     return WeeklyProgramming(week_start=week.week_start, days=trimmed)
+
+
+def _loads_lifted(week: WeeklyProgramming) -> dict[str, list[Load]]:
+    """What was lifted for each movement across the measured week's logged sessions.
+
+    Best effort: a failure here costs a hint next to a prescription, not the
+    audit, so it is reported and swallowed rather than aborting the run.
+    """
+    try:
+        logged = fetch_logged_loads(
+            config.BTWB_EMAIL,
+            config.BTWB_PASSWORD,
+            [d.date.isoformat() for d in week.days],
+        )
+    except Exception as e:
+        logger.warning("Could not read logged loads: %s", e)
+        return {}
+    lifted: dict[str, list[Load]] = {}
+    for by_title in logged.values():
+        for rows, result in by_title.values():
+            for movement, loads in loads_by_movement(rows, result).items():
+                lifted.setdefault(_norm_title(movement).casefold(), []).extend(loads)
+    return lifted
 
 
 def _completion_for(week: WeeklyProgramming) -> dict[str, set[str]]:
@@ -1201,7 +1245,10 @@ def do_audit(
         logger.error("%s", e)
         sys.exit(1)
     volumes, unlisted = weekly_volume(work_sets)
-    log_audit(measure_ws, volumes, unlisted, location, fell_back, actual, plan_ws)
+    # Only when BTWB is being read anyway: what was lifted last time is the whole
+    # progression signal when every set goes to failure against a fixed rep target.
+    lifted = _loads_lifted(week) if actual else None
+    log_audit(measure_ws, volumes, unlisted, location, fell_back, actual, plan_ws, lifted)
 
     if not on:
         return

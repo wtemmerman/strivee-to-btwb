@@ -3,6 +3,7 @@ from .client import (
     BTWBError,
     delete_week,
     fetch_completed_titles,
+    fetch_logged_loads,
     fetch_planned_workouts,
     post_week,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "BTWBError",
     "delete_week",
     "fetch_completed_titles",
+    "fetch_logged_loads",
     "fetch_planned_workouts",
     "post_week",
 ]

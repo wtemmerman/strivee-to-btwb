@@ -394,6 +394,19 @@ Two things about that shape, both driven by training to failure:
   Written out, every set gets its own row to log a load and a rep count into — which is
   the entire record when the load is the thing being progressed.
 
+When the audit is reading BTWB anyway (`--actual` or `--from-last-week`), it also reports
+what you last lifted for each prescribed movement:
+
+```
+  Side delts                  5 sets   Cable Lateral Raise 12 / Dumbbell Lateral Raise 10
+                                       last Cable Lateral Raise: 10 kg, 10 kg, 12 kg
+```
+
+That is the whole progression signal when every set goes to failure against a fixed rep
+target: hit the number, then add weight. It is read off each logged row, which carries its
+own load (`2 Back Squats | 250 lbs`) — the one-row-per-set layout is what makes a per-set
+load exist to read.
+
 Whole muscles move together rather than being sliced across days — five sets of lateral
 raises in one session beat two on Tuesday and three on Friday — and a muscle needing four
 or more sets is split across two pool movements, because six straight sets of the same

@@ -728,6 +728,76 @@ _STORED_BODY_JS = """
 """
 
 
+_SCAN_SESSION_LINKS_JS = """
+(dates) => {
+  const out = [];
+  document.querySelectorAll('[data-date]').forEach(el => {
+    const raw = el.getAttribute('data-date') || '';
+    const d = dates.find(x => raw.includes(x));
+    if (!d) return;
+    el.querySelectorAll('.calendar_track_event').forEach(ev => {
+      if (!ev.querySelector('.badge-track-orange .mdi-check')) return;
+      const s = ev.querySelector('.title_track_event strong');
+      const a = [...ev.querySelectorAll('a')]
+        .map(x => x.getAttribute('href'))
+        .find(h => h && h.includes('workout_sessions'));
+      const t = s ? (s.getAttribute('title') || s.textContent).trim() : '';
+      if (t && a) out.push({date: d, title: t, href: a});
+    });
+  });
+  return out;
+}
+"""
+
+# A logged session lists the prescription rows, then RÉSULTAT, then the result.
+_SESSION_RESULT_JS = """
+() => {
+  const t = (document.body.innerText || '').split('\\n').map(l => l.trim()).filter(Boolean);
+  const i = t.indexOf('RÉSULTAT');
+  if (i === -1) return {rows: [], result: ''};
+  return {rows: t.slice(0, i), result: t[i + 1] || ''};
+}
+"""
+
+
+def fetch_logged_loads(
+    email: str,
+    password: str,
+    dates: list[str],
+    headless: bool = True,
+) -> dict[str, dict[str, tuple[list[str], str]]]:
+    """Return {date: {title: (prescription rows, result line)}} for logged sessions.
+
+    Only sessions marked done have a result to read. Rows come back unfiltered;
+    the caller decides which of them are prescriptions, using the same
+    leading-count rule the posted-vs-stored check uses.
+    """
+    if not dates:
+        return {}
+    logged: dict[str, dict[str, tuple[list[str], str]]] = {d: {} for d in dates}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=headless)
+        page = browser.new_context(locale="fr-FR").new_page()
+        try:
+            _login(page, email, password)
+            page.goto(_calendar_week_url(dates[0]), wait_until="domcontentloaded")
+            _ensure_track_selected(page)
+            _settle_calendar(page)
+            sessions = page.evaluate(_SCAN_SESSION_LINKS_JS, dates)
+            logger.info("Reading %d logged session(s) from BTWB", len(sessions))
+            for session in sessions:
+                page.goto(_BASE + session["href"], wait_until="domcontentloaded")
+                try:
+                    page.wait_for_load_state("networkidle", timeout=_CALENDAR_IDLE_TIMEOUT)
+                except PlaywrightTimeoutError:
+                    pass
+                found = page.evaluate(_SESSION_RESULT_JS)
+                logged[session["date"]][session["title"]] = (found["rows"], found["result"])
+        finally:
+            browser.close()
+    return logged
+
+
 def fetch_planned_workouts(
     email: str,
     password: str,
