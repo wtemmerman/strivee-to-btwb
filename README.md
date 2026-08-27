@@ -302,6 +302,43 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 
 </details>
 
+### Step 5 — Verify
+
+Posting successfully does not mean BTWB stored what was sent. Its AI parser resolves a
+movement it does not recognise to an arbitrary other one rather than failing, so a block
+can land on the calendar looking fine and hold the wrong exercise.
+
+```bash
+uv run strivee-btwb verify --week 2026-08-24
+```
+
+```
+  Posted-vs-stored check — week starting 2026-08-24
+====================================================================
+  Tue — 'EMF 60 : Handstand' is not on BTWB
+  EMF 60 : Ring Muscle-up Skill: BTWB stored '12 Low Ring Transitions' (33% of it is in the source)
+  EMF 60 : Ring Muscle-up Skill: BTWB stored '12 Ring Hip Pulls' (67% of it is in the source)
+```
+
+Those are real: `12 Ring Bascule feet on floor` was stored as `12 Low Ring Transitions`.
+Measured over two live weeks, one block in six came back altered — common barbell and
+gymnastics work survives, ring and skill work is where the parser invents.
+
+It reads each planned workout back and flags any prescription line whose words do not
+trace back to the text that produced it, allowing for the rewordings BTWB is entitled to
+make (`Strict HSPU` → `Strict Handstand Push-ups`, `Snatch` → `Snatches`).
+
+Two deliberate limits, both chosen so the report stays worth reading:
+
+- **Only lines with a leading rep count are checked.** The event page mixes prescriptions
+  with form labels across two different renderings, and no rule that tried to enumerate
+  those kept up. A movement stored without a count goes unexamined.
+- **It catches substitution, not omission.** A dropped movement leaves nothing to compare.
+
+It also reports blocks that never reached BTWB at all — posting skips a block whose
+preview times out, which is otherwise only visible as a workout that quietly never
+appeared.
+
 ### Optional — Accessory audit
 
 CrossFit programming trains some muscles hard and others not at all. `audit` counts
@@ -532,6 +569,9 @@ uv run strivee-btwb preview
 # Step 4 — post to BTWB (prompts for confirmation)
 uv run strivee-btwb post
 
+# Step 5 — check BTWB stored what was sent
+uv run strivee-btwb verify
+
 # Optional — report the week's per-muscle volume and the accessory work it leaves
 uv run strivee-btwb audit --location basement
 
@@ -626,6 +666,7 @@ src/strivee_btwb/
   capture/        ADB UI accessibility text dump (adb.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
+                  posted-vs-stored check (movement_check.py)
                   accessory audit — set extraction (set_extract.py), counting rules (volume.py),
                   gap → postable block (accessory.py)
   btwb/           BTWB Playwright automation — post + delete (client.py)

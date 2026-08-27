@@ -11,6 +11,7 @@ from .pipeline import (
     do_delete,
     do_post,
     do_preview,
+    do_verify,
     parse_days,
     week_start,
 )
@@ -103,6 +104,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--headless", action="store_true", help="Run browser without a visible window")
     p.add_argument("--relevel", action="store_true", help=_RELEVEL_HELP)
 
+    p = sub.add_parser(
+        "verify",
+        help="Check what BTWB stored against what was posted, and report substituted movements",
+    )
+    p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
+    p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
+
     p = sub.add_parser("delete", help="Delete all planned workouts for a week on BTWB")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
@@ -158,6 +166,8 @@ def main() -> None:
             ws,
             getattr(args, "relevel", False),
         )
+    elif args.command == "verify":
+        do_verify(days, ws)
     elif args.command == "delete":
         do_delete(
             days,

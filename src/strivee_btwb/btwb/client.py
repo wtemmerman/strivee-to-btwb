@@ -638,6 +638,89 @@ def delete_week(
     return results
 
 
+# The week view carries only a one-line summary per event, and truncates it
+# ("...and 7 more"), so it cannot answer what BTWB stored. This collects the link
+# to each event instead; the body is read from the event page below.
+_SCAN_EVENT_LINKS_JS = """
+(dates) => {
+  const out = [];
+  document.querySelectorAll('[data-date]').forEach(el => {
+    const raw = el.getAttribute('data-date') || '';
+    const d = dates.find(x => raw.includes(x));
+    if (!d) return;
+    el.querySelectorAll('.calendar_track_event').forEach(ev => {
+      const s = ev.querySelector('.title_track_event strong');
+      const a = ev.querySelector("a[href*='/plan/track_events/']");
+      const t = s ? (s.getAttribute('title') || s.textContent).trim() : '';
+      if (t && a) out.push({date: d, title: t, href: a.getAttribute('href')});
+    });
+  });
+  return out;
+}
+"""
+
+# On the event page the workout tab holds the full movement list. Everything from
+# the edit buttons down is chrome; lines ending in a full stop are BTWB's own
+# canned description of the movement, not part of the prescription.
+_STORED_BODY_JS = """
+() => {
+  const root = document.querySelector('#workout');
+  if (!root) return '';
+  const frame = root.querySelector('turbo-frame.edit_workout') || root;
+  const lines = (frame.innerText || '').split('\\n').map(l => l.trim()).filter(Boolean);
+  // A saved workout ends at "MODIFIER L'ENTRAÎNEMENT"; one still in the editor
+  // ends at "PLANIFIER L'ENTRAÎNEMENT". Cut at whichever comes first.
+  const ends = ["MODIFIER L'ENTRA", "PLANIFIER L'ENTRA", "METTRE À JOUR"];
+  const end = lines.findIndex(l => ends.some(e => l.startsWith(e)));
+  const rowActions = ['MODIFIER', 'COPIER', 'SUPPRIMER', 'AJOUTER MOUVEMENT',
+                      'AJOUTER COMPLEXE', 'AJOUTER REPOS'];
+  return (end === -1 ? lines : lines.slice(0, end))
+    .filter(l => !rowActions.includes(l))
+    .filter(l => !l.endsWith('.') && !l.endsWith(':'))
+    .join('\\n');
+}
+"""
+
+
+def fetch_planned_workouts(
+    email: str,
+    password: str,
+    dates: list[str],
+    headless: bool = True,
+) -> dict[str, dict[str, str]]:
+    """Return {date: {title: the workout as BTWB stored it}} for *dates*.
+
+    One calendar load to find the events, then one page per event: the week view
+    only summarises a workout and truncates the summary, so it cannot say what
+    BTWB actually stored.
+
+    Like the duplicate check, this assumes *dates* fall in one week.
+    """
+    if not dates:
+        return {}
+    stored: dict[str, dict[str, str]] = {d: {} for d in dates}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=headless)
+        page = browser.new_context(locale="fr-FR").new_page()
+        try:
+            _login(page, email, password)
+            page.goto(_calendar_week_url(dates[0]), wait_until="domcontentloaded")
+            _ensure_track_selected(page)
+            _settle_calendar(page)
+            events = page.evaluate(_SCAN_EVENT_LINKS_JS, dates)
+            logger.info("Reading %d planned workout(s) back from BTWB", len(events))
+            for event in events:
+                page.goto(_BASE + event["href"], wait_until="domcontentloaded")
+                try:
+                    page.wait_for_load_state("networkidle", timeout=_CALENDAR_IDLE_TIMEOUT)
+                except PlaywrightTimeoutError:
+                    pass
+                stored[event["date"]][event["title"]] = page.evaluate(_STORED_BODY_JS)
+        finally:
+            browser.close()
+    return stored
+
+
 def fetch_completed_titles(
     email: str,
     password: str,

@@ -15,7 +15,13 @@ from pathlib import Path
 
 import ollama
 
-from .btwb import AuthenticationError, delete_week, fetch_completed_titles, post_week
+from .btwb import (
+    AuthenticationError,
+    delete_week,
+    fetch_completed_titles,
+    fetch_planned_workouts,
+    post_week,
+)
 from .capture import (
     capture_day_as_text,
     launch_scrcpy,
@@ -43,6 +49,7 @@ from .processing.accessory import (
     plan_accessory,
     target_reps,
 )
+from .processing.movement_check import check_stored
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,
@@ -715,6 +722,71 @@ def do_post(
         sys.exit(1)
 
     logger.info("Done — %d block(s) posted successfully", len(results))
+    # Posting successfully does not mean BTWB stored what was sent: its parser
+    # substitutes movements it does not recognise. Kept as a separate step rather
+    # than run here, so it stays re-runnable after fixing a block by hand.
+    logger.info("Check what BTWB actually stored: strivee-btwb verify --week %s", ws)
+
+
+def do_verify(days: list[str], ws: date | None = None) -> None:
+    """Report where BTWB stored something other than what was posted.
+
+    BTWB parses a posted workout with an AI that substitutes a movement it does
+    not recognise rather than failing, so a block can land on the calendar
+    looking fine and holding the wrong exercise. Nothing here prevents that; it
+    turns a silent corruption into a line in the log.
+    """
+    ws = ws or week_start()
+    if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
+        logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
+        sys.exit(1)
+    try:
+        week = prepare_week_for_btwb(days, ws)
+    except LLMUnavailableError as e:
+        logger.error("%s", e)
+        sys.exit(1)
+    if not week.days:
+        logger.error("No cached analysis found — run: strivee-btwb analyse")
+        sys.exit(1)
+
+    dates = [d.date.isoformat() for d in week.days]
+    logger.info("Reading back what BTWB stored for %d day(s)…", len(dates))
+    try:
+        stored = fetch_planned_workouts(config.BTWB_EMAIL, config.BTWB_PASSWORD, dates)
+    except Exception as e:
+        logger.error("Could not read BTWB: %s", e)
+        sys.exit(1)
+
+    logger.info("=" * 68)
+    logger.info("  Posted-vs-stored check — week starting %s", ws)
+    logger.info("=" * 68)
+    checked = missing = 0
+    mismatches: list = []
+    for day in week.days:
+        by_title = {_norm_title(t): body for t, body in stored[day.date.isoformat()].items()}
+        for block in day.blocks:
+            body = by_title.get(_norm_title(block.name))
+            if body is None:
+                missing += 1
+                logger.warning("  %s — '%s' is not on BTWB", day.day_label, block.name)
+                continue
+            checked += 1
+            mismatches.extend(check_stored(block.name, block.content, body))
+
+    for mismatch in mismatches:
+        logger.warning("  %s", mismatch)
+    logger.info("")
+    if mismatches:
+        logger.info(
+            "  %d line(s) across %d block(s) do not trace back to what was posted.",
+            len(mismatches),
+            len({m.title for m in mismatches}),
+        )
+        logger.info("  Fix those on BTWB by hand — the movement stored is not the one sent.")
+    else:
+        logger.info("  All %d posted block(s) match what was sent.", checked)
+    if missing:
+        logger.warning("  %d block(s) never reached BTWB — re-run post for those days.", missing)
 
 
 def _confirm_delete(events: list[dict]) -> bool:
