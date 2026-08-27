@@ -180,8 +180,29 @@ def _movement_row_count(page: Page) -> int:
 
 
 def _add_movement(page: Page, name: str, reps: str) -> None:
+    """Add one movement to the open workout, retrying once if the save is lost.
+
+    Safe to retry because the row count says whether the first attempt landed:
+    the wait inside only times out when no row appeared, so a second attempt adds
+    the movement rather than duplicating it. The count is re-read first anyway,
+    in case the save arrived just after the wait gave up.
+    """
+    for attempt in (1, 2):
+        before = _movement_row_count(page)
+        try:
+            _add_movement_once(page, name, reps, before)
+            return
+        except PlaywrightTimeoutError:
+            if _movement_row_count(page) > before:
+                logger.info("  added %s x%s (save landed late)", name, reps)
+                return
+            if attempt == 2:
+                raise
+            logger.warning("  %s did not save — retrying", name)
+
+
+def _add_movement_once(page: Page, name: str, reps: str, before: int) -> None:
     """Add one movement to the open workout via BTWB's own movement search."""
-    before = _movement_row_count(page)
     page.locator("a[href*='/movements/new']").first.click()
     search = page.locator("#name")
     search.wait_for(state="visible", timeout=_TIMEOUT)
@@ -235,6 +256,47 @@ def _build_from_movements(page: Page, block: ProgrammingBlock) -> None:
     _remove_seed_movement(page)
 
 
+def _generate_preview(page: Page, description: str, block_name: str) -> None:
+    """Submit *description* and wait for BTWB to render a preview of it.
+
+    Retried once, which is safe precisely here: nothing has been planned yet, so
+    the worst a second attempt costs is another parse.
+
+    A retry does not rescue every failure. BTWB's generator refuses some
+    prescriptions outright, returning no preview and no error however many times
+    it is asked — holds written as times rather than reps ("Wall facing handstand
+    Hold x 45 sec") are one shape it will not take. The caller reports those as
+    blocks to add by hand rather than letting them vanish.
+    """
+    for attempt in (1, 2):
+        description_field = page.locator(
+            "textarea[name='planning_generated_workout[external_description]']"
+        )
+        description_field.wait_for(timeout=_TIMEOUT)
+        description_field.fill(description)
+
+        # Set up response listeners before the click so fast responses aren't missed
+        with (
+            page.expect_response(lambda r: "generated_workouts" in r.url, timeout=_TIMEOUT),
+            page.expect_response(lambda r: "track_events" in r.url, timeout=_TIMEOUT),
+        ):
+            page.locator(
+                "input[type='submit'][value='Continuer'], input[type='submit'][value='Continue']"
+            ).first.click()
+
+        # Wait for Planifier to become enabled (disabled while the preview loads)
+        try:
+            page.locator("button:has-text('Planifier'):not([disabled])").wait_for(
+                state="visible", timeout=_TIMEOUT
+            )
+            return
+        except PlaywrightTimeoutError:
+            if attempt == 2:
+                raise
+            logger.warning("[%s] no preview after %ds — retrying", block_name, _TIMEOUT // 1000)
+            page.reload(wait_until="domcontentloaded")
+
+
 def _fill_and_plan(
     page: Page, block: ProgrammingBlock, last_block: bool, exact_movements: bool = False
 ) -> None:
@@ -250,24 +312,8 @@ def _fill_and_plan(
         track_select.select_option(index=1)
         page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
 
-    description_field = page.locator(
-        "textarea[name='planning_generated_workout[external_description]']"
-    )
-    description_field.wait_for(timeout=_TIMEOUT)
-    description_field.fill(_SEED_DESCRIPTION if exact_movements else block.content)
-
-    # Set up response listeners before the click so fast responses aren't missed
-    with (
-        page.expect_response(lambda r: "generated_workouts" in r.url, timeout=_TIMEOUT) as _gen,
-        page.expect_response(lambda r: "track_events" in r.url, timeout=_TIMEOUT) as _track,
-    ):
-        page.locator(
-            "input[type='submit'][value='Continuer'], input[type='submit'][value='Continue']"
-        ).first.click()
-
-    # Wait for Planifier button to become enabled (disabled while preview loads)
+    _generate_preview(page, _SEED_DESCRIPTION if exact_movements else block.content, block.name)
     plan_button = page.locator("button:has-text('Planifier'):not([disabled])")
-    plan_button.wait_for(state="visible", timeout=_TIMEOUT)
 
     if exact_movements:
         _build_from_movements(page, block)

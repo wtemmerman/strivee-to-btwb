@@ -10,6 +10,7 @@ from strivee_btwb.pipeline import (
     SETS_SCHEMA_VERSION,
     _audit_weeks,
     _crossfit_only,
+    _log_post_outcome,
     _parsed_source_mtime_ns,
     _sets_fingerprint,
     do_audit,
@@ -273,3 +274,29 @@ def test_from_last_week_reports_the_week_it_could_not_find():
     with pytest.raises(SystemExit) as exit_info:
         do_audit(["Mon"], WEEK, "gym", from_last_week=True)
     assert exit_info.value.code == 1
+
+
+# ── Reporting what BTWB would not take ────────────────────────────────────────
+
+
+def test_blocks_btwb_refused_are_named_not_just_counted(caplog):
+    """A skipped block is otherwise only visible as a workout that never appeared."""
+    import logging
+
+    results = [
+        {"block": "EMF 60 : Bench press", "date": "2026-08-29", "ok": True},
+        {"block": "EMF 60 : Handstand", "date": "2026-08-25", "skipped": True},
+    ]
+    with caplog.at_level(logging.WARNING, logger="strivee_btwb.pipeline"):
+        _log_post_outcome(results, WEEK)
+    assert "EMF 60 : Handstand" in caplog.text
+    assert "2026-08-25" in caplog.text
+    assert "EMF 60 : Bench press" not in caplog.text  # it posted; nothing to report
+
+
+def test_a_clean_post_reports_no_manual_work(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="strivee_btwb.pipeline"):
+        _log_post_outcome([{"block": "A", "date": "2026-08-29", "ok": True}], WEEK)
+    assert "by hand" not in caplog.text

@@ -664,6 +664,25 @@ def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -
     log_preview(week)
 
 
+def _log_post_outcome(results: list[dict], ws: date) -> None:
+    """Report what posted, and name anything BTWB would not take."""
+    posted = [r for r in results if not r.get("skipped")]
+    skipped = [r for r in results if r.get("skipped")]
+    logger.info("Done — %d block(s) posted successfully", len(posted))
+    if skipped:
+        # BTWB's generator refuses some prescriptions outright — a hold written as
+        # a time rather than reps is one shape it will not parse — and it returns
+        # no preview and no error. Naming them here is the difference between work
+        # to do by hand and a workout that quietly never appears on the calendar.
+        logger.warning("%d block(s) BTWB would not generate — add these by hand:", len(skipped))
+        for result in skipped:
+            logger.warning("    %s  %s", result["date"], result["block"])
+    # Posting successfully does not mean BTWB stored what was sent: its parser
+    # substitutes movements it does not recognise. Kept as a separate step rather
+    # than run here, so it stays re-runnable after fixing a block by hand.
+    logger.info("Check what BTWB actually stored: strivee-btwb verify --week %s", ws)
+
+
 def do_post(
     days: list[str],
     yes: bool,
@@ -721,11 +740,7 @@ def do_post(
         logger.error("%s", e)
         sys.exit(1)
 
-    logger.info("Done — %d block(s) posted successfully", len(results))
-    # Posting successfully does not mean BTWB stored what was sent: its parser
-    # substitutes movements it does not recognise. Kept as a separate step rather
-    # than run here, so it stays re-runnable after fixing a block by hand.
-    logger.info("Check what BTWB actually stored: strivee-btwb verify --week %s", ws)
+    _log_post_outcome(results, ws)
 
 
 def do_verify(days: list[str], ws: date | None = None) -> None:
