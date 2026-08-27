@@ -362,6 +362,16 @@ raises in one session beat two on Tuesday and three on Friday — and a muscle n
 or more sets is split across two pool movements, because six straight sets of the same
 calf raise never reach the soleus.
 
+Accessory blocks are entered through **BTWB's movement search**, not its AI text parser.
+The parser resolves a movement it does not recognise to an arbitrary other one instead of
+failing — `Cable Lateral Raise` came back as `Clean Deadlift W/ Pause At Mid Shin`, `Pec
+Deck` as `Pause Power Clean & Jerks`. Every one of those movements exists in BTWB's
+database and its own search finds them by exact name; only the parser misses them. So
+`post_week(exact_movements=True)` seeds a workout, then adds each set through the search
+and deletes the seed. It costs a round-trip per set and cannot log the wrong exercise.
+
+EMF blocks keep the prose path — their text is real workout prose the parser handles well.
+
 The block is built deterministically and **never passed through the format model**: the
 pool already stores BTWB's own movement names, so there is nothing for the formatter to
 improve and a great deal for it to break. Every block is titled `Accessory` on every date;

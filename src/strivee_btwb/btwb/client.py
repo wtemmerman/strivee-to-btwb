@@ -17,6 +17,7 @@ Flow per day:
 """
 
 import logging
+import re
 from collections.abc import Callable
 
 from playwright.sync_api import Page, sync_playwright
@@ -122,8 +123,134 @@ def _add_instruction(page: Page, block: ProgrammingBlock) -> None:
         logger.warning("Block '%s' — instruction tab not found or timed out, skipping", block.name)
 
 
-def _fill_and_plan(page: Page, block: ProgrammingBlock, last_block: bool) -> None:
-    """Fill the workout description, submit, wait for preview, then click Planifier."""
+# ── Exact movement entry (bypasses BTWB's AI text parser) ─────────────────────
+#
+# The workout textarea is parsed by BTWB's AI, which resolves a movement it does
+# not recognise to an arbitrary other one instead of failing: "Cable Lateral
+# Raise" came back as "Clean Deadlift W/ Pause At Mid Shin", "Pec Deck" as "Pause
+# Power Clean & Jerks". Every one of those movements exists in BTWB's database and
+# its own search finds them by the exact name — only the text parser misses them.
+# So accessory blocks are entered through that search instead, one movement at a
+# time. It costs a round-trip per set and cannot log the wrong exercise.
+
+_MOVEMENT_LINE = re.compile(r"^\s*(\d+)\s+(\S.*?)\s*$")
+
+# The picker needs a workout to attach movements to, and the AI textarea is the
+# only way to create one. This seed resolves reliably and is deleted once the real
+# movements are in.
+_SEED_DESCRIPTION = "12 Dumbbell Curl"
+
+_FIELD_COMMIT_MS = 500  # let the blur-driven units controller write the hidden input
+
+_DELETE_LABEL = "SUPPRIMER"
+_ASSIGN_REPS_LABEL = "ATTRIBUER DES RÉPÉTITIONS"
+_ROW_COUNT_JS = (
+    "n => [...document.querySelectorAll('button')]"
+    ".filter(b => b.innerText.trim() === 'SUPPRIMER').length"
+)
+
+
+def _parse_movement_lines(block: ProgrammingBlock) -> list[tuple[str, str]]:
+    """Read a block written as one ``"<reps> <movement>"`` line per set.
+
+    Raises rather than skipping a line it cannot read: a silently dropped set is
+    the failure mode this whole path exists to remove.
+    """
+    parsed = []
+    for line in block.content.splitlines():
+        if not line.strip():
+            continue
+        match = _MOVEMENT_LINE.match(line)
+        # A trailing colon means a prose header slipped in ("3 rounds for quality:"),
+        # which matches the shape but is not a movement. Caught here rather than at
+        # the picker, where it would surface 30s later as a search timeout.
+        if match and match.group(2).endswith(":"):
+            match = None
+        if not match:
+            raise BTWBError(
+                f"Block '{block.name}' is posted movement by movement, so every line must "
+                f"read '<reps> <movement>'. Cannot parse: {line!r}"
+            )
+        parsed.append((match.group(2), match.group(1)))
+    if not parsed:
+        raise BTWBError(f"Block '{block.name}' has no movement lines to post")
+    return parsed
+
+
+def _movement_row_count(page: Page) -> int:
+    """How many movements the open workout currently holds.
+
+    Counted the same way the waits below count, so a comparison between them can
+    never be measuring two different things.
+    """
+    return int(page.evaluate(f"({_ROW_COUNT_JS})(0)"))
+
+
+def _add_movement(page: Page, name: str, reps: str) -> None:
+    """Add one movement to the open workout via BTWB's own movement search."""
+    before = _movement_row_count(page)
+    page.locator("a[href*='/movements/new']").first.click()
+    search = page.locator("#name")
+    search.wait_for(state="visible", timeout=_TIMEOUT)
+    search.fill(name)
+
+    # Each result is a link to /movements/<id>. Match the link by its exact
+    # accessible name: the search returns near-misses ("Single Arm Cable Lateral
+    # Raise" for "Cable Lateral Raise") and picking one would reintroduce the
+    # wrong-movement bug by another route. It has to be the link and not the span
+    # inside it — clicking the span does not drive the turbo-frame, and the save
+    # then silently no-ops.
+    option = page.get_by_role("link", name=name, exact=True).first
+    option.wait_for(state="visible", timeout=_TIMEOUT)
+    option.click()
+
+    assign = page.get_by_text(_ASSIGN_REPS_LABEL, exact=False).first
+    assign.wait_for(state="visible", timeout=_TIMEOUT)
+    assign.click()
+    # The id is on both a hidden mirror and the visible input; fill the visible one.
+    field = page.locator("#movement_reps_value:visible").first
+    field.wait_for(state="visible", timeout=_TIMEOUT)
+    field.fill(reps)
+    # Blur so the units controller commits the value into the hidden input the
+    # form actually submits. Saving straight after fill stores nothing, silently:
+    # the row simply never appears, which is why the count check below is the
+    # real guard rather than a formality.
+    field.press("Tab")
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+
+    page.locator("input[value='Save Movement']").first.click()
+    page.wait_for_function(f"n => ({_ROW_COUNT_JS})(n) > n", arg=before, timeout=_TIMEOUT)
+    logger.info("  added %s x%s", name, reps)
+
+
+def _remove_seed_movement(page: Page) -> None:
+    """Delete the seed the AI textarea created; it is always the first row."""
+    before = _movement_row_count(page)
+    button = page.get_by_role("button", name=_DELETE_LABEL).first
+    button.scroll_into_view_if_needed()
+    # The row's action buttons sit under a hover overlay, so a plain click misses.
+    button.click(force=True)
+    page.wait_for_function(f"n => ({_ROW_COUNT_JS})(n) < n", arg=before, timeout=_TIMEOUT)
+
+
+def _build_from_movements(page: Page, block: ProgrammingBlock) -> None:
+    """Replace the seeded workout with this block's movements, entered exactly."""
+    movements = _parse_movement_lines(block)
+    logger.info("Entering %d movement(s) for '%s' one at a time", len(movements), block.name)
+    for name, reps in movements:
+        _add_movement(page, name, reps)
+    _remove_seed_movement(page)
+
+
+def _fill_and_plan(
+    page: Page, block: ProgrammingBlock, last_block: bool, exact_movements: bool = False
+) -> None:
+    """Fill the workout description, submit, wait for preview, then click Planifier.
+
+    With *exact_movements*, the textarea only seeds a workout to attach to and the
+    real movements are entered through BTWB's movement search instead of its AI
+    text parser. See the note above :data:`_SEED_DESCRIPTION`.
+    """
     # Select the first track (Piste) if not already pre-selected by the URL
     track_select = page.locator("select[name='track_event[track_id]']")
     if track_select.count() and not track_select.input_value():
@@ -134,7 +261,7 @@ def _fill_and_plan(page: Page, block: ProgrammingBlock, last_block: bool) -> Non
         "textarea[name='planning_generated_workout[external_description]']"
     )
     description_field.wait_for(timeout=_TIMEOUT)
-    description_field.fill(block.content)
+    description_field.fill(_SEED_DESCRIPTION if exact_movements else block.content)
 
     # Set up response listeners before the click so fast responses aren't missed
     with (
@@ -148,6 +275,11 @@ def _fill_and_plan(page: Page, block: ProgrammingBlock, last_block: bool) -> Non
     # Wait for Planifier button to become enabled (disabled while preview loads)
     plan_button = page.locator("button:has-text('Planifier'):not([disabled])")
     plan_button.wait_for(state="visible", timeout=_TIMEOUT)
+
+    if exact_movements:
+        _build_from_movements(page, block)
+        plan_button = page.locator("button:has-text('Planifier'):not([disabled])")
+        plan_button.wait_for(state="visible", timeout=_TIMEOUT)
 
     title_field = page.locator("input[name='track_event[title]']")
     if title_field.count():
@@ -318,6 +450,7 @@ def _post_day(
     day: DayProgramming,
     dry_run: bool,
     existing: set[str] | None = None,
+    exact_movements: bool = False,
 ) -> list[dict]:
     date_str = day.date.isoformat()
     logger.info("%s %s — %d block(s)", day.day_label, date_str, len(day.blocks))
@@ -353,7 +486,7 @@ def _post_day(
         _navigate_to_new_workout(page, date_str, via_plus=prev_saved)
 
         try:
-            _fill_and_plan(page, block, last_block=is_last)
+            _fill_and_plan(page, block, last_block=is_last, exact_movements=exact_movements)
             results.append({"block": block.name, "date": date_str, "ok": True})
             prev_saved = True
         except PlaywrightTimeoutError:
@@ -541,7 +674,15 @@ def post_week(
     days: list[DayProgramming] | None = None,
     dry_run: bool = False,
     headless: bool = False,
+    exact_movements: bool = False,
 ) -> list[dict]:
+    """Post a week to BTWB.
+
+    *exact_movements* is for blocks written as one ``"<reps> <movement>"`` line
+    per set — accessory work, whose movement names BTWB's AI text parser resolves
+    to the wrong exercise. Those are entered through BTWB's movement search
+    instead. Leave it off for programming written as prose.
+    """
     days_to_post = days if days is not None else week.days
 
     if dry_run:
@@ -567,7 +708,15 @@ def post_week(
 
         for day in days_to_post:
             existing = existing_by_date.get(day.date.isoformat(), set())
-            all_results.extend(_post_day(page, day, dry_run=False, existing=existing))
+            all_results.extend(
+                _post_day(
+                    page,
+                    day,
+                    dry_run=False,
+                    existing=existing,
+                    exact_movements=exact_movements,
+                )
+            )
 
         logger.info("All done — opening calendar")
         page.goto(f"{_BASE}/plan/calendar", wait_until="domcontentloaded")

@@ -1060,6 +1060,9 @@ def _post_accessory(planned: WeeklyProgramming, yes: bool, headless: bool, dry_r
             password=config.BTWB_PASSWORD,
             headless=headless,
             dry_run=dry_run,
+            # Accessory movement names are exactly the ones BTWB's AI parser
+            # resolves to the wrong exercise, so enter them through its search.
+            exact_movements=True,
         )
     except Exception as e:  # AuthenticationError included — every failure aborts the same way
         logger.error("%s", e)
