@@ -361,6 +361,12 @@
     "Pirouette Handstand Walk": {},
     "Ramp Handstand Walk": {},
     "Handstand": {},
-    "Free Handstand Hold": {}
+    "Free Handstand Hold": {},
+    "Cluster": {
+      "quad_rf": 0.25
+    },
+    "Hang Cluster": {
+      "quad_rf": 0.25
+    }
   }
 }
