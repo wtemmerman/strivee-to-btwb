@@ -19,6 +19,7 @@ Flow per day:
 import logging
 import re
 from collections.abc import Callable
+from datetime import date, timedelta
 
 from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -50,27 +51,19 @@ def _calendar_week_url(date_str: str) -> str:
     return f"{_BASE}/plan/calendar/week/{int(year)}/{int(month)}/{int(day)}"
 
 
-def _calendar_month_url(date_str: str) -> str:
-    """Build the BTWB calendar-month URL for an ISO date, dropping zero-padding.
+def _group_dates_by_week(dates: list[str]) -> dict[str, list[str]]:
+    """Group ISO date strings by the Monday of their week, so each loads once.
 
-    The month view needs a day segment (always 1) — without it, /month resolves
-    to the *current* month regardless of the year/month given.
+    Deletion scans the week view rather than the month view: the month view keeps
+    its day containers in the DOM but not visible, so waiting for one to appear
+    times out and no workout is ever found to delete.
     """
-    year, month, _day = date_str.split("-")
-    return f"{_BASE}/plan/calendar/month/{int(year)}/{int(month)}/1"
-
-
-def _group_dates_by_month(dates: list[str]) -> dict[tuple[int, int], list[str]]:
-    """Group ISO date strings by (year, month) so each month is loaded once.
-
-    A single week can straddle two months, so deletion scans the month view for
-    every month the requested dates touch, not just one.
-    """
-    by_month: dict[tuple[int, int], list[str]] = {}
+    by_week: dict[str, list[str]] = {}
     for d in dates:
-        year, month, _day = d.split("-")
-        by_month.setdefault((int(year), int(month)), []).append(d)
-    return by_month
+        day = date.fromisoformat(d)
+        monday = (day - timedelta(days=day.weekday())).isoformat()
+        by_week.setdefault(monday, []).append(d)
+    return by_week
 
 
 def _blocks_to_post(day: DayProgramming, existing: set[str]) -> list[ProgrammingBlock]:
@@ -489,8 +482,15 @@ def _post_day(
             _fill_and_plan(page, block, last_block=is_last, exact_movements=exact_movements)
             results.append({"block": block.name, "date": date_str, "ok": True})
             prev_saved = True
-        except PlaywrightTimeoutError:
-            logger.warning("Block '%s' skipped — BTWB AI did not generate a preview", block.name)
+        except PlaywrightTimeoutError as e:
+            # A timeout can now come from the movement picker as well as the AI
+            # preview, so say which wait gave up: a skipped block is otherwise
+            # only visible as a workout that quietly never appeared.
+            logger.warning(
+                "Block '%s' skipped — timed out on BTWB (%s)",
+                block.name,
+                str(e).splitlines()[0],
+            )
             results.append({"block": block.name, "date": date_str, "skipped": True})
             prev_saved = False
 
@@ -536,22 +536,25 @@ _SCAN_DELETABLE_JS = """
 def _collect_deletable_events(page: Page, dates: list[str]) -> list[dict]:
     """Return planned (deletable) workouts on the given ISO dates.
 
-    Each entry is {date, id, action, token, title}. Loads the month view once per
-    month the dates span; events are matched by an exact data-date hit, so a wrong
-    or empty month simply yields nothing rather than touching unrelated days.
+    Each entry is {date, id, action, token, title}. Loads the week view once per
+    week the dates span; events are matched by an exact data-date hit, so a wrong
+    or empty week simply yields nothing rather than touching unrelated days.
+
+    The week view, not the month view: the month view leaves its day containers in
+    the DOM without making them visible, so the wait below never resolves and
+    delete reported nothing to delete however many workouts were planned.
     """
     events: list[dict] = []
-    for (_year, _month), month_dates in _group_dates_by_month(dates).items():
+    for _monday, week_dates in _group_dates_by_week(dates).items():
         # bring_to_front avoids macOS background-tab JS throttling (same reason as
         # _fetch_existing_block_names) while the calendar's AJAX content loads.
         page.bring_to_front()
-        page.goto(_calendar_month_url(month_dates[0]), wait_until="domcontentloaded")
+        page.goto(_calendar_week_url(week_dates[0]), wait_until="domcontentloaded")
         # Select the track first, otherwise its workouts never render and the
         # scan finds nothing to delete.
         _ensure_track_selected(page)
-        page.wait_for_selector("[data-date]", timeout=_TIMEOUT)
-        page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
-        events.extend(page.evaluate(_SCAN_DELETABLE_JS, month_dates))
+        _settle_calendar(page)
+        events.extend(page.evaluate(_SCAN_DELETABLE_JS, week_dates))
     return events
 
 

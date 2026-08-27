@@ -554,6 +554,9 @@ uv run strivee-btwb delete
 
 Only *planned* workouts are deleted; completed/logged sessions are left untouched.
 Deletion is keyed on the exact dates requested, so it can never affect another week.
+It scans the week view, one load per week the dates span — the month view keeps its day
+containers in the DOM without making them visible, so waiting for one timed out and
+delete reported nothing to delete however many workouts were planned.
 
 ### Flags available on all commands
 

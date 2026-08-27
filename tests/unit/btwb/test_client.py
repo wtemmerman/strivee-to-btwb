@@ -13,7 +13,6 @@ from strivee_btwb.btwb.client import (
     BTWBError,
     _add_instruction,
     _blocks_to_post,
-    _calendar_month_url,
     _calendar_week_url,
     _collect_deletable_events,
     _delete_event,
@@ -21,7 +20,7 @@ from strivee_btwb.btwb.client import (
     _fetch_existing_block_names,
     _fetch_existing_titles_for_week,
     _fill_and_plan,
-    _group_dates_by_month,
+    _group_dates_by_week,
     _login,
     _navigate_to_new_workout,
     _post_day,
@@ -46,23 +45,28 @@ def test_calendar_week_url_single_digit_month_and_day():
     assert _calendar_week_url("2026-01-05").endswith("/2026/1/5")
 
 
-def test_calendar_month_url_drops_zero_padding_and_appends_day_one():
-    # The month view needs a day segment (always 1); /month alone is current month.
-    assert (
-        _calendar_month_url("2026-06-08")
-        == "https://beyondthewhiteboard.com/plan/calendar/month/2026/6/1"
-    )
+def test_group_dates_by_week_single_week():
+    grouped = _group_dates_by_week(["2026-06-08", "2026-06-09", "2026-06-10"])
+    assert grouped == {"2026-06-08": ["2026-06-08", "2026-06-09", "2026-06-10"]}
 
 
-def test_group_dates_by_month_single_month():
-    grouped = _group_dates_by_month(["2026-06-08", "2026-06-09", "2026-06-10"])
-    assert grouped == {(2026, 6): ["2026-06-08", "2026-06-09", "2026-06-10"]}
+def test_group_dates_by_week_keys_on_the_monday():
+    """A midweek date has to load the week view containing it, not one starting on it."""
+    assert list(_group_dates_by_week(["2026-06-10"])) == ["2026-06-08"]
 
 
-def test_group_dates_by_month_splits_week_across_months():
-    # A week straddling June/July must scan both month views.
-    grouped = _group_dates_by_month(["2026-06-29", "2026-06-30", "2026-07-01"])
-    assert grouped == {(2026, 6): ["2026-06-29", "2026-06-30"], (2026, 7): ["2026-07-01"]}
+def test_group_dates_by_week_splits_dates_in_different_weeks():
+    grouped = _group_dates_by_week(["2026-06-13", "2026-06-14", "2026-06-15"])
+    assert grouped == {
+        "2026-06-08": ["2026-06-13", "2026-06-14"],  # Sat + Sun close that week
+        "2026-06-15": ["2026-06-15"],
+    }
+
+
+def test_group_dates_by_week_keeps_a_month_boundary_in_one_week():
+    """The month view was the thing that had to split June/July; the week view does not."""
+    grouped = _group_dates_by_week(["2026-06-29", "2026-06-30", "2026-07-01"])
+    assert grouped == {"2026-06-29": ["2026-06-29", "2026-06-30", "2026-07-01"]}
 
 
 def test_blocks_to_post_filters_existing_by_title():
@@ -379,7 +383,7 @@ def test_post_day_marks_block_skipped_on_timeout(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="btwb"):
         results = _post_day(page, day, dry_run=False)
     assert results[0]["skipped"] is True
-    assert "did not generate a preview" in caplog.text.lower()
+    assert "timed out on btwb" in caplog.text.lower()
 
 
 # ── _navigate_to_new_workout (mocked page) ────────────────────────────────────
@@ -482,16 +486,41 @@ def _deletable(date_str="2026-06-08", te_id="317667202", title="EMF 60 : WOD"):
     }
 
 
-def test_collect_deletable_events_scans_each_month_once(monkeypatch):
+def test_collect_deletable_events_scans_a_month_boundary_in_one_load(monkeypatch):
+    """June 29 to July 1 is one week, so it is one week-view load — not two months."""
     import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "")
     page = MagicMock()
-    page.evaluate.side_effect = [[_deletable()], []]  # June has one, July has none
+    page.evaluate.side_effect = [[_deletable()]]
     events = _collect_deletable_events(page, ["2026-06-29", "2026-07-01"])
     assert len(events) == 1
-    assert page.evaluate.call_count == 2  # one scan per month spanned
+    assert page.evaluate.call_count == 1
+    assert page.goto.call_count == 1
+
+
+def test_collect_deletable_events_scans_each_week_once(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "")
+    page = MagicMock()
+    page.evaluate.side_effect = [[_deletable()], []]
+    events = _collect_deletable_events(page, ["2026-06-10", "2026-06-17"])
+    assert len(events) == 1
+    assert page.evaluate.call_count == 2  # one scan per week spanned
     assert page.goto.call_count == 2
+
+
+def test_collect_deletable_events_loads_the_week_view(monkeypatch):
+    """The month view keeps its day containers invisible, so nothing is ever found."""
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_TRACK_ID", "")
+    page = MagicMock()
+    page.evaluate.return_value = []
+    _collect_deletable_events(page, ["2026-06-10"])
+    (url,), _ = page.goto.call_args
+    assert "/calendar/week/" in url
 
 
 def test_collect_deletable_events_selects_track(monkeypatch):
