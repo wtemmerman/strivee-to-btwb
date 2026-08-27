@@ -23,9 +23,12 @@ from .harness import (
     baseline_exists,
     compare_analyse,
     compare_format,
+    compare_sets,
     format_fidelity,
     format_week,
     load_baseline,
+    load_sets_baseline,
+    sets_week,
     text_era_weeks,
     time_stage,
 )
@@ -78,6 +81,20 @@ def main() -> None:
         if not fid_report["passed"]:
             bad = [b for b in fid_report["per_block"] if b["violations"]]
             failures.append(f"{ws} fidelity: {bad}")
+
+        # The audit's set extraction, gated on the volume it credits rather than
+        # on its wording — the volume is what the audit acts on.
+        if baseline_exists("sets", ws):
+            cur_sets, t_sets = time_stage(
+                sets_week, fweek, units=block_count, week=ws, stage="sets"
+            )
+            timings.append(t_sets)
+            s_report = compare_sets(load_sets_baseline(ws), cur_sets)
+            if not s_report["passed"]:
+                failures.append(
+                    f"{ws} sets: volumes {s_report['volumes']} "
+                    f"new-unlisted {s_report['new_unlisted']}"
+                )
 
         timings.extend([t_analyse, t_format])
         status = "OK" if a_report["passed"] and f_report["passed"] else "FAIL"

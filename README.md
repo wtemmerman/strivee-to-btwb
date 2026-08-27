@@ -705,6 +705,16 @@ tests/
 
 ## Performance
 
+The benchmark gates three LLM stages. `analyse` and `format` are compared block by
+block; the audit's **set extraction** is gated on the per-muscle volume it credits rather
+than on its wording, because the volume is what the audit acts on — the model may reword a
+movement or split a block differently, it may not change what the week is judged to have
+delivered. A movement the credit table does not recognise fails the run rather than being
+noted, since it means the week is being under-counted silently.
+
+The set stage only runs for weeks that have a `sets` baseline, so run
+`make benchmark-baseline` once to start gating it.
+
 The slow parts are the local LLM stages (analyse, format) and the device/browser
 round-trips (capture, post). Optimizations are gated by an accuracy benchmark
 (`make benchmark`) that re-parses saved captures and diffs against a snapshot of

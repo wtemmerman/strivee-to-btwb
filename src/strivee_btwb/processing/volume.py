@@ -97,7 +97,11 @@ def _normalise(movement: str) -> str:
     the readable way ("Bar Muscle-up") and still match whatever spelling the
     model returns ("bar muscle up").
     """
-    text = _LOAD.sub(" ", movement.lower()).split("/")[0]
+    text = _LOAD.sub(" ", movement.lower())
+    # Alternatives are written with spaces around the slash ("Bar Muscle-up / CTB");
+    # a bare slash belongs to the name ("A/R ramp handstand walk"), and splitting on
+    # it truncated that movement to "a".
+    text = text.split(" / ")[0]
     return " ".join(_NON_ALNUM.sub(" ", text).split())
 
 

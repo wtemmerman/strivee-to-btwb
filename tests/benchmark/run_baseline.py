@@ -27,6 +27,8 @@ from .harness import (
     format_fidelity,
     format_week,
     save_baseline,
+    save_sets_baseline,
+    sets_week,
     text_era_weeks,
     time_stage,
 )
@@ -74,13 +76,26 @@ def main() -> None:
                 if b["violations"]:
                     logger.warning("%s fidelity — %s: %s", ws, b["name"], b["violations"])
 
+        sets_report, t_sets = time_stage(sets_week, fweek, units=block_count, week=ws, stage="sets")
+        save_sets_baseline(ws, sets_report)
+        timings.append(t_sets)
+        # A movement nothing credits is worth seeing at baseline time: bake one in
+        # and every later run treats the under-count as correct.
+        if sets_report["unlisted"]:
+            logger.warning(
+                "%s sets — not credited by movement_muscles.json: %s",
+                ws,
+                ", ".join(sets_report["unlisted"]),
+            )
+
         logger.info(
-            "%s — analyse %.1fs (%d days), format %.1fs (%d blocks)",
+            "%s — analyse %.1fs (%d days), format %.1fs (%d blocks), sets %.1fs",
             ws,
             t_analyse.seconds,
             len(week.days),
             t_format.seconds,
             block_count,
+            t_sets.seconds,
         )
 
     _write_csv(timings, "baseline_timing.csv")

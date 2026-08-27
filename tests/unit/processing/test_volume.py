@@ -164,3 +164,14 @@ def test_every_pool_movement_can_be_performed_somewhere():
     for muscle, spec in pool_muscles().items():
         for movement in spec["movements"]:
             assert movement["locations"], f"{muscle}/{movement['id']} has no location"
+
+
+def test_a_slash_inside_a_movement_name_is_not_an_alternatives_split():
+    """'A/R ramp handstand walk' used to normalise to 'a', losing the movement."""
+    assert _normalise("A/R ramp handstand walk") == "a r ramp handstand walk"
+    assert muscles_for("2 A/R ramp handstand walk") == {}
+
+
+def test_a_spaced_slash_still_splits_alternatives():
+    assert _normalise("Bar Muscle-up / CTB") == "bar muscle up"
+    assert muscles_for("Strict HSPU / Abmat strict HSPU") == {"triceps_long": 0.6, "chest": 0.2}

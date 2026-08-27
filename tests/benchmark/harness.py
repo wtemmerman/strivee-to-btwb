@@ -22,6 +22,8 @@ from strivee_btwb.pipeline import (
     llm_format_week,
     load_text_captures,
 )
+from strivee_btwb.processing import extract_sets
+from strivee_btwb.processing.volume import weekly_volume
 
 # Accuracy gate: a per-block content similarity below this fails the comparison.
 CONTENT_RATIO_THRESHOLD = 0.95
@@ -150,6 +152,68 @@ def load_baseline(kind: str, ws_iso: str) -> WeeklyProgramming:
 
 def baseline_exists(kind: str, ws_iso: str) -> bool:
     return (BASELINE_DIR / kind / f"{ws_iso}.json").exists()
+
+
+# ── set extraction (audit stage) ──────────────────────────────────────────────
+
+SETS_TOLERANCE = 0.5
+"""How far a muscle's credited volume may move before the extraction is a regression.
+
+The gate is the volume, not the set list, because the volume is what the audit
+acts on. The model may legitimately reword a movement or split a block
+differently; it may not change what the week is judged to have delivered. Half a
+set is below the resolution of any prescription — gaps round up to whole sets —
+so anything larger would change the advice.
+"""
+
+
+def sets_week(week: WeeklyProgramming) -> dict:
+    """Extract every block's sets and the per-muscle volume they credit."""
+    work_sets = [s for day in week.days for block in day.blocks for s in extract_sets(block)]
+    volumes, unlisted = weekly_volume(work_sets)
+    return {
+        "sets": [
+            {
+                "movement": s.movement,
+                "sets": s.sets,
+                "reps": s.reps,
+                "block_type": s.block_type,
+                "source": s.source,
+            }
+            for s in work_sets
+        ],
+        "volumes": {m: round(v.credited, 3) for m, v in volumes.items()},
+        "unlisted": sorted(unlisted),
+    }
+
+
+def save_sets_baseline(ws_iso: str, report: dict) -> Path:
+    """Persist a set-extraction snapshot for one week under baselines/sets/."""
+    out = BASELINE_DIR / "sets"
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{ws_iso}.json"
+    path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    return path
+
+
+def load_sets_baseline(ws_iso: str) -> dict:
+    return json.loads((BASELINE_DIR / "sets" / f"{ws_iso}.json").read_text())
+
+
+def compare_sets(baseline: dict, current: dict) -> dict:
+    """Compare two set-extraction snapshots by the volume they credit.
+
+    A movement the table does not know is a failure rather than a note: it means
+    the extraction started producing wording nothing credits, so the week is
+    being under-counted silently. Add it to movement_muscles.json and re-baseline.
+    """
+    moved = {}
+    for muscle, base in baseline["volumes"].items():
+        now = current["volumes"].get(muscle, 0.0)
+        if abs(now - base) > SETS_TOLERANCE:
+            moved[muscle] = {"baseline": base, "current": now}
+    appeared = sorted(set(current["unlisted"]) - set(baseline["unlisted"]))
+    return {"passed": not moved and not appeared, "volumes": moved, "new_unlisted": appeared}
 
 
 # ── pure comparators (unit-tested without Ollama) ──────────────────────────────
