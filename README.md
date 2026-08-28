@@ -18,7 +18,7 @@ Strivee is the app used by the gym to publish the weekly programming (strength, 
 
 ## How It Works
 
-The pipeline runs in four independent steps, each caching its output so any step can be re-run without repeating earlier work.
+The pipeline runs in five independent steps, each caching its output so any step can be re-run without repeating earlier work.
 
 ```
 Android phone (Strivee app)
@@ -39,11 +39,15 @@ Android phone (Strivee app)
         │  Playwright browser automation
         ▼
   4. post      → workouts + coaching notes created on BTWB
+        │
+        │  Playwright — read each planned workout back
+        ▼
+  5. verify    → reports movements BTWB stored other than the ones sent
 ```
 
-An optional fifth step, `audit`, branches off the same caches to measure what the
-week's programming leaves untrained and what accessory work would fill it. It
-reports and writes nothing to BTWB.
+`audit` branches off the same caches to measure what the week's programming leaves
+untrained and what accessory work would fill it — read-only by default, or posting
+that work to BTWB with `--on` and `--post`.
 
 ### Step 1 — Capture
 
@@ -630,6 +634,15 @@ post    --headless        # run browser without a visible window
 delete  --yes             # skip interactive confirmation
 delete  --headless        # run browser without a visible window
 delete  --dry-run         # list workouts that would be deleted, then stop
+
+audit   --location gym    # gym | basement — decides which pool movements are offered
+audit   --actual          # count only blocks logged as done on BTWB
+audit   --from-last-week  # measure the previous week's completed work (implies --actual)
+audit   --on Tue,Fri      # turn the gap into the block to train on those days
+audit   --post            # post that block to BTWB (needs --on)
+audit   --yes             # skip the confirmation before posting
+audit   --headless        # run browser without a visible window
+audit   --dry-run         # show what --post would send, without posting
 ```
 
 ### Examples
@@ -637,6 +650,10 @@ delete  --dry-run         # list workouts that would be deleted, then stop
 ```bash
 # Re-run the full pipeline on a past week for testing
 uv run strivee-btwb run --week 2026-04-20 --yes
+
+# Weekly: plan accessory work from what you actually completed last week
+uv run strivee-btwb audit --from-last-week --on Tue,Fri --post
+uv run strivee-btwb verify
 
 # Analyse and post a specific day from a previous week
 uv run strivee-btwb analyse --week 2026-04-20 --days Mon
@@ -679,7 +696,7 @@ src/strivee_btwb/
   capture/        ADB UI accessibility text dump (adb.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
-                  posted-vs-stored check (movement_check.py)
+                  posted-vs-stored check (movement_check.py), logged loads (loads.py)
                   accessory audit — set extraction (set_extract.py), counting rules (volume.py),
                   gap → postable block (accessory.py)
   btwb/           BTWB Playwright automation — post + delete (client.py)
