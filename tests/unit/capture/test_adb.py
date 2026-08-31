@@ -1,6 +1,7 @@
 """Unit tests for capture helpers (no ADB required)."""
 
 import io
+import logging
 import subprocess
 from datetime import date
 from unittest.mock import patch
@@ -518,3 +519,121 @@ def test_capture_day_as_text_deduplicates_lines(monkeypatch):
     result = capture_day_as_text("Mon", max_scrolls=3)
     # "EMF 60 : Snatch" should appear only once despite multiple dumps
     assert result.count("EMF 60 : Snatch") == 1
+
+
+# ---------------------------------------------------------------------------
+# capture_day_as_text — end-of-page detection and the not-loaded retry
+# ---------------------------------------------------------------------------
+
+_FOOTER = "à rejoindre Strivee"
+_PLACEHOLDER = "Pas de workout publié aujourd'hui"
+
+
+def _stub_capture(monkeypatch, dumps: list[str], stalled):
+    """Feed capture_day_as_text canned UI dumps and a scripted swipe outcome.
+
+    *dumps* is consumed one per scroll round (the last one repeats once exhausted, as
+    a real device would keep returning the same screen). *stalled* takes the round
+    index and says whether that round's swipe left the screen unchanged. Returns a
+    counter of rounds consumed, shared across both reads of a retried day.
+    """
+    monkeypatch.setattr("strivee_btwb.capture.adb.navigate_to_day", lambda *_, **__: True)
+    monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb.scroll_to_top", lambda *_: None)
+    monkeypatch.setattr("strivee_btwb.capture.adb._device_size", lambda *_: (1080, 2400))
+    monkeypatch.setattr("strivee_btwb.capture.adb.take_screenshot", lambda *_: _solid((1, 2, 3)))
+    monkeypatch.setattr("strivee_btwb.capture.adb.swipe_up", lambda *_, **__: None)
+
+    rounds = {"n": 0}
+
+    def next_dump(*_):
+        i = rounds["n"]
+        rounds["n"] += 1
+        return dumps[min(i, len(dumps) - 1)]
+
+    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", next_dump)
+    monkeypatch.setattr(
+        "strivee_btwb.capture.adb._screens_same", lambda a, b: stalled(rounds["n"] - 1)
+    )
+    return rounds
+
+
+def test_capture_day_as_text_scrolls_past_a_single_stalled_swipe(monkeypatch):
+    """A page still rendering swallows one swipe — that is not the bottom.
+
+    This is the failure that truncated Wed 2026-09-02: the first swipe changed
+    nothing, the loop called it the bottom, and the day's last block was never read.
+    """
+    dumps = [
+        _xml(["EMF 60 : Power Clean"]),
+        _xml(["EMF 60 : Power Clean", "EMF 60 : Bar Muscle-up Skill"]),
+        _xml(["EMF 60 : Specific Energy System Training", "Inviter un ami", _FOOTER]),
+    ]
+    rounds = _stub_capture(monkeypatch, dumps, stalled=lambda i: i in (0, 3))
+
+    result = capture_day_as_text("Wed", max_scrolls=5)
+
+    assert "EMF 60 : Specific Energy System Training" in result
+    assert rounds["n"] == 4
+
+
+def test_capture_day_as_text_stops_on_the_page_footer(monkeypatch):
+    """Once the footer is in hand an unchanged screen really is the bottom."""
+    rounds = _stub_capture(
+        monkeypatch, [_xml(["EMF 60 : Snatch", "Inviter un ami", _FOOTER])], stalled=lambda _: True
+    )
+
+    result = capture_day_as_text("Mon", max_scrolls=5)
+
+    assert "EMF 60 : Snatch" in result
+    assert rounds["n"] == 1  # no extra round spent confirming the bottom
+
+
+def test_capture_day_as_text_warns_when_the_footer_is_never_reached(monkeypatch, caplog):
+    """A short capture must say so — the truncation was silent before."""
+    rounds = _stub_capture(monkeypatch, [_xml(["EMF 60 : Snatch"])], stalled=lambda _: True)
+
+    with caplog.at_level(logging.WARNING, logger="capture"):
+        capture_day_as_text("Wed", max_scrolls=5)
+
+    assert rounds["n"] == 2  # a second stalled swipe before giving up
+    assert any("probably truncated" in r.message for r in caplog.records)
+
+
+def test_capture_day_as_text_rereads_a_day_that_had_not_loaded(monkeypatch):
+    """'Pas de workout publié' on a programmed day means the tab was still loading."""
+    dumps = [
+        _xml([_PLACEHOLDER, "Inviter un ami", _FOOTER]),
+        _xml(["EMF 60 : Snatch", "Inviter un ami", _FOOTER]),
+    ]
+    _stub_capture(monkeypatch, dumps, stalled=lambda _: True)
+
+    result = capture_day_as_text("Mon", max_scrolls=5)
+
+    assert "EMF 60 : Snatch" in result
+    assert "Pas de workout" not in result
+
+
+def test_capture_day_as_text_keeps_a_genuine_rest_day(monkeypatch):
+    """A rest day shows the same placeholder twice — believe it the second time."""
+    rounds = _stub_capture(
+        monkeypatch, [_xml([_PLACEHOLDER, "Inviter un ami", _FOOTER])], stalled=lambda _: True
+    )
+
+    result = capture_day_as_text("Sun", max_scrolls=5)
+
+    assert _PLACEHOLDER in result
+    assert rounds["n"] == 2  # read twice, not retried forever
+
+
+def test_capture_day_as_text_closes_the_notification_shade(monkeypatch):
+    """scroll_to_top's fling can pull the shade down over the page before the first dump."""
+    _stub_capture(monkeypatch, [_xml(["EMF 60 : Snatch", _FOOTER])], stalled=lambda _: True)
+    collapsed = []
+    monkeypatch.setattr(
+        "strivee_btwb.capture.adb._adb", lambda cmd, *a, **k: collapsed.append(cmd) or _fake_proc()
+    )
+
+    capture_day_as_text("Mon", max_scrolls=5)
+
+    assert ["shell", "cmd", "statusbar", "collapse"] in collapsed
