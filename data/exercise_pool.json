@@ -223,7 +223,7 @@
       "movements": [
         {
           "id": "overhead_cable_extension",
-          "btwb_name": "Overhead Cable Tricep Extension",
+          "btwb_name": "Cable Overhead Tricep Extension",
           "btwb_verified": true,
           "locations": [
             "gym"
