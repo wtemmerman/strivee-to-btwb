@@ -23,6 +23,7 @@ import logging
 import re
 
 from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from ..core import config
 from ..core.models import INTERVALS, SINGLE_DISTANCE, CardioSession
@@ -40,6 +41,9 @@ _MODEL_LABELS = {
 
 _REST_AS_NEEDED = "asneeded"
 _REST_SPECIFY = "xtime"
+
+_SAVE_REDIRECT_TIMEOUT = 15_000
+"""How long to wait for BTWB's own script to move to the session it just saved."""
 
 _SPINNER_FLOOR = 2
 """Interval count the form opens with — the spinner cannot go below it."""
@@ -200,6 +204,34 @@ def _fill_date_and_notes(page: Page, session: CardioSession) -> None:
     page.locator("#workout_session_notes").fill(session.notes)
 
 
+def _submit(page: Page) -> dict:
+    """Save the entry, and confirm it from the POST rather than from the click.
+
+    The form posts with Rails' data-remote, so the click itself navigates nowhere
+    and the page still reads /workouts/logger a moment later, saved or not. The
+    POST's status is the first answer; the script BTWB sends back then moves the
+    browser to the new session, which is where its id comes from. The response
+    body cannot be read for it — by the time it could be asked for, that
+    navigation has already discarded it.
+    """
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and "/workouts/logger" in r.url,
+        timeout=_TIMEOUT,
+    ) as caught:
+        page.locator("input[name='commit']").first.click()
+    response = caught.value
+    if not response.ok:
+        raise BTWBError(f"BTWB rejected the entry: HTTP {response.status}")
+    try:
+        page.wait_for_url(re.compile(r"/workout_sessions/\d+"), timeout=_SAVE_REDIRECT_TIMEOUT)
+    except PlaywrightTimeoutError:
+        # The POST succeeded, so the session exists; only its address is unknown.
+        _raise_on_save_dialog(page)
+        logger.warning("Saved, but BTWB did not move to the new session")
+        return {"saved": True}
+    return {"saved": True, "url": page.url}
+
+
 def _log_one(page: Page, session: CardioSession, dry_run: bool) -> dict:
     _open_logger(page, session)
     if session.model == INTERVALS:
@@ -222,11 +254,8 @@ def _log_one(page: Page, session: CardioSession, dry_run: bool) -> dict:
         logger.info("Would log %s — %s | %s", session.date, built["description"], built["result"])
         return result
 
-    page.locator("input[name='commit']").first.click()
-    page.wait_for_load_state("domcontentloaded")
-    _raise_on_save_dialog(page)
-    result["url"] = page.url
-    logger.info("Logged %s — %s → %s", session.date, built["result"], page.url)
+    result.update(_submit(page))
+    logger.info("Logged %s — %s → %s", session.date, built["result"], result.get("url", "saved"))
     return result
 
 
