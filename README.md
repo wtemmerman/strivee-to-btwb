@@ -1,18 +1,29 @@
 # Strivee to Beyond The White Board synchronisation
 
-Automates the weekly transfer of CrossFit programming from the **Strivee** Android app to **Beyond The Whiteboard (BTWB)**.
+Automates the weekly transfer of CrossFit programming from the **Strivee** Android app to
+**Beyond The Whiteboard (BTWB)**, and logs the runs and rides **Garmin Connect** recorded
+into the same BTWB log.
 
 ## Coverage
 
-![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen?style=flat&logo=pytest)
+![Coverage](https://img.shields.io/badge/coverage-80%25-green?style=flat&logo=pytest)
 
 > Run `make test-cov` to regenerate with an HTML report in `htmlcov/`.
+
+The browser-driving modules (`btwb/client.py`, `btwb/cardio.py`) sit well below that line:
+what matters about them is whether BTWB accepts what they send, which is checked by reading
+the result back off BTWB, not by a mock agreeing with itself. Their *decisions* — which field
+gets which number, which sessions are skipped — are unit-tested; their clicking is not.
 
 ---
 
 ## Goal
 
 Strivee is the app used by the gym to publish the weekly programming (strength, WODs, accessories). BTWB is the platform athletes use to log their workouts. Every Monday, the programming must be manually re-entered into BTWB block by block — this tool automates that entire process.
+
+The same Monday leaves a second job: BTWB has no import for a watch and no Strava or Garmin
+integration, so every run and ride has to be typed in by hand as well. [Garmin → BTWB](#garmin--btwb--runs-and-rides)
+does that half.
 
 ---
 
@@ -507,6 +518,104 @@ scored as zero, so a gap in the table shows up instead of hiding.
 
 ---
 
+## Garmin → BTWB — runs and rides
+
+BTWB offers no watch import and no Strava or Garmin integration — it is a standing feature
+request, not a feature. `garmin` reads what Garmin Connect recorded and enters it the way a
+person would: movement, scoring model, numbers, date and notes.
+
+```
+Garmin Connect (the watch auto-syncs over Bluetooth, so the cloud copy is always there)
+        │
+        │  garminconnect — refresh tokens stored once by `garmin-login`
+        ▼
+  1. fetch     → garmin/<week>/activities.json   (laps fetched for runs only)
+        │
+        │  lap intensities → BTWB's scoring model
+        ▼
+  2. map       → one CardioSession per BTWB entry
+        │
+        │  Playwright — Log → Single Movement Workout → … → Log Result
+        ▼
+  3. sync      → logged on BTWB, skipping what it already holds
+```
+
+### Which BTWB model a session becomes
+
+BTWB offers six scoring models for a distance movement. Two are used:
+
+| Session | BTWB model |
+|---|---|
+| A continuous run or ride | **Single Distance** |
+| 5 × 500m, a ladder, any repeats | **Intervals / Repeats** |
+
+Garmin labels every lap of a structured workout `WARMUP` / `ACTIVE` / `REST` / `RECOVERY`, so a
+rep session is readable from the lap sequence alone: repeated `ACTIVE` efforts with `REST`
+between them.
+
+Garmin's own `hasIntensityIntervals` flag is **not** the test. It is also true of a Zone 2 run
+whose only structure is a warm-up block — one continuous effort as far as BTWB is concerned —
+and trusting it would invent reps that were never run.
+
+A prescription can also jog its recovery, and KipRun writes those as further `ACTIVE` steps, so
+a ladder arrives with no `REST` lap anywhere. A second rule catches those: four or more efforts,
+none longer than `AUTO_LAP_M` (800 m). Auto-lap fires every kilometre, so a session whose every
+labelled effort is shorter than that was lapped on the prescription, not on the odometer.
+
+**Intervals / Repeats, not For Distance.** The two read alike and mean opposite things —
+Intervals / Repeats is *multiple efforts each performed for time* (500 m, how fast?), For
+Distance is *multiple efforts each performed for distance* (3 minutes, how far?). A rep session
+off a running plan is the former.
+
+### What lands in BTWB
+
+The logger names an entry after the movement and offers no title field, so the name the session
+was prescribed under survives only in the notes — which is where it goes, ahead of the metrics:
+
+```
+St-Gabriel-de-Brandon - 5 x 500m (R=200m)          ← notes
+Avg HR 139 bpm · Max 178 bpm
+Avg pace 5:41 /km
+Elevation gain 95 m
+https://connect.garmin.com/modern/activity/23865416880
+
+Run : 5x 500 m, rest 1:22 : 51 mins 7 secs | Rx'd  ← what BTWB stores
+Intervals : rest 1:22
+Run, 500 m | 1:58 · 2:03 · 1:56 · 1:59 · 2:01
+```
+
+Rest is entered as the mean of what was actually taken rather than the nearest preset: BTWB
+stores one value, and a measured 1:22 is worth more than a tidy 1:30. RPE is left unset.
+
+### Commutes
+
+Short rides repeat twice a day — out to the box and home again — and are travel, not training.
+Below `MIN_BIKE_KM` (default 10 km) a day's rides fold into a single entry instead of one per
+leg, summing distance and time and averaging heart rate by time on the bike.
+
+`--no-commutes` leaves them out altogether. Merging is right for a week; across three months,
+fifteen days of riding to the box buries what was actually trained.
+
+### What stops it posting twice
+
+BTWB is the ledger, not a file on this machine. Every session this tool writes carries its
+Garmin link in its notes, so what has already been synced is read back out of the log itself
+before anything is written.
+
+That needs no seeding for sessions logged before the sync existed, and it cannot go on claiming
+an entry is there after it was deleted on BTWB. Any overlap counts as synced: a commute day that
+gained a third ride after it was logged is left alone rather than posted again, because a
+duplicate is worse than a merged entry one leg short.
+
+### The cache
+
+Each fetched week is cached raw under `garmin/<week>/`. A week that has not ended is never
+served from it — that file was written mid-week and cannot know about Friday's run. Weeks that
+are over come off disk, because Garmin rate-limits by IP (hard enough that a login burst answers
+429 before anything else) while the mapping is free to re-run.
+
+---
+
 ## Prerequisites
 
 | Requirement | Notes |
@@ -517,6 +626,7 @@ scored as zero, so a gap in the table shows up instead of hiding.
 | ADB | `brew install android-platform-tools` |
 | USB debugging | Enabled on the Android device |
 | scrcpy _(optional)_ | Visual mirror during capture — `brew install scrcpy` |
+| Garmin Connect account | Only for `garmin` — `garmin-login` stores tokens; no API key or approval needed |
 
 Pull the model once:
 
@@ -556,6 +666,10 @@ BTWB_TRACK_ID=156552        # visible in BTWB calendar URL: ?t=<id>
 # Required when more than one device/emulator is connected (phone + emulator running at the same time).
 # Without it, adb refuses to run. Find the serial with: adb devices
 ANDROID_SERIAL=0B241FDD4003UN
+
+# Garmin sync only — both optional, shown with their defaults
+# GARMIN_TOKENSTORE=~/.garminconnect   # where `garmin-login` writes its refresh tokens
+# MIN_BIKE_KM=10                       # rides shorter than this count as travel, not training
 
 # Blocks to skip (case-insensitive substring match)
 EXCLUDED_BLOCKS=Hebdomadaire,GROUPE WHATS APP EMF,Warm-up
@@ -598,6 +712,29 @@ uv run strivee-btwb audit --location basement --on Tue,Fri --post
 # Week to week: plan from what you actually completed last week
 uv run strivee-btwb audit --from-last-week --on Tue,Fri --post
 ```
+
+Log the week's running and riding from Garmin:
+
+```bash
+# Once, ever — may ask for an MFA code; tokens are stored outside the repo
+uv run strivee-btwb garmin-login
+
+# Show what the last 7 days would put on BTWB, writing nothing
+uv run strivee-btwb garmin
+
+# ...and write it
+uv run strivee-btwb garmin --post
+
+# A named week instead of the last 7 days
+uv run strivee-btwb garmin --week 2026-09-07 --post
+
+# Backfill three months of training, leaving the commutes out
+uv run strivee-btwb garmin --days-back 92 --no-commutes --post
+```
+
+Without `--post` the form is walked but never submitted, so the preview is what BTWB itself
+made of each session rather than a guess at it. Running it twice is safe: the second run finds
+everything already there and writes nothing.
 
 To clear a week's planned workouts off BTWB (e.g. to re-post after a fix):
 
@@ -643,6 +780,15 @@ audit   --post            # post that block to BTWB (needs --on)
 audit   --yes             # skip the confirmation before posting
 audit   --headless        # run browser without a visible window
 audit   --dry-run         # show what --post would send, without posting
+
+garmin  --days-back 92    # days of history to sync, ending today (default: 7)
+garmin  --week 2026-09-07 # sync a whole week instead, Mon–Sun, by any date in it
+garmin  --min-bike-km 10  # rides below this are travel: a day's short rides become one entry
+garmin  --no-commutes     # leave the short rides out entirely instead of merging them
+garmin  --post            # write to BTWB (default: show only)
+garmin  --yes             # skip the confirmation before posting
+garmin  --headless        # run browser without a visible window
+garmin  --refetch         # ask Garmin again instead of reading cached weeks
 ```
 
 ### Examples
@@ -694,12 +840,16 @@ src/strivee_btwb/
   core/           config, logging, data models, Ollama wrapper (llm.py)
   prompts/        LLM prompt templates as .txt files
   capture/        ADB UI accessibility text dump (adb.py)
+  garmin/         Garmin Connect — token auth, fetch, rate-limit backoff (client.py),
+                  raw per-week activity cache (cache.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
                   posted-vs-stored check (movement_check.py), logged loads (loads.py)
                   accessory audit — set extraction (set_extract.py), counting rules (volume.py),
                   gap → postable block (accessory.py)
-  btwb/           BTWB Playwright automation — post + delete (client.py)
+                  Garmin activity → BTWB entry, incl. interval detection (garmin_map.py)
+  btwb/           BTWB Playwright automation — post + delete (client.py),
+                  cardio result logging + sync dedupe (cardio.py)
   pipeline.py     step orchestration and cache I/O
   cli.py          argparse wiring
   __main__.py     entry point
@@ -710,10 +860,12 @@ tests/
     capture/        UI text helpers, element detection, capture_day_as_text
     vision/         JSON extraction, mock Ollama tests
     processing/     Rx extraction, coaching strip, set counting + credit rules, accessory planning
-    btwb/           dry-run posting, delete, calendar dedup
+    btwb/           dry-run posting, delete, calendar dedup, cardio form rules
+    garmin/         rate-limit backoff, token requirement, week cache
     benchmark/      benchmark comparator tests
     test_pipeline   cache I/O, week processing
     test_audit_cache  set-cache invalidation, which level the audit counts
+    test_garmin_sync  sync window, cache rule, dedupe against BTWB
     test_cli        argument parsing
   benchmark/        accuracy + timing harness (run via `make benchmark`)
   fixtures/
@@ -728,6 +880,7 @@ tests/
 | `parsed/<week>/` | Text-parsed JSON cache |
 | `formatted/<week>/` | Cleaned + LLM-formatted block cache, including the chosen level per block (lets `post` reuse `preview`'s output and answers) |
 | `parsed/<week>/sets_*.json` | Per-day set extraction for `audit`, keyed on a hash of the block text it was read from |
+| `garmin/<week>/` | Raw Garmin activities as fetched, laps included for runs |
 | `tests/benchmark/baselines/`, `tests/benchmark/results/` | Benchmark snapshots + timing CSVs |
 | `htmlcov/` | Coverage HTML report |
 
@@ -806,3 +959,23 @@ After text parsing, each block's `content` (prescription only) is sent to `OLLAM
 The `instruction` field is posted directly to BTWB's dedicated coaching note field without further transformation.
 
 If the model returns an empty response the original block content is kept unchanged, so the pipeline never silently drops content.
+
+### Reading the watch through Garmin Connect, not over USB
+
+The watch pushes every activity to Garmin Connect over Bluetooth within minutes of finishing,
+so the cloud copy is the one that appears without anybody doing anything. Reading FIT files off
+the watch over USB needs it plugged in — which is the one thing an automatic sync must not
+require, and recent Garmin watches present MTP, which macOS does not mount natively.
+
+The cost is that neither end is an official API. Garmin publishes none for a personal account,
+and BTWB's logger is a form. Both can break on a deploy, and both fail loudly when they do: a
+rate-limited fetch raises rather than returning an empty week, and a save is confirmed from the
+POST and read back off the page that submits it rather than assumed from a click.
+
+### Walking BTWB's form instead of its internal endpoints
+
+BTWB's web app posts to endpoints that could be called directly with a session cookie. The form
+is driven instead, because it is the only path that stays honest about what BTWB understood: the
+page that submits an entry shows every effort, the scored total and the hidden ISO date it will
+file under, and all three are checked before it saves. A hand-built payload would be faster and
+would tell you nothing about whether BTWB read it the way you meant.
