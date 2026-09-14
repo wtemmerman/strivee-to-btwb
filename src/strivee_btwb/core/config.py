@@ -54,6 +54,13 @@ GARMIN_TOKENSTORE: str = os.path.expanduser(os.getenv("GARMIN_TOKENSTORE", "~/.g
 Outside the repo by default: the tokens are as good as the password for reading
 the account, and they must survive a clone or a clean checkout."""
 
+MIN_BIKE_KM: float = float(os.getenv("MIN_BIKE_KM", "10"))
+"""Ride distance below which a ride counts as travel rather than training.
+
+Short rides repeat twice a day — out to the box and back — and one BTWB entry per
+leg buries the real rides. Below this, a day's rides are logged as one merged
+entry instead."""
+
 # ── ADB / capture ─────────────────────────────────────────────────────────────
 
 ANDROID_SERIAL: str | None = os.getenv("ANDROID_SERIAL") or None
