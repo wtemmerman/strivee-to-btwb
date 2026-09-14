@@ -159,3 +159,26 @@ def test_main_days_flag_passed_through(monkeypatch):
         _run_main(["capture", "--days", "Mon,Tue"])
         args = mock.call_args[0]
         assert args[0] == ["Mon", "Tue"]
+
+
+# ── garmin ────────────────────────────────────────────────────────────────────
+
+
+def test_parser_has_the_garmin_commands():
+    parser = _build_parser()
+    for cmd in ("garmin", "garmin-login"):
+        assert parser.parse_args([cmd]).command == cmd
+
+
+def test_garmin_defaults_to_showing_a_week_without_writing():
+    args = _build_parser().parse_args(["garmin"])
+    assert args.days_back == 7
+    assert args.post is False
+
+
+def test_garmin_flags_reach_the_step():
+    with patch("strivee_btwb.cli.do_garmin") as do_garmin:
+        with patch.object(sys, "argv", ["strivee-btwb", "garmin", "--post", "--min-bike-km", "5"]):
+            main()
+    assert do_garmin.call_args.args[2] == 5.0
+    assert do_garmin.call_args.args[3] is True

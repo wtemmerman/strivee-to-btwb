@@ -21,6 +21,7 @@ the form and reports what BTWB made of it.
 
 import logging
 import re
+from datetime import date, datetime
 
 from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -44,6 +45,22 @@ _REST_SPECIFY = "xtime"
 
 _SAVE_REDIRECT_TIMEOUT = 15_000
 """How long to wait for BTWB's own script to move to the session it just saved."""
+
+_MAX_HISTORY_PAGES = 30
+"""Pages of logged sessions to read before giving up on reaching the window's start.
+
+A page holds fifteen sessions, so this covers well over a year of training. Hitting
+it means the listing stopped going back, not that the history is long."""
+
+_GARMIN_ACTIVITY_ID = re.compile(r"connect\.garmin\.com/modern/activity/(\d+)")
+
+_SESSION_LIST_JS = """
+() => [...document.querySelectorAll('li.workout_session')].map(li => ({
+  date: (li.querySelector('.post-privacy-text')?.textContent || '').trim(),
+  notes: li.querySelector('i')?.textContent || '',
+  href: li.querySelector('.item_title a[href^="/workout_sessions/"]')?.getAttribute('href') || '',
+}))
+"""
 
 _SPINNER_FLOOR = 2
 """Interval count the form opens with — the spinner cannot go below it."""
@@ -169,6 +186,16 @@ def _fill_intervals(page: Page, session: CardioSession) -> None:
     _fill_time(form.locator("fieldset.total-time-input"), *_clock_parts(session.duration_s))
 
 
+def _one_line(description: str) -> str:
+    """Collapse BTWB's multi-line description for a log line.
+
+    Its first line only names the shape ("Intervals"), which the model already
+    says; the efforts are what is worth reading back.
+    """
+    efforts = description.splitlines()[1:]
+    return " · ".join(line.strip() for line in efforts if line.strip()) or description
+
+
 def _confirmation(page: Page, session: CardioSession) -> dict:
     """Read back what BTWB built, on the page that is about to submit it.
 
@@ -181,8 +208,10 @@ def _confirmation(page: Page, session: CardioSession) -> dict:
     performed = page.locator("#workout_session_performedDate").input_value()
     if performed != session.date.isoformat():
         raise BTWBError(f"BTWB would file this under {performed}, not {session.date.isoformat()}")
+    description = built.locator(".workout-description").inner_text().strip()
     return {
-        "description": built.locator(".workout-description").inner_text().strip(),
+        "description": description,
+        "shape": _one_line(description),
         "result": built.locator("h3").inner_text().strip(),
         "performed_on": performed,
         "notes": page.locator("#workout_session_notes").input_value(),
@@ -202,6 +231,68 @@ def _fill_date_and_notes(page: Page, session: CardioSession) -> None:
     shown = page.evaluate(_SET_DATE_JS, session.date.isoformat())
     logger.debug("Performed on set to %s for %s", shown, session.title)
     page.locator("#workout_session_notes").fill(session.notes)
+
+
+def _member_id(page: Page) -> str:
+    href = page.locator("a[href^='/members/']").first.get_attribute("href")
+    match = re.search(r"/members/(\d+)", href or "")
+    if not match:
+        raise BTWBError("Could not read the member id from the signed-in page")
+    return match.group(1)
+
+
+def _listed_date(text: str) -> date:
+    """Read the date BTWB prints on a listed session, e.g. "September 13, 2026"."""
+    try:
+        return datetime.strptime(text, "%B %d, %Y").date()
+    except ValueError as exc:
+        raise BTWBError(
+            f"Could not read {text!r} as a session date — is BTWB still set to English?"
+        ) from exc
+
+
+def fetch_synced_activity_ids(page: Page, since: date) -> dict[int, str]:
+    """Which Garmin activities BTWB already holds, reading back to *since*.
+
+    BTWB is the ledger. Every session this tool writes carries its Garmin link in
+    the notes, so what has already been synced can be read out of the log itself.
+    A file on this machine would drift the moment an entry was deleted on BTWB,
+    and would have to be seeded by hand with everything logged before it existed.
+    """
+    member = _member_id(page)
+    found: dict[int, str] = {}
+    for number in range(1, _MAX_HISTORY_PAGES + 1):
+        page.goto(
+            f"{_BASE}/members/{member}/workout_sessions?page={number}", wait_until="networkidle"
+        )
+        items = page.evaluate(_SESSION_LIST_JS)
+        if not items:
+            return found
+        for item in items:
+            for activity_id in _GARMIN_ACTIVITY_ID.findall(item["notes"]):
+                found[int(activity_id)] = f"{_BASE}{item['href']}"
+        if min(_listed_date(i["date"]) for i in items if i["date"]) < since:
+            return found
+    raise BTWBError(f"Read {_MAX_HISTORY_PAGES} pages of history without reaching {since}")
+
+
+def _already_synced(session: CardioSession, synced: dict[int, str]) -> str | None:
+    """The BTWB entry already holding this session, if any of its activities is there.
+
+    Any overlap counts as synced, not every one: a day whose ride count grew after
+    it was logged would otherwise be posted a second time, and a duplicate is far
+    worse than a merged entry that is one leg short.
+    """
+    held = [synced[i] for i in session.source_ids if i in synced]
+    if held and len(held) != len(session.source_ids):
+        logger.warning(
+            "%s %r covers %d activities but BTWB holds only %d of them — left alone",
+            session.date,
+            session.title,
+            len(session.source_ids),
+            len(held),
+        )
+    return held[0] if held else None
 
 
 def _submit(page: Page) -> dict:
@@ -251,7 +342,7 @@ def _log_one(page: Page, session: CardioSession, dry_run: bool) -> dict:
         **built,
     }
     if dry_run:
-        logger.info("Would log %s — %s | %s", session.date, built["description"], built["result"])
+        logger.info("Would log %s — %s | %s", session.date, built["shape"], built["result"])
         return result
 
     result.update(_submit(page))
@@ -259,28 +350,47 @@ def _log_one(page: Page, session: CardioSession, dry_run: bool) -> dict:
     return result
 
 
-def log_sessions(
-    sessions: list[CardioSession], dry_run: bool = True, headless: bool = True
-) -> list[dict]:
-    """Enter each session in BTWB's logger, or walk the form without saving.
+def sync_sessions(
+    sessions: list[CardioSession],
+    since: date,
+    dry_run: bool = True,
+    headless: bool = True,
+) -> dict:
+    """Log every session BTWB does not already hold, or walk the form without saving.
 
-    One browser, one login, one session after another: a failure on one is raised
-    with the session named rather than swallowed, because a half-logged week the
+    Read first, write second, in one browser and one login. What BTWB holds is the
+    only honest answer to what still needs logging, and a run that wrote before it
+    read would duplicate everything it could not see. A failure on one session is
+    raised with that session named rather than swallowed: a half-logged week the
     caller believes is complete is worse than a run that stops.
     """
     if not sessions:
-        return []
-    results = []
+        return {"logged": [], "skipped": []}
+    logged: list[dict] = []
+    skipped: list[dict] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
         page = browser.new_context(viewport={"width": 1500, "height": 1300}).new_page()
         try:
             _login(page, config.BTWB_EMAIL, config.BTWB_PASSWORD)
+            synced = fetch_synced_activity_ids(page, since)
+            logger.info("BTWB already holds %d synced activity(ies) since %s", len(synced), since)
             for session in sessions:
+                existing = _already_synced(session, synced)
+                if existing:
+                    skipped.append(
+                        {
+                            "date": session.date.isoformat(),
+                            "title": session.title,
+                            "source_ids": session.source_ids,
+                            "url": existing,
+                        }
+                    )
+                    continue
                 try:
-                    results.append(_log_one(page, session, dry_run))
+                    logged.append(_log_one(page, session, dry_run))
                 except Exception as exc:
                     raise BTWBError(f"Failed on {session.date} {session.title!r}: {exc}") from exc
         finally:
             browser.close()
-    return results
+    return {"logged": logged, "skipped": skipped}

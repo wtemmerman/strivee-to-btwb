@@ -93,5 +93,15 @@ def test_both_models_have_a_label_to_click():
     assert set(cardio._MODEL_LABELS) == {SINGLE_DISTANCE, INTERVALS}
 
 
-def test_logging_nothing_opens_no_browser():
-    assert cardio.log_sessions([]) == []
+def test_syncing_nothing_opens_no_browser():
+    assert cardio.sync_sessions([], date(2026, 9, 7)) == {"logged": [], "skipped": []}
+
+
+def test_the_log_line_keeps_the_efforts_and_drops_the_shape_word():
+    assert cardio._one_line("Intervals\nRun, 500 m | 1:58\nRun, 500 m | 2:03") == (
+        "Run, 500 m | 1:58 · Run, 500 m | 2:03"
+    )
+
+
+def test_a_description_with_nothing_but_a_shape_word_is_kept_as_is():
+    assert cardio._one_line("Intervals") == "Intervals"

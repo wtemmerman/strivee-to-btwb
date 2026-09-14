@@ -5,10 +5,13 @@ from datetime import date
 
 from .core import log
 from .pipeline import (
+    GARMIN_DEFAULT_DAYS_BACK,
     do_analyse,
     do_audit,
     do_capture,
     do_delete,
+    do_garmin,
+    do_garmin_login,
     do_post,
     do_preview,
     do_verify,
@@ -32,6 +35,41 @@ def _parse_week(raw: str | None) -> date | None:
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid date '{raw}' — expected YYYY-MM-DD")
     return week_start(anchor)
+
+
+def _add_garmin_commands(sub: argparse._SubParsersAction) -> None:
+    """Register the Garmin sync and its one-off login."""
+    p = sub.add_parser(
+        "garmin",
+        help="Log the runs and rides Garmin recorded into BTWB, skipping what is already there",
+    )
+    p.add_argument(
+        "--days-back",
+        type=int,
+        default=GARMIN_DEFAULT_DAYS_BACK,
+        metavar="N",
+        help=f"Days of history to sync, ending today (default: {GARMIN_DEFAULT_DAYS_BACK})",
+    )
+    p.add_argument(
+        "--week", metavar="YYYY-MM-DD", help="Sync a whole week instead, Mon-Sun, by any date in it"
+    )
+    p.add_argument(
+        "--min-bike-km",
+        type=float,
+        metavar="KM",
+        help="Rides shorter than this count as travel: a day's short rides become one entry",
+    )
+    p.add_argument("--post", action="store_true", help="Write to BTWB (default: show only)")
+    p.add_argument("--yes", "-y", action="store_true", help="Skip the confirmation before posting")
+    p.add_argument("--headless", action="store_true", help="Run browser without a visible window")
+    p.add_argument(
+        "--refetch", action="store_true", help="Ask Garmin again instead of reading cached weeks"
+    )
+
+    sub.add_parser(
+        "garmin-login",
+        help="Sign in to Garmin once and store the tokens the sync uses (may ask for an MFA code)",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -120,6 +158,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="List the workouts that would be deleted, then stop"
     )
 
+    _add_garmin_commands(sub)
+
     p = sub.add_parser("run", help="Run all steps: capture → analyse → preview → post")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
@@ -166,6 +206,18 @@ def main() -> None:
             ws,
             getattr(args, "relevel", False),
         )
+    elif args.command == "garmin":
+        do_garmin(
+            getattr(args, "days_back", GARMIN_DEFAULT_DAYS_BACK),
+            ws,
+            getattr(args, "min_bike_km", None),
+            getattr(args, "post", False),
+            getattr(args, "yes", False),
+            getattr(args, "headless", False),
+            getattr(args, "refetch", False),
+        )
+    elif args.command == "garmin-login":
+        do_garmin_login()
     elif args.command == "verify":
         do_verify(days, ws)
     elif args.command == "delete":
