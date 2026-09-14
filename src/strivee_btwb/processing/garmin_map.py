@@ -159,7 +159,9 @@ def _effort_note(movement: str, distance_m: float, duration_s: float) -> str | N
 
 
 def _notes(activity: dict, movement: str) -> str:
-    lines = []
+    # The logger names the entry itself ("Run, 8.99 km"), so the name KipRun gave
+    # the session — which is the prescription — survives only if the notes carry it.
+    lines = [activity["activityName"]] if activity.get("activityName") else []
     avg_hr, max_hr = _number(activity, "averageHR"), _number(activity, "maxHR")
     if avg_hr:
         lines.append(f"Avg HR {avg_hr:.0f} bpm · Max {max_hr:.0f} bpm")

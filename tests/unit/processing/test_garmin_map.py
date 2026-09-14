@@ -249,6 +249,12 @@ def test_a_ride_is_described_in_speed_not_pace():
     assert "pace" not in session.notes
 
 
+def test_the_notes_lead_with_the_name_the_session_was_prescribed_under():
+    """BTWB names the entry from the movement, so "5 x 500m (R=200m)" lives or dies here."""
+    session = sessions_from_activities([_activity(name="La Prairie - 5 x 500m (R=200m)")])[0]
+    assert session.notes.startswith("La Prairie - 5 x 500m (R=200m)\n")
+
+
 def test_a_session_without_heart_rate_says_nothing_about_it():
     assert "HR" not in sessions_from_activities([_activity()])[0].notes
 

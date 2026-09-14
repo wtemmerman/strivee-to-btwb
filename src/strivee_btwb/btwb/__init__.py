@@ -1,3 +1,4 @@
+from .cardio import log_sessions
 from .client import (
     AuthenticationError,
     BTWBError,
@@ -15,5 +16,6 @@ __all__ = [
     "fetch_completed_titles",
     "fetch_logged_loads",
     "fetch_planned_workouts",
+    "log_sessions",
     "post_week",
 ]
