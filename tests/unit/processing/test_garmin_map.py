@@ -93,6 +93,40 @@ def test_a_structured_steady_run_is_a_single_distance():
     assert not is_interval_session(STEADY_LAPS)
 
 
+# A ladder whose recoveries were jogged: every lap ACTIVE, none of them an auto-lap.
+LADDER_LAPS = [
+    _lap("WARMUP", 1000, 378.3),
+    _lap("ACTIVE", 100, 28.2),
+    _lap("ACTIVE", 100, 37.1),
+    _lap("ACTIVE", 200, 47.1),
+    _lap("ACTIVE", 100, 42.1),
+    _lap("ACTIVE", 300, 70.4),
+    _lap("ACTIVE", 100, 38.4),
+    _lap("ACTIVE", 400, 99.0),
+    _lap("RECOVERY", 626, 240.6),
+]
+
+
+def test_a_ladder_with_jogged_recoveries_is_still_intervals():
+    """KipRun writes a jogged recovery as an ACTIVE step, so no REST lap ever appears."""
+    assert is_interval_session(LADDER_LAPS)
+
+
+def test_the_efforts_of_such_a_ladder_carry_no_rest():
+    session = sessions_from_activities([_activity(laps=LADDER_LAPS)])[0]
+    assert len(session.intervals) == 7
+    assert {i.rest_s for i in session.intervals} == {None}
+
+
+def test_auto_lapped_kilometres_are_never_read_as_efforts():
+    """Six 1 km ACTIVE laps are the watch splitting a steady run, not six reps."""
+    assert not is_interval_session([_lap("ACTIVE", 1000, 353.1) for _ in range(6)])
+
+
+def test_too_few_short_efforts_to_be_a_rep_session():
+    assert not is_interval_session([_lap("ACTIVE", 400, 95.0) for _ in range(3)])
+
+
 def test_a_free_run_is_a_single_distance():
     assert not is_interval_session(FREE_LAPS)
 
@@ -264,3 +298,29 @@ def test_a_session_without_heart_rate_says_nothing_about_it():
 )
 def test_durations_read_as_a_training_log_writes_them(seconds, expected):
     assert clock(seconds) == expected
+
+
+def test_commutes_can_be_left_out_of_btwb_entirely():
+    """A backfill of training only: months of travel would bury what was trained."""
+    sessions = sessions_from_activities(
+        [
+            _commute(1, 4.93, 732, "2026-09-08 16:27:51"),
+            _commute(2, 5.05, 1179, "2026-09-08 18:16:48"),
+            _activity(
+                "cycling",
+                activity_id=3,
+                name="Ste-Catherine",
+                km=28.1,
+                secs=3808,
+                start="2026-09-08 09:00:00",
+            ),
+        ],
+        min_bike_km=10,
+        merge_commutes=False,
+    )
+    assert [s.title for s in sessions] == ["Ste-Catherine"]
+
+
+def test_runs_are_never_treated_as_commutes():
+    sessions = sessions_from_activities([_activity(km=1.5)], min_bike_km=10, merge_commutes=False)
+    assert len(sessions) == 1

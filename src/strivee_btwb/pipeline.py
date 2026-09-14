@@ -1348,6 +1348,7 @@ def do_garmin(
     yes: bool = False,
     headless: bool = False,
     refetch: bool = False,
+    no_commutes: bool = False,
 ) -> None:
     """Log the runs and rides Garmin recorded into BTWB, skipping what is already there."""
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
@@ -1364,7 +1365,7 @@ def do_garmin(
         logger.error("%s", e)
         sys.exit(1)
 
-    sessions = sessions_from_activities(activities, min_bike_km)
+    sessions = sessions_from_activities(activities, min_bike_km, merge_commutes=not no_commutes)
     if not sessions:
         logger.info("  No runs or rides in the window.")
         return

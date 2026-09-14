@@ -64,6 +64,12 @@ A structured workout reports its reps as exactly 500m; a hand-lapped rep drifts 
 few metres. Ten metres keeps 5 x 500m together without collapsing a 400/500 ladder
 into one number."""
 
+AUTO_LAP_M = 800.0
+"""Above this, an ACTIVE lap is the watch's own split rather than a prescribed effort.
+
+Auto-lap fires every kilometre, so a structured session whose every labelled effort
+is shorter than that was lapped on the prescription and not on the odometer."""
+
 _ACTIVITY_URL = "https://connect.garmin.com/modern/activity/{}"
 
 
@@ -97,9 +103,19 @@ def _number(activity: dict, field: str) -> float:
 
 
 def is_interval_session(laps: list[dict]) -> bool:
-    """True when the laps read as repeated efforts with rest, not one continuous run."""
+    """True when the laps read as repeated efforts, not one continuous run.
+
+    Rest between the efforts is the clearest signal, but not the only one: a
+    prescription can jog its recovery, and KipRun writes a jogged recovery as
+    another ACTIVE step, so a ladder session arrives with no REST lap anywhere.
+    What gives those away is that every effort is shorter than an auto-lap — the
+    watch was lapping on the prescription rather than every kilometre.
+    """
     intensities = [lap.get("intensityType") for lap in laps]
-    return intensities.count(ACTIVE) >= 2 and REST in intensities
+    efforts = [lap for lap in laps if lap.get("intensityType") == ACTIVE]
+    if len(efforts) >= 2 and REST in intensities:
+        return True
+    return len(efforts) >= 4 and max(e.get("distance") or 0.0 for e in efforts) < AUTO_LAP_M
 
 
 def work_intervals(laps: list[dict]) -> list[CardioInterval]:
@@ -236,9 +252,16 @@ def _merged_commute(activities: list[dict]) -> CardioSession:
 
 
 def sessions_from_activities(
-    activities: list[dict], min_bike_km: float | None = None
+    activities: list[dict],
+    min_bike_km: float | None = None,
+    merge_commutes: bool = True,
 ) -> list[CardioSession]:
-    """Map a fetched range of Garmin activities to the BTWB entries they become."""
+    """Map a fetched range of Garmin activities to the BTWB entries they become.
+
+    ``merge_commutes=False`` leaves the short rides out of BTWB altogether rather
+    than folding them into a daily entry — for a backfill of training only, where
+    months of travel would bury what was actually trained.
+    """
     threshold_m = (config.MIN_BIKE_KM if min_bike_km is None else min_bike_km) * 1000
     sessions: list[CardioSession] = []
     commutes: dict[date, list[dict]] = defaultdict(list)
@@ -258,5 +281,12 @@ def sessions_from_activities(
             continue
         sessions.append(_session(activity, movement))
 
-    sessions += [_merged_commute(day) for day in commutes.values()]
+    if merge_commutes:
+        sessions += [_merged_commute(day) for day in commutes.values()]
+    elif commutes:
+        logger.info(
+            "Left out %d day(s) of short rides — %d ride(s) counted as travel",
+            len(commutes),
+            sum(len(day) for day in commutes.values()),
+        )
     return sorted(sessions, key=lambda s: (s.date, s.title))

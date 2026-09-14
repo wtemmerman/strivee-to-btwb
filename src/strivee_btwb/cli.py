@@ -65,6 +65,11 @@ def _add_garmin_commands(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--refetch", action="store_true", help="Ask Garmin again instead of reading cached weeks"
     )
+    p.add_argument(
+        "--no-commutes",
+        action="store_true",
+        help="Leave the short rides out entirely instead of merging each day's into one entry",
+    )
 
     sub.add_parser(
         "garmin-login",
@@ -215,6 +220,7 @@ def main() -> None:
             getattr(args, "yes", False),
             getattr(args, "headless", False),
             getattr(args, "refetch", False),
+            getattr(args, "no_commutes", False),
         )
     elif args.command == "garmin-login":
         do_garmin_login()
