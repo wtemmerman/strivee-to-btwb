@@ -31,6 +31,18 @@ from strivee_btwb.capture.adb import (
 
 
 @pytest.fixture(autouse=True)
+def _no_real_adb(monkeypatch):
+    """Keep the promise in this module's docstring: nothing here shells out to adb.
+
+    capture_day_as_text collapses the notification shade through _adb, and every
+    test of it forgot to stub that — invisible on a machine with adb installed,
+    a FileNotFoundError everywhere else. Tests that care what _adb was asked for
+    patch it again themselves, which wins over this.
+    """
+    monkeypatch.setattr("strivee_btwb.capture.adb._adb", lambda *a, **k: _fake_proc())
+
+
+@pytest.fixture(autouse=True)
 def _clear_device_size_cache():
     """Device-size is memoized per serial; clear it around every test so a cached
     value from one test never leaks into another."""
