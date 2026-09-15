@@ -136,6 +136,7 @@ _SEED_DESCRIPTION = "12 Dumbbell Curl"
 _FIELD_COMMIT_MS = 500  # let the blur-driven units controller write the hidden input
 
 _DELETE_LABEL = "SUPPRIMER"
+_COPY_LABEL = "COPIER"
 _ASSIGN_REPS_LABEL = "ATTRIBUER DES RÉPÉTITIONS"
 _ROW_COUNT_JS = (
     "n => [...document.querySelectorAll('button')]"
@@ -247,12 +248,54 @@ def _remove_seed_movement(page: Page) -> None:
     page.wait_for_function(f"n => ({_ROW_COUNT_JS})(n) < n", arg=before, timeout=_TIMEOUT)
 
 
+def _copy_movement_row(page: Page, name: str, reps: str) -> None:
+    """Duplicate the row just added instead of searching for the movement again.
+
+    BTWB's own COPIER inserts the copy directly beneath its source row, reps and
+    all, so a run of identical sets keeps the order the block prescribes. Worth
+    preferring: the movement search is the step that intermittently stalls for the
+    full timeout, and a repeated set has no need of it. Guarded by the row count
+    the same way as an add, so a late-landing copy is not retried into a duplicate.
+    """
+    for attempt in (1, 2):
+        before = _movement_row_count(page)
+        try:
+            button = page.get_by_role("button", name=_COPY_LABEL).last
+            button.scroll_into_view_if_needed()
+            # Dispatched in the page rather than clicked: the row's actions sit under a
+            # hover overlay, and as the list grows the last row slides under the sticky
+            # footer, where even a forced click lands on the overlay instead.
+            button.evaluate("el => el.click()")
+            page.wait_for_function(f"n => ({_ROW_COUNT_JS})(n) > n", arg=before, timeout=_TIMEOUT)
+            logger.info("  copied %s x%s", name, reps)
+            return
+        except PlaywrightTimeoutError:
+            if _movement_row_count(page) > before:
+                logger.info("  copied %s x%s (copy landed late)", name, reps)
+                return
+            if attempt == 2:
+                raise
+            logger.warning("  %s did not copy — retrying", name)
+
+
 def _build_from_movements(page: Page, block: ProgrammingBlock) -> None:
     """Replace the seeded workout with this block's movements, entered exactly."""
     movements = _parse_movement_lines(block)
-    logger.info("Entering %d movement(s) for '%s' one at a time", len(movements), block.name)
-    for name, reps in movements:
-        _add_movement(page, name, reps)
+    searched = sum(1 for i, m in enumerate(movements) if i == 0 or movements[i - 1] != m)
+    logger.info(
+        "Entering %d movement(s) for '%s' — %d via search, %d copied",
+        len(movements),
+        block.name,
+        searched,
+        len(movements) - searched,
+    )
+    previous: tuple[str, str] | None = None
+    for movement in movements:
+        if movement == previous:
+            _copy_movement_row(page, *movement)
+        else:
+            _add_movement(page, *movement)
+        previous = movement
     _remove_seed_movement(page)
 
 

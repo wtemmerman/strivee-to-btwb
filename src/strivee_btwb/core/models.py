@@ -65,3 +65,45 @@ class WeeklyProgramming:
 
     week_start: date
     days: list[DayProgramming] = field(default_factory=list)
+
+
+# ── Cardio (Garmin → BTWB) ────────────────────────────────────────────────────
+
+SINGLE_DISTANCE = "single_distance"
+"""BTWB's "Single Distance" model — one continuous effort, scored on total time."""
+
+INTERVALS = "intervals"
+"""BTWB's "Intervals / Repeats" model — several efforts of a set distance, each for time.
+
+Not "For Distance", which fixes the *time* per effort and measures how far you
+got. A 5 x 500m prescription is the former.
+"""
+
+
+@dataclass(frozen=True)
+class CardioInterval:
+    """One work effort of an interval session, and the rest that followed it."""
+
+    distance_m: float
+    duration_s: float
+    rest_s: float | None = None  # None when nothing was recorded after this effort
+
+
+@dataclass(frozen=True)
+class CardioSession:
+    """A completed run or ride, in the shape BTWB's logger accepts."""
+
+    date: date
+    movement: str  # BTWB movement name, e.g. "Run" / "Road Bike"
+    model: str  # SINGLE_DISTANCE | INTERVALS
+    title: str
+    distance_m: float
+    duration_s: float
+    intervals: list[CardioInterval] = field(default_factory=list)
+    notes: str = ""
+    source_ids: tuple[int, ...] = ()
+    """Garmin activity IDs folded into this entry — the key the sync dedupes on."""
+
+    def __post_init__(self) -> None:
+        if self.model == INTERVALS and len(self.intervals) < 2:
+            raise ValueError("An interval session needs at least two work efforts")

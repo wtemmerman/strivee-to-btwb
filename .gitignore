@@ -43,3 +43,7 @@ tests/benchmark/results/
 *.png
 !fixtures/**/*.png
 !docs/screenshots/*.png
+
+# Runtime data (raw Garmin activity cache) — anchored, or it would also swallow
+# src/strivee_btwb/garmin/
+/garmin/

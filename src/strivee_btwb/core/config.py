@@ -46,6 +46,21 @@ BTWB_TRACK_ID: str = os.getenv("BTWB_TRACK_ID", "")
 """Personal track ID used to filter the calendar duplicate-check.
    Visible in the BTWB planning URL as '?t=<id>' after clicking a day."""
 
+# ── Garmin Connect ────────────────────────────────────────────────────────────
+
+GARMIN_TOKENSTORE: str = os.path.expanduser(os.getenv("GARMIN_TOKENSTORE", "~/.garminconnect"))
+"""Directory holding the Garmin refresh tokens written by `garmin-login`.
+
+Outside the repo by default: the tokens are as good as the password for reading
+the account, and they must survive a clone or a clean checkout."""
+
+MIN_BIKE_KM: float = float(os.getenv("MIN_BIKE_KM", "10"))
+"""Ride distance below which a ride counts as travel rather than training.
+
+Short rides repeat twice a day — out to the box and back — and one BTWB entry per
+leg buries the real rides. Below this, a day's rides are logged as one merged
+entry instead."""
+
 # ── ADB / capture ─────────────────────────────────────────────────────────────
 
 ANDROID_SERIAL: str | None = os.getenv("ANDROID_SERIAL") or None
@@ -83,6 +98,9 @@ CAPTURES_DIR: Path = Path(os.getenv("CAPTURES_DIR", "captures"))
 
 PARSED_DIR: Path = Path(os.getenv("PARSED_DIR", "parsed"))
 """Root directory for vision-parsed JSON cache (one sub-folder per week)."""
+
+GARMIN_DIR: Path = Path(os.getenv("GARMIN_DIR", "garmin"))
+"""Root directory for the raw Garmin activity cache (one sub-folder per week)."""
 
 FORMATTED_DIR: Path = Path(os.getenv("FORMATTED_DIR", "formatted"))
 """Root directory for the cleaned+LLM-formatted block cache (one sub-folder per

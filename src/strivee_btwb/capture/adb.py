@@ -376,6 +376,40 @@ def navigate_to_day(day_short: str, serial: str | None = None) -> bool:
 # Multi-scroll text capture
 # ---------------------------------------------------------------------------
 
+# Strivee's invite footer is the last text on a fully scrolled day, and it is there
+# even on a rest day's empty placeholder page — every complete capture in the corpus
+# ends on it. Seeing it is the only positive proof the scroll reached the bottom.
+_PAGE_END_MARKER = "rejoindre strivee"
+
+# Shown both for a genuine rest day and for a day tab whose content has not arrived
+# yet. A single dump cannot tell those apart, so a placeholder day is read twice
+# before it is believed.
+_NO_WORKOUT_MARKER = "pas de workout publi"
+
+# One unchanged screenshot pair is not the bottom of the page: a page still rendering
+# swallows a swipe and looks identical for one round. Stop on an unchanged pair only
+# once the footer is in hand, or after this many consecutive stalled swipes.
+_STALLS_BEFORE_STOP = 2
+
+# The first UI dump used to be taken the instant scroll_to_top returned, catching the
+# accessibility tree mid-render (a block's text node came back cut off mid-word).
+_RENDER_SETTLE_S = 1.0
+
+
+def _dump_contains(texts: list[str], marker: str) -> bool:
+    """True when any text node in a dump contains *marker* (case-insensitive)."""
+    return any(marker in text.casefold() for text in texts)
+
+
+def _collapse_status_bar(serial: str | None = None) -> None:
+    """Close the notification shade if scroll_to_top's fling pulled it down.
+
+    A fast downward swipe near the top of the app can trip Android's swipe-for-
+    notifications gesture; the shade then covers the page and its quick-settings
+    labels land in the capture ahead of the workout.
+    """
+    _adb(["shell", "cmd", "statusbar", "collapse"], serial)
+
 
 def capture_day_as_text(
     day_short: str,
@@ -384,15 +418,38 @@ def capture_day_as_text(
 ) -> str:
     """Extract all visible programming text for a day via Android accessibility tree.
 
-    Navigates to the day tab and scrolls from top to bottom, collecting text
-    from the UI dump at each position. Lines are deduplicated only against the
-    immediately preceding dump (the scroll-overlap region and sticky
-    headers/footers), so legitimately repeated content — the same weight across
-    rounds, "200m Run" under multiple difficulty levels — is preserved.
+    Reads the day once, and re-reads it when Strivee answers with its "no workout
+    published" placeholder — that is also what a day tab shows before its content
+    arrives, and believing it first time round silently turns a programmed day into
+    a rest day.
+    """
+    text = _read_day(day_short, serial, max_scrolls)
+    if _NO_WORKOUT_MARKER not in text.casefold():
+        return text
+
+    logger.warning("%s: no workout shown — re-reading in case the day had not loaded", day_short)
+    time.sleep(_RENDER_SETTLE_S)
+    retry = _read_day(day_short, serial, max_scrolls)
+    return text if _NO_WORKOUT_MARKER in retry.casefold() else retry
+
+
+def _read_day(
+    day_short: str,
+    serial: str | None,
+    max_scrolls: int,
+) -> str:
+    """Navigate to the day tab and collect its text from top to bottom.
+
+    Lines are deduplicated only against the immediately preceding dump (the
+    scroll-overlap region and sticky headers/footers), so legitimately repeated
+    content — the same weight across rounds, "200m Run" under multiple difficulty
+    levels — is preserved.
     """
     navigate_to_day(day_short, serial)
     time.sleep(0.5)
     scroll_to_top(serial)
+    _collapse_status_bar(serial)
+    time.sleep(_RENDER_SETTLE_S)
 
     _, h_device = _device_size(serial)
 
@@ -418,6 +475,8 @@ def capture_day_as_text(
     # several rounds, "200m Run" under each difficulty level), corrupting content.
     lines: list[str] = []
     prev_texts: set[str] = set()
+    reached_end = False
+    stalls = 0
 
     for _ in range(max_scrolls + 1):
         dump_texts = _texts_from_dump(_ui_dump(serial))
@@ -429,11 +488,24 @@ def capture_day_as_text(
         # real dump) would be re-admitted as duplicates.
         if dump_texts:
             prev_texts = set(dump_texts)
+        reached_end = reached_end or _dump_contains(dump_texts, _PAGE_END_MARKER)
+
         prev = take_screenshot(serial)
         swipe_up(serial, distance_fraction=scroll_fraction, duration_ms=1000, sleep_s=0.5)
         curr = take_screenshot(serial)
-        if _screens_same(prev, curr):
+        if not _screens_same(prev, curr):
+            stalls = 0
+            continue
+        stalls += 1
+        if reached_end or stalls >= _STALLS_BEFORE_STOP:
             break
+
+    if not reached_end:
+        logger.warning(
+            "%s: stopped scrolling without reaching Strivee's page footer — "
+            "the capture is probably truncated",
+            day_short,
+        )
 
     logger.debug("%s: UI dump collected %d text elements", day_short, len(lines))
     return "\n".join(lines)

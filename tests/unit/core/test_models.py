@@ -8,7 +8,10 @@ import pytest
 from strivee_btwb.core.models import (
     INTER,
     INTER_PLUS,
+    INTERVALS,
     RX,
+    CardioInterval,
+    CardioSession,
     DayProgramming,
     ProgrammingBlock,
     WeeklyProgramming,
@@ -92,3 +95,17 @@ def test_weekly_programming_with_days():
     week = WeeklyProgramming(week_start=date(2026, 4, 27), days=days)
     assert len(week.days) == 2
     assert week.week_start == date(2026, 4, 27)
+
+
+def test_an_interval_session_needs_more_than_one_effort():
+    """One effort is a single distance; calling it intervals would invent a rep scheme."""
+    with pytest.raises(ValueError, match="two work efforts"):
+        CardioSession(
+            date=date(2026, 8, 5),
+            movement="Run",
+            model=INTERVALS,
+            title="5 x 500m",
+            distance_m=8990,
+            duration_s=3066,
+            intervals=[CardioInterval(500, 118)],
+        )
