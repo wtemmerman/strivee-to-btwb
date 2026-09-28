@@ -197,6 +197,8 @@ The model is asked for that split but does not reliably deliver it — it often 
 - text above the first header is shared context only when RX has a section of its own; with no RX header that text **is** the RX prescription, and prefixing it onto a scaled variant would make the athlete do the harder work too
 - a dangling `+` at the end of `content` means the prescription was cut in half; the rest is pulled back from `instruction` and the shared half is prefixed onto the variants
 - selection criteria stay in the coaching note verbatim — `EMF - INTER + (Je peux faire 1 Strict Muscle-up)` says *who* picks a level, it is not a prescription
+- a header can carry its level's target on the same line (`RX 30 Reps UBK +`, `INTER + Sub 7min`). Without emoji that looks exactly like an inline value (`Rx - #2x22,5/ 2x15kg`), so it counts as a header only when a workout sits beneath it and at least two levels are headed that way; stacked one-per-level lines stay inline. The target joins the coaching note like a criterion
+- per-level goal times in the coaching note (an `RX` section there that is not the RX workout) are advice for every level, never lifted into a variant — picking INTER+ would otherwise post `Homme - Sub 14:00` as the session
 - a variant identical to RX is dropped (a combined `RX INTER` header is one workout, so there is no choice to make), and prescriptions copied into `instruction` are removed so the note never repeats the workout
 
 Known gap: when the model writes the variants into their fields itself and drops the level headers, nothing marks which part was shared, so a variant can arrive holding only its own half. The parse prompt asks for standalone variants (rule 7) to prevent it — but check the preview, which prints the full text of whatever level you chose.
@@ -947,7 +949,7 @@ The text model (`qwen3:8b`) receives the raw accessibility-tree text for one day
 
 ### Dropped-block recovery
 
-A `EMF ...` block sandwiched between two excluded blocks (e.g. a short "EMF 60 - Optional RUN" between an excluded "Hebdomadaire" announcement and an excluded "Swim Workout") is sometimes merged into a neighbour by the full-text parse and lost. `count_block_titles` still finds the title with a regex, so after the main parse any non-excluded title that is missing from the result triggers a **focused single-block re-extraction** (`recover_block.txt`) — asking the model for just that one block, which it handles reliably even when the full multi-block parse failed the boundary. Recovery only runs when a block is actually missing, so complete days are untouched.
+A `EMF ...` block sandwiched between two excluded blocks (e.g. a short "EMF 60 - Optional RUN" between an excluded "Hebdomadaire" announcement and an excluded "Swim Workout") is sometimes merged into a neighbour by the full-text parse and lost. `count_block_titles` still finds the title with a regex, so after the main parse any non-excluded title that is missing from the result triggers a **focused single-block re-extraction** (`recover_block.txt`) — asking the model for just that one block, which it handles reliably even when the full multi-block parse failed the boundary. Recovery only runs when a block is actually missing, so complete days are untouched. Optional extras published under a bare `<Name> - OPTION` title (`Gymnastic Vaccin - OPTION`) count as titles too; the model never returns them on its own and folds them into the block above, so recovery restores them and the trim cuts the block above at their title.
 
 ### LLM-based BTWB formatting
 
