@@ -41,6 +41,7 @@ from .core.models import (
     LEVEL_LABELS,
     RX,
     DayProgramming,
+    ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
 )
@@ -57,6 +58,7 @@ from .processing.accessory import (
     plan_accessory,
     target_reps,
 )
+from .processing.erg_intervals import describe, erg_intervals
 from .processing.garmin_map import activity_date, clock, needs_laps, sessions_from_activities
 from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
@@ -84,7 +86,8 @@ CACHE_SCHEMA_VERSION = 2
 # so a stale formatted cache is recomputed instead of silently reused.
 # 2: blocks record the difficulty level their content was selected from.
 # 3: "+"-joined blocks are split into one workout per part.
-FORMATTED_SCHEMA_VERSION = 3
+# 4: erg interval blocks carry the plan the classic builder posts.
+FORMATTED_SCHEMA_VERSION = 4
 
 # Bump when the set-extraction prompt or WorkSet shape changes, so a stale
 # per-day set cache is re-extracted instead of silently reused by the audit.
@@ -217,6 +220,13 @@ def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | Non
                         "content": b.content,
                         "instruction": b.instruction,
                         "level": b.level,
+                        "erg": None
+                        if b.erg is None
+                        else {
+                            "movement": b.erg.movement,
+                            "intervals": list(b.erg.intervals),
+                            "rest_seconds": b.erg.rest_seconds,
+                        },
                     }
                     for b in day.blocks
                 ],
@@ -259,6 +269,13 @@ def load_formatted_day(
                 content=b["content"],
                 instruction=b.get("instruction", ""),
                 level=b.get("level", RX),
+                erg=None
+                if b.get("erg") is None
+                else ErgIntervals(
+                    movement=b["erg"]["movement"],
+                    intervals=tuple(b["erg"]["intervals"]),
+                    rest_seconds=b["erg"]["rest_seconds"],
+                ),
             )
             for b in data["blocks"]
         ],
@@ -323,7 +340,7 @@ def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
     try:
         for day in split_week(week).days:
             logger.info("Formatting %s with LLM…", day.day_label)
-            blocks = [format_for_btwb(b) for b in day.blocks]
+            blocks = [_format_block(b) for b in day.blocks]
             blocks = [b for b in blocks if b.content.strip()]
             if blocks:
                 days.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=blocks))
@@ -335,6 +352,19 @@ def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
             pass
         raise
     return WeeklyProgramming(week_start=week.week_start, days=days)
+
+
+def _format_block(block: ProgrammingBlock) -> ProgrammingBlock:
+    """Format one workout: an erg interval set for the classic builder, else via the LLM.
+
+    An erg block's structure goes to BTWB's form fields, not a description, so the
+    whole prescription — watts, pace, warm-up — is kept word for word in the note.
+    """
+    plan = erg_intervals(block)
+    if plan is None:
+        return format_for_btwb(block)
+    note = "\n\n".join(p for p in (block.content.strip(), block.instruction.strip()) if p)
+    return block.replace(content=describe(plan), instruction=note, erg=plan)
 
 
 def _merge_level(first: ProgrammingBlock, second: ProgrammingBlock, level: str) -> str:

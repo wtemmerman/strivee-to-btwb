@@ -13,6 +13,7 @@ from strivee_btwb.core.models import (
     INTER_PLUS,
     RX,
     DayProgramming,
+    ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
 )
@@ -532,6 +533,41 @@ def test_llm_format_week_formats_each_joined_part_on_its_own(monkeypatch):
     result = llm_format_week(week)
     assert seen == ["3 sets of :\n3 Negatives", "2 sets of :\nMax HSPU"]
     assert [b.name for b in result.days[0].blocks] == ["A (1/2)", "A (2/2)"]
+
+
+def test_an_erg_interval_block_skips_the_llm_and_keeps_its_prescription(monkeypatch):
+    """The plan goes to BTWB's form fields; the watts must still reach the athlete."""
+
+    def no_llm(block, **_):
+        raise AssertionError("an erg interval block must not be LLM-formatted")
+
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", no_llm)
+    content = "4 sets of :\n2min #103-108% of FTP20 (290 W-305 W)\n2min Full REST"
+    block = ProgrammingBlock(name="EMF 60 - Bike erg", content=content, instruction="RPE 8")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 29), day_label="Tue", blocks=[block])],
+    )
+    (bike,) = llm_format_week(week).days[0].blocks
+    assert bike.erg == ErgIntervals("Bike Erg", (120,) * 4, 120)
+    assert bike.content == "Bike Erg - Intervals For Distance\n4 x 2:00, rest 2:00"
+    assert bike.instruction == f"{content}\n\nRPE 8"
+
+
+def test_formatted_cache_keeps_the_erg_plan(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path)
+    plan = ErgIntervals("Run", (480, 240, 480, 240), 0)
+    day = DayProgramming(
+        date=date(2026, 10, 1),
+        day_label="Thu",
+        blocks=[ProgrammingBlock(name="EF", content="Run - Intervals For Distance", erg=plan)],
+    )
+    save_formatted_day(day, date(2026, 9, 28), source_mtime_ns=7)
+    loaded = load_formatted_day(date(2026, 9, 28), "Thu", expected_mtime_ns=7)
+    assert loaded is not None
+    assert loaded.blocks[0].erg == plan
 
 
 def test_prepare_week_reuses_cache_on_second_call(monkeypatch):

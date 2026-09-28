@@ -21,7 +21,7 @@ import re
 from collections.abc import Callable
 from datetime import date, timedelta
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Locator, Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from ..core import config
@@ -299,6 +299,76 @@ def _build_from_movements(page: Page, block: ProgrammingBlock) -> None:
     _remove_seed_movement(page)
 
 
+# ── Erg intervals (BTWB's classic builder) ────────────────────────────────────
+#
+# Posting runs in a French-locale browser, so everything here is found by URL or
+# form attribute, never by label text.
+
+_INTERVAL_SECONDS = "input[name='definition[contents][][time][value]']"
+_REST_SECONDS = "input[name='definition[prescription][rest][value]']"
+_CLOCK_MINUTES = "input[name='movement_time_value_minutes']"
+
+
+def _fill_clock(minutes_field, seconds: int) -> None:
+    """Fill a mins:secs pair; blurring it makes BTWB write the hidden seconds value."""
+    minutes_field.fill(str(seconds // 60))
+    seconds_field = minutes_field.locator("xpath=following::input[@type='number'][1]")
+    seconds_field.fill(str(seconds % 60))
+    seconds_field.press("Tab")
+
+
+def _fill_erg_intervals(page: Page, block: ProgrammingBlock) -> Locator:
+    """Build *block*'s "Intervals For Distance" workout and return its plan button.
+
+    The hidden seconds BTWB submits are read back before planning: a blur that did
+    not register would otherwise save an interval of nothing, silently.
+    """
+    plan = block.erg
+    if plan is None:  # invariant: only called for blocks with an erg plan
+        raise BTWBError(f"internal error: '{block.name}' has no erg plan")
+    page.locator("a[href='/plan/workouts/single']").first.click()
+    search = page.locator("input#name")
+    search.wait_for(state="visible", timeout=_TIMEOUT)
+    search.fill(plan.movement)
+    page.get_by_role("link", name=plan.movement, exact=True).first.click()
+    template = page.locator("a[href$='/for_distance/new']").first
+    template.wait_for(state="visible", timeout=_TIMEOUT)
+    template.click()
+
+    rows = page.locator(_INTERVAL_SECONDS)
+    rows.first.wait_for(state="attached", timeout=_TIMEOUT)
+    for control, done in (
+        ("addSet", lambda n: n >= len(plan.intervals)),
+        ("removeSet", lambda n: n <= len(plan.intervals)),
+    ):
+        while not done(rows.count()):
+            before = rows.count()
+            page.locator(f"[data-action*='plan--sets-control#{control}']").first.click()
+            page.wait_for_function(
+                f'n => document.querySelectorAll("{_INTERVAL_SECONDS}").length != n',
+                arg=before,
+                timeout=_TIMEOUT,
+            )
+
+    minutes = page.locator(_CLOCK_MINUTES)
+    for i, seconds in enumerate(plan.intervals):
+        _fill_clock(minutes.nth(i), seconds)
+    _fill_clock(minutes.nth(len(plan.intervals)), plan.rest_seconds)
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+
+    entered = [int(v or -1) for v in rows.evaluate_all("els => els.map(e => e.value)")]
+    rest = page.locator(_REST_SECONDS).input_value()
+    if entered != list(plan.intervals) or rest != str(plan.rest_seconds):
+        raise BTWBError(
+            f"'{block.name}': BTWB holds intervals {entered} and rest {rest!r}, "
+            f"not {list(plan.intervals)} and {plan.rest_seconds}"
+        )
+    logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
+    # The save button sits outside the builder's form, tied to it by form=; the other
+    # button tied that way is a hidden preview, the one carrying a formaction.
+    return page.locator("button[type='submit'][form='new_track_event']:not([formaction])").first
+
+
 def _generate_preview(page: Page, description: str, block_name: str) -> None:
     """Submit *description* and wait for BTWB to render a preview of it.
 
@@ -355,8 +425,11 @@ def _fill_and_plan(
         track_select.select_option(index=1)
         page.wait_for_load_state("networkidle", timeout=_TIMEOUT)
 
-    _generate_preview(page, _SEED_DESCRIPTION if exact_movements else block.content, block.name)
-    plan_button = page.locator("button:has-text('Planifier'):not([disabled])")
+    if block.erg is not None:
+        plan_button = _fill_erg_intervals(page, block)
+    else:
+        _generate_preview(page, _SEED_DESCRIPTION if exact_movements else block.content, block.name)
+        plan_button = page.locator("button:has-text('Planifier'):not([disabled])")
 
     if exact_movements:
         _build_from_movements(page, block)

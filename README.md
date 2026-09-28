@@ -314,6 +314,8 @@ The `content` field (the prescription for the level chosen at preview) is posted
 
 Opens a Playwright browser session, logs into BTWB, and submits each block via the planning form. Blocks already present on BTWB for that date are skipped automatically (duplicate detection via the weekly calendar). The `instruction` field is posted to BTWB's dedicated coaching note field.
 
+**Erg intervals go through BTWB's classic builder, not its AI.** Strivee prescribes erg work by time and watts; BTWB's AI generator asks for a distance per interval or refuses the block. Its classic *Intervals For Distance* template takes exactly what is prescribed — a time per interval and one rest — and the athlete logs the distance. So a cardio block whose main set reads cleanly (`4 sets of : 2min … / 2min Full REST`, `8min RPE 4 / 4min RPE 7 / x 3sets`) skips the LLM formatter: preview shows the plan (`Bike Erg - Intervals For Distance / 4 x 2:00, rest 2:00`), the whole prescription — watts, warm-up, cooldown — goes word for word into the coaching note, and posting fills the template's fields and reads the entered seconds back before planning. A block that does not read cleanly (two modalities, a rest only between sets of several pieces, one steady effort, a distance) stays on the AI path rather than being guessed at.
+
 <details>
 <summary>Result on BTWB</summary>
 

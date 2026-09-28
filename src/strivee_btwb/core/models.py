@@ -8,6 +8,7 @@ cached object. Use :meth:`ProgrammingBlock.replace` to derive an edited copy.
 
 from dataclasses import dataclass, field, replace
 from datetime import date
+from typing import Any
 
 RX = "rx"
 INTER_PLUS = "inter_plus"
@@ -15,6 +16,20 @@ INTER = "inter"
 
 LEVEL_LABELS = {RX: "RX", INTER_PLUS: "INTER+", INTER: "INTER"}
 """Display labels for the difficulty levels Strivee publishes, hardest first."""
+
+
+@dataclass(frozen=True)
+class ErgIntervals:
+    """A cardio main set posted as BTWB's "Intervals For Distance" workout.
+
+    Each interval is a fixed time and the athlete logs how far they got, so the
+    watts or pace a coach prescribes never has to be turned into a distance.
+    BTWB takes one rest for all intervals.
+    """
+
+    movement: str  # BTWB's exact movement name, e.g. "Bike Erg"
+    intervals: tuple[int, ...]  # work seconds, in order
+    rest_seconds: int
 
 
 @dataclass(frozen=True)
@@ -27,12 +42,13 @@ class ProgrammingBlock:
     inter_plus: str = ""  # INTER+ variant as published, "" when the source has none
     inter: str = ""  # INTER variant as published, "" when the source has none
     level: str = RX  # which level `content` currently holds
+    erg: ErgIntervals | None = None  # set when posted through BTWB's classic builder
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
             raise ValueError("ProgrammingBlock.name must be a non-empty string")
 
-    def replace(self, **changes: str) -> "ProgrammingBlock":
+    def replace(self, **changes: Any) -> "ProgrammingBlock":
         """Return a copy of this block with the given fields replaced."""
         return replace(self, **changes)
 
