@@ -298,6 +298,41 @@ def test_extract_levels_mixes_targeted_and_bare_headers():
     assert r.inter == "Wall facing Handstand Hold x90 sec"
 
 
+def test_extract_levels_level_line_holding_the_workout_is_not_a_header():
+    """Real 07-06 case: only a rest line sits under each, so the line is the workout.
+
+    Read as headers, INTER+ became "Rest 1min/ 1Min30 between sets" and the sets
+    moved into the note.
+    """
+    content = (
+        "A.\nAccumulated 8 Reps /movement for Quality\n\nB.\n"
+        "INTER + : 8 Sets : 2/3 Bar Muscle-Up\nRest 1min/ 1Min30 between sets\n\n"
+        "INTER : 8 sets : 1/2 Bar Muscle Up / Spotted Bar Muscle Up\n"
+        "Rest 1min/1min30 between sets"
+    )
+    r = _extract_levels(ProgrammingBlock(name="A", content=content))
+    assert r.content == content
+    assert r.available_levels() == [RX]
+
+
+def test_extract_levels_combined_header_repeating_emf():
+    """Real 08-24 header "EMF - INTER + EMF - RX": RX lost its whole workout."""
+    block = ProgrammingBlock(
+        name="EMF 60 : Gymnastic strength",
+        content=(
+            "Strict Ring Strength\n\nEMF - INTER (Je ne suis pas à l'aise sur les anneaux)\n\n"
+            "EMOMx12 :\nmin 1 to 4 - 3 Weighted strict chest to ring\n\n"
+            "EMF - INTER + EMF - RX\n\nAMRAP 6:00\nMax rep strict ring Muscle-up"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.content == "Strict Ring Strength\nAMRAP 6:00\nMax rep strict ring Muscle-up"
+    assert (
+        r.inter == "Strict Ring Strength\nEMOMx12 :\nmin 1 to 4 - 3 Weighted strict chest to ring"
+    )
+    assert r.available_levels() == [RX, INTER]  # INTER+ is RX's workout, so no choice
+
+
 def test_extract_levels_keeps_stacked_inline_loads():
     """Real Sat Muscle endurance: one load per level, stacked — one workout, not three."""
     content = (

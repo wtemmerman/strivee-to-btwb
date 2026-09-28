@@ -15,7 +15,12 @@ from datetime import date
 from pathlib import Path
 
 from strivee_btwb.core import config
-from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from strivee_btwb.core.models import (
+    LEVEL_LABELS,
+    DayProgramming,
+    ProgrammingBlock,
+    WeeklyProgramming,
+)
 from strivee_btwb.pipeline import (
     analyse_days,
     clean_week,
@@ -237,10 +242,12 @@ def _index_blocks(day: DayProgramming) -> dict[str, ProgrammingBlock]:
 
 
 def compare_analyse(baseline: WeeklyProgramming, current: WeeklyProgramming) -> dict:
-    """Compare two analyse results: block name-sets and per-block content ratio.
+    """Compare two analyse results: block name-sets and per-block prescription ratios.
 
     Passes when every day has the same set of block names (case/space-insensitive)
-    and every matched block's content similarity >= CONTENT_RATIO_THRESHOLD.
+    and every matched block's content, INTER+ and INTER similarity is each >=
+    CONTENT_RATIO_THRESHOLD. The variants are compared because a level-split
+    regression leaves RX untouched: picking INTER+ then posts a rest line.
     """
     base_days = {d.day_label: d for d in baseline.days}
     cur_days = {d.day_label: d for d in current.days}
@@ -257,8 +264,9 @@ def compare_analyse(baseline: WeeklyProgramming, current: WeeklyProgramming) -> 
         bnames, cnames = set(_index_blocks(bd)), set(_index_blocks(cd))
         names_equal = bnames == cnames
         ratios = [
-            _ratio(_index_blocks(bd)[n].content, _index_blocks(cd)[n].content)
+            _ratio(_index_blocks(bd)[n].level_text(level), _index_blocks(cd)[n].level_text(level))
             for n in (bnames & cnames)
+            for level in LEVEL_LABELS
         ]
         min_ratio = min(ratios) if ratios else 1.0
         day_ok = names_equal and min_ratio >= CONTENT_RATIO_THRESHOLD

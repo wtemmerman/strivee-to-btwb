@@ -500,7 +500,7 @@ def _resplit_trailing_coaching(content: str, instruction: str) -> tuple[str, str
 _LEVEL_TOKEN = r"INTER\s*\+|INTER|RX"
 _LEVEL_HEADER_RE = re.compile(
     rf"^\s*(?:EMF\s*[-:]?\s*)?(?P<levels>(?:{_LEVEL_TOKEN})"
-    rf"(?:\s*[-\u2013/&+,]?\s*(?:{_LEVEL_TOKEN}))*)"
+    rf"(?:\s*[-\u2013/&+,]?\s*(?:EMF\s*[-:]?\s*)?(?:{_LEVEL_TOKEN}))*)"
     r"\s*[-\u2013:]?\s*(?:\([^)]*\))?\s*[-\u2013:]?\s*$",
     re.IGNORECASE,
 )
@@ -514,22 +514,27 @@ _LEVEL_LEAD_RE = re.compile(
     re.IGNORECASE,
 )
 
+_REST_LINE_RE = re.compile(r"^\s*-?\s*(?:rest|repos)\b", re.IGNORECASE)
+
 
 def _targeted_headers(lines: list[str]) -> set[int]:
     """Indices of level lines that carry a target yet open a section of their own.
 
     A targeted header has its level's workout beneath it, so the next non-blank line
-    is not another level line — inline values come stacked one per level. At least
-    two levels must be headed that way, or a lone "INTER - #2x15kg" followed by
-    coaching would split one workout.
+    is not another level line — inline values come stacked one per level — and what
+    lies beneath is more than a rest line: under "INTER + : 8 Sets : 2/3 Bar
+    Muscle-Up" only "Rest 1min between sets" follows, because the line itself is the
+    workout. At least two levels must be headed that way, or a lone "INTER - #2x15kg"
+    followed by coaching would split one workout.
     """
     strict = {i for i, line in enumerate(lines) if _LEVEL_HEADER_RE.match(line)}
     lead = {i for i, line in enumerate(lines) if i not in strict and _LEVEL_LEAD_RE.match(line)}
     level_lines = strict | lead
     headers: set[int] = set()
     for i in lead:
-        nxt = next((j for j in range(i + 1, len(lines)) if lines[j].strip()), None)
-        if nxt is not None and nxt not in level_lines:
+        end = next((j for j in range(i + 1, len(lines)) if j in level_lines), len(lines))
+        body = [line for line in lines[i + 1 : end] if line.strip()]
+        if any(not _REST_LINE_RE.match(line) for line in body):
             headers.add(i)
     levels = {
         level
