@@ -60,6 +60,7 @@ from .processing.accessory import (
 from .processing.garmin_map import activity_date, clock, needs_laps, sessions_from_activities
 from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
+from .processing.plus_split import split_plus_joins
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,
@@ -82,7 +83,8 @@ CACHE_SCHEMA_VERSION = 2
 # Bump when the formatting (clean_week / format_for_btwb / format prompt) changes,
 # so a stale formatted cache is recomputed instead of silently reused.
 # 2: blocks record the difficulty level their content was selected from.
-FORMATTED_SCHEMA_VERSION = 2
+# 3: "+"-joined blocks are split into one workout per part.
+FORMATTED_SCHEMA_VERSION = 3
 
 # Bump when the set-extraction prompt or WorkSet shape changes, so a stale
 # per-day set cache is re-extracted instead of silently reused by the audit.
@@ -291,8 +293,26 @@ def load_text_captures(days: list[str], ws: date) -> dict[str, str]:
 # ── Week processing ───────────────────────────────────────────────────────────
 
 
+def split_week(week: WeeklyProgramming) -> WeeklyProgramming:
+    """Split every "+"-joined block into the separate workouts it is posted as."""
+    return WeeklyProgramming(
+        week_start=week.week_start,
+        days=[
+            DayProgramming(
+                date=day.date,
+                day_label=day.day_label,
+                blocks=[part for b in day.blocks for part in split_plus_joins(b)],
+            )
+            for day in week.days
+        ],
+    )
+
+
 def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
-    """Apply LLM-based Rx extraction and BTWB formatting to every block.
+    """Split "+"-joined blocks, then LLM-format every workout for BTWB.
+
+    The split runs after level selection because each level can join its parts
+    differently, and before formatting so each part is formatted on its own.
 
     Kept sequential on purpose: on a single GPU these calls are prefill-bound, so
     running them concurrently contends for the GPU and is slower, not faster
@@ -301,7 +321,7 @@ def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
     """
     days = []
     try:
-        for day in week.days:
+        for day in split_week(week).days:
             logger.info("Formatting %s with LLM…", day.day_label)
             blocks = [format_for_btwb(b) for b in day.blocks]
             blocks = [b for b in blocks if b.content.strip()]

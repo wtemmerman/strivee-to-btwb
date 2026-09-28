@@ -24,6 +24,7 @@ from strivee_btwb.pipeline import (
     do_delete,
     do_post,
     do_preview,
+    llm_format_week,
     load_days,
     load_formatted_day,
     load_text_captures,
@@ -512,6 +513,25 @@ def test_formatted_cache_stale_when_source_mtime_changes(caplog):
 
 def test_formatted_cache_miss_when_absent():
     assert load_formatted_day(FIXTURE_WEEK, "Wed", expected_mtime_ns=1) is None
+
+
+def test_llm_format_week_formats_each_joined_part_on_its_own(monkeypatch):
+    """The formatter must never see a "+" join — it dropped the part above one."""
+    seen: list[str] = []
+
+    def recording_format(block, **_):
+        seen.append(block.content)
+        return block
+
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", recording_format)
+    block = ProgrammingBlock(name="A", content="3 sets of :\n3 Negatives\n+\n2 sets of :\nMax HSPU")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 30), day_label="Wed", blocks=[block])],
+    )
+    result = llm_format_week(week)
+    assert seen == ["3 sets of :\n3 Negatives", "2 sets of :\nMax HSPU"]
+    assert [b.name for b in result.days[0].blocks] == ["A (1/2)", "A (2/2)"]
 
 
 def test_prepare_week_reuses_cache_on_second_call(monkeypatch):

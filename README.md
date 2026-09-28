@@ -243,6 +243,8 @@ Levels normally open with the work everyone does, which would make every menu li
 
 Only the chosen level is posted — no manual rewriting of the workout. The choices are stored in the formatted cache, so `post` reuses preview's answers instead of asking again; `--relevel` discards them, asks again, and reformats.
 
+**One workout per joined part.** A `+`, `Into` or `Then` on its own line joins two pieces of work in one Strivee block ("3 sets of negatives + 2 sets of max reps", "bike sprints Into row sets"). BTWB's generator reads that as one workout and mangles or refuses it, and the formatter drops one side of an `Into`, so after the level is chosen the block is split and each part is formatted and posted on its own, titled `… (1/2)`, `… (2/2)`; the coaching note goes on the first. Cardio blocks join a warm-up and a cooldown the same way — those are not work to log, so a leading part that says warm-up and a trailing part that says cooldown (or ramps down, like the bike's `5min #65 to 40% FTP20`) move to the note, and only the main set is posted.
+
 <details>
 <summary>Example preview output (Monday)</summary>
 

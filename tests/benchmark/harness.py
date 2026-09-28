@@ -21,6 +21,7 @@ from strivee_btwb.pipeline import (
     clean_week,
     llm_format_week,
     load_text_captures,
+    split_week,
 )
 from strivee_btwb.processing import extract_sets
 from strivee_btwb.processing.volume import weekly_volume
@@ -342,7 +343,7 @@ def format_fidelity(source: WeeklyProgramming, formatted: WeeklyProgramming) -> 
     """Source-grounded format checks, independent of the (same-model) baseline.
 
     For each block matched by name between the formatter's INPUT (cleaned analyse
-    output) and its OUTPUT, flags:
+    output, split at "+" joins as llm_format_week does) and its OUTPUT, flags:
       A. invented load numbers — a %/kg/lb/RM/BW number in the output absent from
          the input (catches hallucinations like 'Up to a heavy single' -> '1xBW');
       B. dropped RM-loadings — a percentage on a pre-level-header RM-loading line
@@ -352,7 +353,7 @@ def format_fidelity(source: WeeklyProgramming, formatted: WeeklyProgramming) -> 
     sub-level sections only deletes content (never adds numbers), and dropped-load
     detection ignores anything at or below the first athlete-level header.
     """
-    s_days = {d.day_label: _index_blocks(d) for d in source.days}
+    s_days = {d.day_label: _index_blocks(d) for d in split_week(source).days}
     f_days = {d.day_label: _index_blocks(d) for d in formatted.days}
     per_block = []
     ok = True
