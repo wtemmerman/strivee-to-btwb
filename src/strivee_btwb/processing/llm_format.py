@@ -37,9 +37,29 @@ def _ensure_movement_in_content(block: ProgrammingBlock) -> ProgrammingBlock:
     return block.replace(content=movement + "\n" + block.content)
 
 
+def _tighten_plus_joins(text: str) -> str:
+    """Drop blank lines around a lone "+" — Strivee's join between two parts of a workout.
+
+    Set off by a blank line, the "+" reads to the model as the start of the real
+    workout, and it dropped everything above it (a real INTER chest-to-bar block
+    lost its whole accumulation part).
+    """
+    lines = text.splitlines()
+    kept: list[str] = []
+    for i, line in enumerate(lines):
+        if not line.strip():
+            prev = kept[-1].strip() if kept else ""
+            nxt = next((x.strip() for x in lines[i + 1 :] if x.strip()), "")
+            if "+" in (prev, nxt):
+                continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def format_for_btwb(block: ProgrammingBlock, model: str | None = None) -> ProgrammingBlock:
     """Reformat a block's content for BTWB using a local Ollama model."""
     block = _ensure_movement_in_content(block)
+    block = block.replace(content=_tighten_plus_joins(block.content))
     m = model or config.OLLAMA_FORMAT_MODEL
     logger.debug("[%s] formatting with model '%s'", block.name, m)
     logger.debug("[%s] input (%d chars):\n%s", block.name, len(block.content), block.content)

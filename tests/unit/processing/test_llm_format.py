@@ -9,6 +9,7 @@ from strivee_btwb.core.models import ProgrammingBlock
 from strivee_btwb.processing.llm_format import (
     _ensure_movement_in_content,
     _movement_from_block_name,
+    _tighten_plus_joins,
     format_for_btwb,
 )
 
@@ -169,3 +170,22 @@ def test_format_for_btwb_uses_configured_model(mock_chat, monkeypatch):
     block = ProgrammingBlock(name="WOD", content="For time:\n21 Pull-ups")
     format_for_btwb(block)
     assert mock_chat.call_args.kwargs["model"] == "my-model"
+
+
+def test_tighten_plus_joins_closes_the_gap_around_a_lone_plus():
+    """Real Mon INTER case: with a blank line after "+", the model kept only the EMOM."""
+    content = (
+        "Accumulated 8 Reps /movement\nButterfly + Beat swing\n+\n\n"
+        "EMOMx12 :\n6 reps Butterfly Chest to bar pull-up Unbroken"
+    )
+    assert _tighten_plus_joins(content) == (
+        "Accumulated 8 Reps /movement\nButterfly + Beat swing\n+\n"
+        "EMOMx12 :\n6 reps Butterfly Chest to bar pull-up Unbroken"
+    )
+
+
+def test_tighten_plus_joins_keeps_other_paragraph_breaks():
+    content = "For time :\n21 Thrusters\n\nTime cap 10:00\n\n+\n\nAMRAP 3:00"
+    assert (
+        _tighten_plus_joins(content) == "For time :\n21 Thrusters\n\nTime cap 10:00\n+\nAMRAP 3:00"
+    )
