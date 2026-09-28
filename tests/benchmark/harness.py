@@ -6,8 +6,10 @@ no filesystem) can be unit-tested in tests/unit/benchmark/.
 
 from __future__ import annotations
 
+import argparse
 import difflib
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -15,6 +17,7 @@ from datetime import date
 from pathlib import Path
 
 from strivee_btwb.core import config
+from strivee_btwb.core.llm import response_cache_stats, use_response_cache
 from strivee_btwb.core.models import (
     LEVEL_LABELS,
     DayProgramming,
@@ -31,6 +34,8 @@ from strivee_btwb.pipeline import (
 from strivee_btwb.processing import extract_sets
 from strivee_btwb.processing.volume import weekly_volume
 
+logger = logging.getLogger("benchmark")
+
 # Accuracy gate: a per-block content similarity below this fails the comparison.
 CONTENT_RATIO_THRESHOLD = 0.95
 
@@ -39,6 +44,7 @@ _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 _BENCH_DIR = Path(__file__).parent
 BASELINE_DIR = _BENCH_DIR / "baselines"
 RESULTS_DIR = _BENCH_DIR / "results"
+LLM_CACHE_DIR = _BENCH_DIR / "llm_cache"
 
 
 # ── week discovery ────────────────────────────────────────────────────────────
@@ -55,6 +61,30 @@ def text_era_weeks() -> list[str]:
         if any(wk.glob("strivee_*.txt")):
             weeks.append(wk.name)
     return weeks
+
+
+# ── model response cache ───────────────────────────────────────────────────────
+
+
+def start_llm_cache(argv: list[str] | None = None) -> None:
+    """Answer unchanged model calls from LLM_CACHE_DIR unless --no-cache is given.
+
+    Most changes are to the code around the model, so a run need only ask it the
+    prompts that changed. --no-cache asks it everything, which is the way to see
+    whether the model itself still answers as it did.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-cache", action="store_true", help="call the model for every prompt")
+    args = parser.parse_args(argv)
+    use_response_cache(None if args.no_cache else LLM_CACHE_DIR)
+    if args.no_cache:
+        logger.info("Model response cache off — every prompt goes to the model")
+
+
+def log_llm_cache() -> None:
+    hits, misses = response_cache_stats()
+    if hits or misses:
+        logger.info("Model response cache: %d answered from cache, %d asked", hits, misses)
 
 
 # ── stage runners (these exercise the real pipeline code paths) ────────────────

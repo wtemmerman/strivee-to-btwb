@@ -128,3 +128,84 @@ def test_none_content_returns_empty_string():
     # A thinking-only / empty assistant turn yields content=None; normalise to "".
     with patch("strivee_btwb.core.llm.ollama.chat", return_value={"message": {"content": None}}):
         assert chat_text("p", "m") == ""
+
+
+# ---------------------------------------------------------------------------
+# Response cache (benchmark only)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cached(tmp_path, monkeypatch):
+    """Cache on, a pulled model with a known digest, and the model call recorded."""
+    from strivee_btwb.core import llm
+
+    llm._model_digest.cache_clear()
+    digest = {"value": "sha256:aaa"}
+    monkeypatch.setattr(
+        "strivee_btwb.core.llm.ollama.list",
+        lambda: {"models": [{"model": "qwen3:8b", "digest": digest["value"]}]},
+    )
+    llm.use_response_cache(tmp_path)
+    yield digest
+    llm.use_response_cache(None)
+    llm._model_digest.cache_clear()
+
+
+def test_a_repeated_call_is_answered_from_the_cache(cached):
+    from strivee_btwb.core.llm import response_cache_stats
+
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("A")) as mock_chat:
+        assert chat_text("prompt", "qwen3:8b") == "A"
+        assert chat_text("prompt", "qwen3:8b") == "A"
+    assert mock_chat.call_count == 1
+    assert response_cache_stats() == (1, 1)
+
+
+def test_a_changed_prompt_or_schema_asks_the_model(cached):
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("{}")) as mock_chat:
+        chat_json("prompt", "qwen3:8b")
+        chat_json("prompt edited", "qwen3:8b")
+        chat_json("prompt", "qwen3:8b", schema={"type": "object"})
+    assert mock_chat.call_count == 3
+
+
+def test_an_updated_model_asks_again(cached):
+    """Re-pulling the model changes its digest — old answers no longer apply."""
+    from strivee_btwb.core import llm
+
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("A")) as mock_chat:
+        chat_text("prompt", "qwen3:8b")
+        cached["value"] = "sha256:bbb"
+        llm._model_digest.cache_clear()
+        chat_text("prompt", "qwen3:8b")
+    assert mock_chat.call_count == 2
+
+
+def test_an_empty_answer_is_cached_too(cached):
+    """The pipeline handles "" deterministically, so it is as reusable as any answer."""
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response(None)) as mock_chat:
+        assert chat_text("prompt", "qwen3:8b") == ""
+        assert chat_text("prompt", "qwen3:8b") == ""
+    assert mock_chat.call_count == 1
+
+
+def test_a_failed_call_is_not_cached(cached):
+    with patch("strivee_btwb.core.llm.ollama.chat", side_effect=RuntimeError("500")):
+        with pytest.raises(LLMUnavailableError):
+            chat_text("prompt", "qwen3:8b")
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("A")) as mock_chat:
+        assert chat_text("prompt", "qwen3:8b") == "A"
+    assert mock_chat.call_count == 1
+
+
+def test_a_model_that_is_not_pulled_fails_loud(cached):
+    with pytest.raises(LLMUnavailableError, match="not pulled"):
+        chat_text("prompt", "llama3:70b")
+
+
+def test_without_the_cache_every_call_asks_the_model():
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("A")) as mock_chat:
+        chat_text("prompt", "qwen3:8b")
+        chat_text("prompt", "qwen3:8b")
+    assert mock_chat.call_count == 2

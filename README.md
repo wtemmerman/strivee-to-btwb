@@ -886,6 +886,7 @@ tests/
 | `parsed/<week>/sets_*.json` | Per-day set extraction for `audit`, keyed on a hash of the block text it was read from |
 | `garmin/<week>/` | Raw Garmin activities as fetched, laps included for runs |
 | `tests/benchmark/baselines/`, `tests/benchmark/results/` | Benchmark snapshots + timing CSVs |
+| `tests/benchmark/llm_cache/` | Benchmark-only model answers, keyed on model digest + prompt + options |
 | `htmlcov/` | Coverage HTML report |
 
 ---
@@ -901,6 +902,19 @@ noted, since it means the week is being under-counted silently.
 
 The set stage only runs for weeks that have a `sets` baseline, so run
 `make benchmark-baseline` once to start gating it.
+
+**Model response cache.** A full run asks the model about 950 prompts — about an hour on
+one GPU — yet most changes are to the code around the model, not to what it is asked. At
+temperature 0 the model gives a prompt the same answer every time, so the benchmark stores
+each answer under `tests/benchmark/llm_cache/`, keyed on the model's digest, the full prompt
+and the options, and asks the model only the prompts that changed. A change to parsing or
+splitting reruns every week in about a second; a prompt edit or a re-pulled model misses the
+cache and pays in full for what it touched. Real `analyse`/`preview` runs never use it.
+`--no-cache` asks the model everything — the way to check the model still answers as it did:
+
+```bash
+uv run python -m tests.benchmark.compare --no-cache
+```
 
 The slow parts are the local LLM stages (analyse, format) and the device/browser
 round-trips (capture, post). Optimizations are gated by an accuracy benchmark

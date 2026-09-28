@@ -26,9 +26,11 @@ from .harness import (
     analyse_week,
     format_fidelity,
     format_week,
+    log_llm_cache,
     save_baseline,
     save_sets_baseline,
     sets_week,
+    start_llm_cache,
     text_era_weeks,
     time_stage,
 )
@@ -45,6 +47,7 @@ def _warm() -> None:
 
 def main() -> None:
     setup(debug=False)
+    start_llm_cache()
     weeks = text_era_weeks()
     if not weeks:
         logger.error("No text-era capture weeks found under %s", config.CAPTURES_DIR)
@@ -98,6 +101,7 @@ def main() -> None:
             t_sets.seconds,
         )
 
+    log_llm_cache()
     _write_csv(timings, "baseline_timing.csv")
     total = sum(t.seconds for t in timings)
     logger.info("Baseline complete — %d week(s), total LLM wall-clock %.1fs", len(weeks), total)
