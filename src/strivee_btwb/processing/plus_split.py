@@ -62,6 +62,14 @@ def _joined_parts(content: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def is_lead_in(paragraph: str) -> bool:
+    """Whether a note paragraph is a warm-up or drill list the split moved there.
+
+    Those come before the work they lead into, so the note keeps them first.
+    """
+    return bool(_WARM_UP_RE.search(paragraph) or _DRILLS_RE.match(paragraph))
+
+
 def _is_ramp_down(part: str) -> bool:
     return any(int(high) > int(low) for high, low in _RANGE_RE.findall(part))
 
