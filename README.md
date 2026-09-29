@@ -316,12 +316,32 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 
 **Erg intervals go through BTWB's classic builder, not its AI.** Strivee prescribes erg work by time and watts; BTWB's AI generator asks for a distance per interval or refuses the block. Its classic *Intervals For Distance* template takes exactly what is prescribed — a time per interval and one rest — and the athlete logs the distance. So a cardio block whose main set reads cleanly (`4 sets of : 2min … / 2min Full REST`, `8min RPE 4 / 4min RPE 7 / x 3sets`) skips the LLM formatter: preview shows the plan (`Bike Erg - Intervals For Distance / 4 x 2:00, rest 2:00`), the whole prescription — watts, warm-up, cooldown — goes word for word into the coaching note, and posting fills the template's fields and reads the entered seconds back before planning. A block that does not read cleanly (two modalities, a rest only between sets of several pieces, one steady effort, a distance) stays on the AI path rather than being guessed at.
 
+**Single-movement lifts and gymnastics go through the classic builder too.** BTWB's AI refused `2 sets of : Max rep strict HSPU with Abmat` and `Build a heavy double - 2-pause Squat clean`, stored a tempo back squat at 70% as a plain `5-5-5`, and turned a 10RM seal row into a "Burpee Alternating Dumbbell Clean&Jerk". A block that is nothing but one of these schemes posts through the matching classic template:
+
+| Strivee | BTWB template |
+|---|---|
+| `3 sets of : 5 Reps Back Squat Tempo 31X1` / rest / `Target weight : #70% 1RM` | Sets, `Tempo Back Squat`, % 1RM |
+| `3 Sets of : 6 Reps RPE 7` (movement only in the title) | Sets, the title's movement, heaviest weight |
+| `2 sets of : Max rep strict HSPU with Abmat` | Sets, `Strict Handstand Push-up`, all max reps |
+| `10RM Barbell Seal Row`, `Build a heavy double - 2-pause Squat clean` | X Rep Max, `Seal Row`, `Pause Squat Clean` |
+| `EMOMx12 : 6 reps Butterfly Chest to bar pull-up` | EMOM, `Butterfly Chest-to-bar Pull-up` |
+
+The movement is written the way BTWB names it — the aid (`with Abmat`) and cues (`RPE 7`, `Unbroken`, `touch and go`, `#Bellow the knee`) left to the note, abbreviations expanded — and must agree with the block's title, so a programme header like `3RM en 4 semaines` never posts as a rep max. Posting looks the name up exactly; an unknown one skips that block, reported for adding by hand, and the rest of the day still posts. A load BTWB cannot hold (`@75-80% of your 1RM`) keeps the block on the AI path. A leading `Accumulated N reps / movement` drill list, which names no BTWB movement, goes to the note of the work it leads into.
+
+Every note opens with the prescription as Strivee wrote it, whichever path posts the block: BTWB keeps structure and drops detail (RPE, tempo, a variant), and the athlete should still see it.
+
 <details>
 <summary>Result on BTWB</summary>
 
 ![BTWB calendar](docs/screenshots/btwb_calendar.png)
 
 </details>
+
+To replace a workout, delete only it — `--only` takes exact titles and leaves the rest of the day, accessory work included, alone:
+
+```bash
+uv run strivee-btwb delete --week 2026-09-28 --days Wed --only "EMF 60 - Weighted pull-up" --dry-run
+```
 
 ### Step 5 — Verify
 
