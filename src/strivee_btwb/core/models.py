@@ -37,12 +37,15 @@ class ClassicSets:
     """A single-movement set scheme posted through BTWB's classic "Sets" template.
 
     ``None`` in *reps* is a max-rep set. BTWB takes one rest for all sets; ``None``
-    there is "rest as needed", which BTWB spells as an empty field.
+    there is "rest as needed", which BTWB spells as an empty field. A *rep_max*
+    plan is BTWB's "X Rep Max": one set of ``reps[0]``, built up to a heavy one.
     """
 
     movement: str  # BTWB's exact movement name, e.g. "Strict Handstand Push-up"
     reps: tuple[int | None, ...]
     rest_seconds: int | None
+    percent_1rm: int | None = None  # every set's load, when prescribed as a % of 1RM
+    rep_max: bool = False
 
 
 @dataclass(frozen=True)

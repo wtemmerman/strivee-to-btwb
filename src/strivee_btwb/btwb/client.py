@@ -25,7 +25,7 @@ from playwright.sync_api import Locator, Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from ..core import config
-from ..core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from ..core.models import ClassicSets, DayProgramming, ProgrammingBlock, WeeklyProgramming
 
 logger = logging.getLogger("btwb")
 
@@ -396,15 +396,30 @@ def _set_row_count(page: Page, row_selector: str, wanted: int) -> None:
             )
 
 
-def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
-    """Build *block*'s classic "Sets" workout and return its plan button."""
-    plan = block.sets
-    if plan is None:  # invariant: only called for blocks with a set plan
-        raise BTWBError(f"internal error: '{block.name}' has no set plan")
-    _open_classic_template(page, plan.movement, {"reps": "gymnastics_sets"})
+_PERCENT_1RM = "input[name='definition[contents][][weight][value]']:visible"
+
+
+def _values(page: Page, selector: str) -> list[str]:
+    return page.locator(selector).evaluate_all("els => els.map(e => e.value)")
+
+
+def _fill_rep_max(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
+    _open_classic_template(page, plan.movement, {"weight": "rep_max"})
+    reps = page.locator(_SET_REPS).first
+    reps.wait_for(state="visible", timeout=_TIMEOUT)
+    reps.fill(str(plan.reps[0]))
+    reps.press("Tab")
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+    if _values(page, _SET_REPS) != [str(plan.reps[0])]:
+        raise BTWBError(f"'{block.name}': BTWB holds reps {_values(page, _SET_REPS)}")
+
+
+def _fill_counted_sets(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
+    kind = _open_classic_template(
+        page, plan.movement, {"reps": "gymnastics_sets", "weight": "weightlifting_sets"}
+    )
     _set_row_count(page, _SET_REPS, len(plan.reps))
-    all_max = all(r is None for r in plan.reps)
-    if all_max:
+    if all(r is None for r in plan.reps):
         page.locator("select#rep_scheme").select_option("maxreps")
     elif any(r is None for r in plan.reps):
         raise BTWBError(f"'{block.name}': mixed max and counted sets are not supported yet")
@@ -412,20 +427,52 @@ def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
         fields = page.locator(_SET_REPS)
         for i, reps in enumerate(plan.reps):
             fields.nth(i).fill(str(reps))
-    minutes = page.locator(_CLOCK_MINUTES).last
+    if plan.percent_1rm is not None:
+        if kind != "weight":
+            raise BTWBError(f"'{block.name}': a % 1RM load on a bodyweight movement")
+        page.locator("select[name='definition[prescription][weightPerSet]']").select_option(
+            "onerepmax"
+        )
+        percents = page.locator(_PERCENT_1RM)
+        percents.first.wait_for(state="visible", timeout=_TIMEOUT)
+        for i in range(len(plan.reps)):
+            percents.nth(i).fill(str(plan.percent_1rm))
+            percents.nth(i).press("Tab")
     if plan.rest_seconds is not None:
-        _fill_clock(minutes, plan.rest_seconds)
+        _fill_clock(page.locator(_CLOCK_MINUTES).last, plan.rest_seconds)
     page.wait_for_timeout(_FIELD_COMMIT_MS)
 
-    rows = page.locator(_SET_REPS).count()
-    rest = page.locator(_REST_SECONDS).input_value()
-    scheme = page.locator("select#rep_scheme").input_value()
-    expected_rest = "" if plan.rest_seconds is None else str(plan.rest_seconds)
-    if rows != len(plan.reps) or rest != expected_rest or (all_max and scheme != "maxreps"):
-        raise BTWBError(
-            f"'{block.name}': BTWB holds {rows} set(s), rest {rest!r}, scheme {scheme!r}, "
-            f"not {len(plan.reps)}, {expected_rest!r}{', maxreps' if all_max else ''}"
-        )
+    expected = {
+        "sets": len(plan.reps),
+        "rest": "" if plan.rest_seconds is None else str(plan.rest_seconds),
+        "scheme": "maxreps" if plan.reps[0] is None else "assign",
+        "reps": [] if plan.reps[0] is None else [str(r) for r in plan.reps],
+        "percent": [] if plan.percent_1rm is None else [str(plan.percent_1rm)] * len(plan.reps),
+    }
+    entered = {
+        "sets": page.locator(_SET_REPS).count(),
+        "rest": page.locator(_REST_SECONDS).input_value(),
+        "scheme": page.locator("select#rep_scheme").input_value(),
+        "reps": [] if plan.reps[0] is None else _values(page, _SET_REPS),
+        "percent": [] if plan.percent_1rm is None else _values(page, _PERCENT_1RM),
+    }
+    if entered != expected:
+        raise BTWBError(f"'{block.name}': BTWB holds {entered}, not {expected}")
+
+
+def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
+    """Build *block*'s classic Sets or X Rep Max workout and return its plan button.
+
+    What BTWB holds is read back before planning: a field that did not take would
+    otherwise save a different workout, silently.
+    """
+    plan = block.sets
+    if plan is None:  # invariant: only called for blocks with a set plan
+        raise BTWBError(f"internal error: '{block.name}' has no set plan")
+    if plan.rep_max:
+        _fill_rep_max(page, block, plan)
+    else:
+        _fill_counted_sets(page, block, plan)
     logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
     return page.locator(_SAVE_BUTTON).first
 
