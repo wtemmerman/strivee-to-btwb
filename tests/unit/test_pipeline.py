@@ -554,6 +554,23 @@ def test_an_erg_interval_block_skips_the_llm_and_keeps_its_prescription(monkeypa
     assert bike.instruction == f"{content}\n\nRPE 8"
 
 
+def test_the_note_keeps_what_the_formatter_and_btwb_drop(monkeypatch):
+    """Real Wed pull-up: BTWB stored "3-3" and lost "RPE 7" / "RPE 9"."""
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.format_for_btwb",
+        lambda block, **_: block.replace(content="Weighted pull-up\n2 sets of 3"),
+    )
+    content = "1 set of : 3 Reps RPE 7\n- Rest 2min -\n1 set of : 3 Reps RPE 9"
+    block = ProgrammingBlock(name="EMF 60 - Weighted pull-up", content=content, instruction="Goal")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 30), day_label="Wed", blocks=[block])],
+    )
+    (pull_up,) = llm_format_week(week).days[0].blocks
+    assert pull_up.content == "Weighted pull-up\n2 sets of 3"
+    assert pull_up.instruction == f"{content}\n\nGoal"
+
+
 def test_formatted_cache_keeps_the_erg_plan(tmp_path, monkeypatch):
     import strivee_btwb.core.config as cfg
 

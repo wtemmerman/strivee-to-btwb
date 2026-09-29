@@ -87,7 +87,8 @@ CACHE_SCHEMA_VERSION = 2
 # 2: blocks record the difficulty level their content was selected from.
 # 3: "+"-joined blocks are split into one workout per part.
 # 4: erg interval blocks carry the plan the classic builder posts.
-FORMATTED_SCHEMA_VERSION = 4
+# 5: every note opens with the prescription as Strivee wrote it.
+FORMATTED_SCHEMA_VERSION = 5
 
 # Bump when the set-extraction prompt or WorkSet shape changes, so a stale
 # per-day set cache is re-extracted instead of silently reused by the audit.
@@ -357,13 +358,13 @@ def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
 def _format_block(block: ProgrammingBlock) -> ProgrammingBlock:
     """Format one workout: an erg interval set for the classic builder, else via the LLM.
 
-    An erg block's structure goes to BTWB's form fields, not a description, so the
-    whole prescription — watts, pace, warm-up — is kept word for word in the note.
+    Either way BTWB keeps the structure and drops detail — an erg's watts, a lift's
+    RPE or tempo — so the note opens with the prescription as Strivee wrote it.
     """
+    note = "\n\n".join(p for p in (block.content.strip(), block.instruction.strip()) if p)
     plan = erg_intervals(block)
     if plan is None:
-        return format_for_btwb(block)
-    note = "\n\n".join(p for p in (block.content.strip(), block.instruction.strip()) if p)
+        return format_for_btwb(block).replace(instruction=note)
     return block.replace(content=describe(plan), instruction=note, erg=plan)
 
 
