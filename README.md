@@ -326,6 +326,8 @@ Opens a Playwright browser session, logs into BTWB, and submits each block via t
 | `10RM Barbell Seal Row`, `Build a heavy double - 2-pause Squat clean` | X Rep Max, `Seal Row`, `Pause Squat Clean` |
 | `EMOMx12 : 6 reps Butterfly Chest to bar pull-up` | EMOM, `Butterfly Chest-to-bar Pull-up` |
 
+`data/btwb_movements.json` lists the movement names BTWB is known to hold; `post` adds each name its search confirms, and `preview` warns about any name a classic block needs that is not on it, before the week is posted rather than when a block is skipped.
+
 The movement is written the way BTWB names it — the aid (`with Abmat`) and cues (`RPE 7`, `Unbroken`, `touch and go`, `#Bellow the knee`) left to the note, abbreviations expanded — and must agree with the block's title, so a programme header like `3RM en 4 semaines` never posts as a rep max. Posting looks the name up exactly; an unknown one skips that block, reported for adding by hand, and the rest of the day still posts. A load BTWB cannot hold (`@75-80% of your 1RM`) keeps the block on the AI path. A leading `Accumulated N reps / movement` drill list, which names no BTWB movement, goes to the note of the work it leads into.
 
 Every note opens with the prescription as Strivee wrote it, whichever path posts the block: BTWB keeps structure and drops detail (RPE, tempo, a variant), and the athlete should still see it.

@@ -35,6 +35,7 @@ from .capture import (
     scroll_to_top,
 )
 from .core import config
+from .core.btwb_names import confirmed_movements
 from .core.llm import LLMUnavailableError
 from .core.models import (
     INTER,
@@ -587,6 +588,14 @@ def log_summary(week: WeeklyProgramming) -> None:
             logger.info("    [%s] %s", block.name, first_line)
 
 
+def _unconfirmed_movement(block: ProgrammingBlock) -> str | None:
+    """The movement a classic block needs that BTWB has not been seen to hold."""
+    plan = block.erg or block.sets
+    if plan is None or plan.movement in confirmed_movements():
+        return None
+    return plan.movement
+
+
 def log_preview(week: WeeklyProgramming) -> None:
     logger.info("=" * 60)
     logger.info("  BTWB Preview — Week starting %s", week.week_start)
@@ -602,6 +611,12 @@ def log_preview(week: WeeklyProgramming) -> None:
                 logger.info("    ── coaching note ──")
                 for line in block.instruction.splitlines():
                     logger.info("      %s", line)
+            if movement := _unconfirmed_movement(block):
+                logger.warning(
+                    "    BTWB has not been seen to hold a movement named '%s' — if it has "
+                    "none, post skips this block",
+                    movement,
+                )
 
 
 # ── Steps ─────────────────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ from playwright.sync_api import Locator, Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from ..core import config
+from ..core.btwb_names import confirm_movement
 from ..core.models import ClassicSets, DayProgramming, ProgrammingBlock, WeeklyProgramming
 
 logger = logging.getLogger("btwb")
@@ -369,6 +370,7 @@ def _open_classic_template(page: Page, movement: str, templates: dict[str, str])
         link.wait_for(state="visible", timeout=_TIMEOUT)
     except PlaywrightTimeoutError as exc:
         raise BTWBError(f"BTWB has no movement named {movement!r} — add it by hand") from exc
+    confirm_movement(movement)
     kind = (link.get_attribute("href") or "").split("/single/")[-1].split("/")[0]
     if kind not in templates:
         raise BTWBError(f"'{movement}' is a {kind!r} movement; no classic template for it yet")
