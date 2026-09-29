@@ -21,6 +21,9 @@ _ROUNDS_HEADER_RE = re.compile(r"^\s*\d+\s*(?:sets?|rounds?)\b.*(?:of|:)\s*$", r
 _REST_BETWEEN_RE = re.compile(r"\brest\b.*\bbetween\s+(?:sets?|rounds?)\b", re.IGNORECASE)
 _WARM_UP_RE = re.compile(r"warm[\s-]?up|[ée]chauffement", re.IGNORECASE)
 _COOLDOWN_RE = re.compile(r"cool[\s-]?down|retour au calme", re.IGNORECASE)
+# "Accumulated 8 Reps /movement" over a list of drills: technique work ahead of the
+# main piece, with no movement BTWB knows — the AI filled one with snatches.
+_DRILLS_RE = re.compile(r"^\s*accumulated\b.*\bmovement\b", re.IGNORECASE)
 # The bike's cooldown never says so; it ramps down instead: "5min #65 to 40% FTP20".
 _RANGE_RE = re.compile(r"(\d+)\s*(?:to|à|-)\s*(\d+)\s*%", re.IGNORECASE)
 
@@ -78,7 +81,7 @@ def split_plus_joins(block: ProgrammingBlock) -> list[ProgrammingBlock]:
         return [block]
 
     warm_ups: list[str] = []
-    while parts and _WARM_UP_RE.search(parts[0]):
+    while len(parts) > 1 and (_WARM_UP_RE.search(parts[0]) or _DRILLS_RE.match(parts[0])):
         warm_ups.append(parts.pop(0))
     cooldowns: list[str] = []
     while parts and (_COOLDOWN_RE.search(parts[-1]) or _is_ramp_down(parts[-1])):
@@ -87,7 +90,7 @@ def split_plus_joins(block: ProgrammingBlock) -> list[ProgrammingBlock]:
         return [block]  # nothing left that is work — post it as published
 
     note = "\n\n".join(
-        [_labelled(p, "Warm-up", _WARM_UP_RE) for p in warm_ups]
+        [p if _DRILLS_RE.match(p) else _labelled(p, "Warm-up", _WARM_UP_RE) for p in warm_ups]
         + ([block.instruction] if block.instruction.strip() else [])
         + [_labelled(p, "Cooldown", _COOLDOWN_RE) for p in cooldowns]
     )

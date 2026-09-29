@@ -29,6 +29,8 @@ _BUILD_HEAVY_RE = re.compile(
     re.IGNORECASE,
 )
 _HEAVY_REPS = {"single": 1, "double": 2, "triple": 3}
+_EMOM_RE = re.compile(r"^\s*EMOM\s*x?\s*(\d+)\s*(?:min(?:ute)?s?)?\s*:?\s*$", re.IGNORECASE)
+_EMOM_REPS_RE = re.compile(r"^\s*(\d+)\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
 # "2-pause Squat clean", "Squat clean with pause": BTWB names it "Pause Squat Clean".
 _COUNTED_PAUSE_RE = re.compile(r"^\s*\d+\s*-\s*pause\s+", re.IGNORECASE)
 # A trailing cue — "#Bellow and above the knee", "@eyes level" — is coaching.
@@ -43,6 +45,8 @@ _QUALIFIER_RE = re.compile(
     r"\b(?:unbroken|ub|touch\s+and\s+go)\b|@?\s*\brpe\s*[\d.,-]+", re.IGNORECASE
 )
 _TITLE_MOVEMENT_RE = re.compile(r"^EMF\s+\w+\s*[:\-]\s*(.+)$", re.IGNORECASE)
+# "(OPTION)", "- OPTION" say the block is optional, not which movement it is.
+_TITLE_NOISE_RE = re.compile(r"\(.*?\)|[-\s]+option\b", re.IGNORECASE)
 _PHRASES = [
     (re.compile(r"\bchest[\s-]+to[\s-]+bar\b", re.IGNORECASE), "Chest-to-bar"),
     (re.compile(r"\btoes[\s-]+to[\s-]+bar\b", re.IGNORECASE), "Toes-to-bar"),
@@ -85,7 +89,7 @@ def _title_movement(block: ProgrammingBlock) -> str:
     """The movement a block's title names: "EMF 60 : Bench Press (1/2)" → "Bench Press"."""
     name = unsplit_name(block.name)
     m = _TITLE_MOVEMENT_RE.match(name)
-    return (m.group(1) if m else name).strip()
+    return _TITLE_NOISE_RE.sub("", m.group(1) if m else name).strip()
 
 
 def _squashed(text: str) -> str:
@@ -144,6 +148,21 @@ def _weighted_sets(lines: list[str]) -> ClassicSets | None:
     )
 
 
+def _emom(lines: list[str]) -> ClassicSets | None:
+    """ "EMOMx12 : / 6 reps <movement>" and nothing more: a set every minute."""
+    if len(lines) != 2:
+        return None
+    header, reps = _EMOM_RE.match(lines[0]), _EMOM_REPS_RE.match(lines[1])
+    if not header or not reps:
+        return None
+    return ClassicSets(
+        movement=btwb_movement_name(reps.group(2)),
+        reps=(int(reps.group(1)),) * int(header.group(1)),
+        rest_seconds=None,
+        emom_seconds=60,
+    )
+
+
 def _rep_max(lines: list[str]) -> ClassicSets | None:
     """ "[In a N min window :] / 10RM <movement>" or "Build a heavy double - <movement>".
 
@@ -175,7 +194,7 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     if len(lines) > 1 and (m := _REPS_LINE_RE.match(lines[1])):
         if not btwb_movement_name(m.group(2)):
             lines[1] = f"{m.group(1)} Reps {_title_movement(block)}"
-    plan = _max_rep_sets(lines) or _weighted_sets(lines) or _rep_max(lines)
+    plan = _max_rep_sets(lines) or _weighted_sets(lines) or _emom(lines) or _rep_max(lines)
     if plan is None or not _agrees_with_title(plan.movement, block):
         return None
     return plan
@@ -185,6 +204,8 @@ def describe_sets(plan: ClassicSets) -> str:
     """What preview shows for a classic Sets block."""
     if plan.rep_max:
         return f"{plan.movement} - X Rep Max\n{plan.reps[0]} rep max"
+    if plan.emom_seconds is not None:
+        return f"{plan.movement} - EMOM\n{len(plan.reps)} min: {plan.reps[0]} reps every minute"
     reps = ", ".join("max" if r is None else str(r) for r in plan.reps)
     load = f" @ {plan.percent_1rm}% 1RM" if plan.percent_1rm is not None else ""
     seconds = plan.rest_seconds

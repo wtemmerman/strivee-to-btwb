@@ -592,7 +592,7 @@ def test_formatted_cache_keeps_the_set_plan(tmp_path, monkeypatch):
     import strivee_btwb.core.config as cfg
 
     monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path)
-    plan = ClassicSets("Strict Handstand Push-up", (None, None), None)
+    plan = ClassicSets("Tempo Back Squat", (5, 5, 5), 120, percent_1rm=70, emom_seconds=None)
     day = DayProgramming(
         date=date(2026, 9, 30),
         day_label="Wed",
@@ -602,6 +602,19 @@ def test_formatted_cache_keeps_the_set_plan(tmp_path, monkeypatch):
     loaded = load_formatted_day(date(2026, 9, 28), "Wed", expected_mtime_ns=7)
     assert loaded is not None
     assert loaded.blocks[0].sets == plan
+    rep_max = ClassicSets("Pause Squat Clean", (2,), None, rep_max=True)
+    save_formatted_day(
+        DayProgramming(
+            date=date(2026, 9, 30),
+            day_label="Wed",
+            blocks=[ProgrammingBlock(name="Clean", content="X Rep Max", sets=rep_max)],
+        ),
+        date(2026, 9, 28),
+        source_mtime_ns=8,
+    )
+    reloaded = load_formatted_day(date(2026, 9, 28), "Wed", expected_mtime_ns=8)
+    assert reloaded is not None
+    assert reloaded.blocks[0].sets == rep_max
 
 
 def test_prepare_week_reuses_cache_on_second_call(monkeypatch):

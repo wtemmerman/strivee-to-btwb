@@ -145,3 +145,22 @@ def test_only_the_ends_can_be_warm_up_or_cooldown():
 def test_a_block_without_a_join_is_untouched():
     block = ProgrammingBlock(name="A", content="3 sets of :\n5 Back Squat\n+ Rest 2 min")
     assert split_plus_joins(block) == [block]
+
+
+def test_leading_drills_go_to_the_note_of_the_work_they_lead_into():
+    """Real Mon INTER: BTWB's AI filled the drill part with snatches."""
+    block = ProgrammingBlock(
+        name="EMF Rx - Chest to bar pull-up (OPTION)",
+        content=(
+            "Accumulated 8 Reps /movement\nButterfly Chest + Drop\nButterfly + Beat swing\n+\n\n"
+            "EMOMx12 :\n6 reps Butterfly Chest to bar pull-up Unbroken"
+        ),
+        instruction="Objectif du cycle",
+    )
+    (emom,) = split_plus_joins(block)
+    assert emom.name == "EMF Rx - Chest to bar pull-up (OPTION)"
+    assert emom.content == "EMOMx12 :\n6 reps Butterfly Chest to bar pull-up Unbroken"
+    assert emom.instruction == (
+        "Accumulated 8 Reps /movement\nButterfly Chest + Drop\nButterfly + Beat swing"
+        "\n\nObjectif du cycle"
+    )

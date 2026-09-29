@@ -91,7 +91,8 @@ CACHE_SCHEMA_VERSION = 2
 # 4: erg interval blocks carry the plan the classic builder posts.
 # 5: every note opens with the prescription as Strivee wrote it.
 # 6: single-movement set schemes carry the plan the classic builder posts.
-FORMATTED_SCHEMA_VERSION = 6
+# 7: set plans carry their load, rep-max and EMOM shape.
+FORMATTED_SCHEMA_VERSION = 7
 
 # Bump when the set-extraction prompt or WorkSet shape changes, so a stale
 # per-day set cache is re-extracted instead of silently reused by the audit.
@@ -237,6 +238,9 @@ def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | Non
                             "movement": b.sets.movement,
                             "reps": list(b.sets.reps),
                             "rest_seconds": b.sets.rest_seconds,
+                            "percent_1rm": b.sets.percent_1rm,
+                            "rep_max": b.sets.rep_max,
+                            "emom_seconds": b.sets.emom_seconds,
                         },
                     }
                     for b in day.blocks
@@ -293,6 +297,9 @@ def load_formatted_day(
                     movement=b["sets"]["movement"],
                     reps=tuple(b["sets"]["reps"]),
                     rest_seconds=b["sets"]["rest_seconds"],
+                    percent_1rm=b["sets"]["percent_1rm"],
+                    rep_max=b["sets"]["rep_max"],
+                    emom_seconds=b["sets"]["emom_seconds"],
                 ),
             )
             for b in data["blocks"]

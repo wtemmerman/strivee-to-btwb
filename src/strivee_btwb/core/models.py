@@ -46,6 +46,7 @@ class ClassicSets:
     rest_seconds: int | None
     percent_1rm: int | None = None  # every set's load, when prescribed as a % of 1RM
     rep_max: bool = False
+    emom_seconds: int | None = None  # one set every this many seconds: BTWB's EMOM
 
 
 @dataclass(frozen=True)

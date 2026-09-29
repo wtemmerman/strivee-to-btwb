@@ -125,3 +125,16 @@ def test_a_load_on_the_reps_line_stays_on_the_ai_path():
         "3 sets of :\n5 Reps Strict press @75-80% of your 1RM\n- Rest 2min between sets -",
     )
     assert classic_sets(block) is None
+
+
+def test_emom_of_one_movement():
+    """Real Mon 09-28 INTER part; the title's "(OPTION)" does not stop it agreeing."""
+    block = _titled(
+        "EMF Rx - Chest to bar pull-up (OPTION)",
+        "EMOMx12 :\n6 reps Butterfly Chest to bar pull-up Unbroken",
+    )
+    plan = classic_sets(block)
+    assert plan == ClassicSets("Butterfly Chest-to-bar Pull-up", (6,) * 12, None, emom_seconds=60)
+    assert describe_sets(plan) == (
+        "Butterfly Chest-to-bar Pull-up - EMOM\n12 min: 6 reps every minute"
+    )

@@ -414,6 +414,28 @@ def _fill_rep_max(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> Non
         raise BTWBError(f"'{block.name}': BTWB holds reps {_values(page, _SET_REPS)}")
 
 
+def _fill_emom(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
+    if plan.emom_seconds is None:  # invariant: only called for EMOM plans
+        raise BTWBError(f"internal error: '{block.name}' has no EMOM interval")
+    _open_classic_template(page, plan.movement, {"reps": "single_emom", "weight": "single_emom"})
+    clocks = page.locator(_CLOCK_MINUTES)
+    clocks.first.wait_for(state="visible", timeout=_TIMEOUT)
+    every, until = plan.emom_seconds, plan.emom_seconds * len(plan.reps)
+    _fill_clock(clocks.nth(0), every)
+    _fill_clock(clocks.nth(1), until)
+    reps = page.locator(_SET_REPS).first
+    reps.fill(str(plan.reps[0]))
+    reps.press("Tab")
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+    entered = (
+        page.locator("input[name='definition[prescription][every][value]']").input_value(),
+        page.locator("input[name='definition[prescription][until][value]']").input_value(),
+        _values(page, _SET_REPS),
+    )
+    if entered != (str(every), str(until), [str(plan.reps[0])]):
+        raise BTWBError(f"'{block.name}': BTWB holds every/until/reps {entered}")
+
+
 def _fill_counted_sets(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
     kind = _open_classic_template(
         page, plan.movement, {"reps": "gymnastics_sets", "weight": "weightlifting_sets"}
@@ -471,6 +493,8 @@ def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
         raise BTWBError(f"internal error: '{block.name}' has no set plan")
     if plan.rep_max:
         _fill_rep_max(page, block, plan)
+    elif plan.emom_seconds is not None:
+        _fill_emom(page, block, plan)
     else:
         _fill_counted_sets(page, block, plan)
     logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
