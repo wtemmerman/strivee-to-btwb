@@ -85,3 +85,32 @@ def test_a_response_of_the_wrong_shape_counts_as_no_sets():
 def test_a_block_with_no_movements_is_allowed_to_be_empty():
     with _respond(_sets()):
         assert extract_sets(_BLOCK) == []
+
+
+def test_a_classic_plan_gives_its_sets_without_the_model(monkeypatch):
+    """The model saw only the plan's summary and credited 1+2x2 heavy work as strength."""
+    from strivee_btwb.core.models import ClassicSets
+    from strivee_btwb.processing.volume import GYMNASTICS_MAX, HEAVY_SINGLE, METCON, STRENGTH
+
+    def no_model(*_a, **_k):
+        raise AssertionError("a classic plan must not be sent to the model")
+
+    monkeypatch.setattr("strivee_btwb.processing.set_extract.chat_json", no_model)
+
+    def first(plan):
+        return extract_sets(ProgrammingBlock(name="B", content="plan", sets=plan))[0]
+
+    heavy = first(ClassicSets("Back Squat", (1, 2, 2), 120))
+    assert (heavy.movement, heavy.sets, heavy.reps, heavy.block_type) == (
+        "Back Squat",
+        3,
+        "1, 2, 2",
+        HEAVY_SINGLE,
+    )
+    assert first(ClassicSets("Back Squat", (3, 4, 4), 120)).block_type == STRENGTH
+    assert first(ClassicSets("Strict Handstand Push-up", (None, None), 75)).block_type == (
+        GYMNASTICS_MAX
+    )
+    assert first(ClassicSets("Butterfly C2B", (6,) * 12, None, emom_seconds=60)).block_type == (
+        METCON
+    )

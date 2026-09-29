@@ -15,9 +15,16 @@ from json_repair import repair_json
 
 from ..core import config
 from ..core.llm import chat_json
-from ..core.models import ProgrammingBlock
+from ..core.models import ClassicSets, ProgrammingBlock
 from ..prompts import load
-from .volume import BLOCK_TYPES, WorkSet
+from .volume import (
+    BLOCK_TYPES,
+    GYMNASTICS_MAX,
+    HEAVY_SINGLE,
+    METCON,
+    STRENGTH,
+    WorkSet,
+)
 
 logger = logging.getLogger("processing")
 
@@ -91,6 +98,31 @@ def _validate(items: list[dict], block_name: str) -> list[WorkSet]:
     return work_sets
 
 
+def _plan_sets(plan: ClassicSets, source: str) -> list[WorkSet]:
+    """The sets a classic-builder plan prescribes, read off the plan itself.
+
+    The model only ever saw the plan's summary, without the "build to a heavy" around
+    it, and credited a 1+2x2 back squat as strength when 1-2 rep work is neural.
+    """
+    counted = [r for r in plan.reps if r is not None]
+    reps = ", ".join("max" if r is None else str(r) for r in plan.reps)
+    if plan.emom_seconds is not None:
+        block_type = METCON
+    elif not counted:
+        block_type = GYMNASTICS_MAX
+    else:
+        block_type = HEAVY_SINGLE if max(counted) <= 2 else STRENGTH
+    return [
+        WorkSet(
+            movement=plan.movement,
+            sets=len(plan.reps),
+            reps=reps,
+            block_type=block_type,
+            source=source,
+        )
+    ]
+
+
 def extract_sets(block: ProgrammingBlock, model: str | None = None) -> list[WorkSet]:
     """Return the sets *block* prescribes.
 
@@ -99,6 +131,8 @@ def extract_sets(block: ProgrammingBlock, model: str | None = None) -> list[Work
     under-count that muscle visibly, not abort the report. Ollama being
     unreachable still raises, like every other model call in the pipeline.
     """
+    if block.sets is not None:
+        return _plan_sets(block.sets, block.name)
     m = model or config.OLLAMA_FORMAT_MODEL
     prompt = _PROMPT.format(name=block.name, content=block.content)
     logger.debug("[%s] extracting sets with '%s'", block.name, m)

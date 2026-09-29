@@ -96,7 +96,8 @@ FORMATTED_SCHEMA_VERSION = 7
 
 # Bump when the set-extraction prompt or WorkSet shape changes, so a stale
 # per-day set cache is re-extracted instead of silently reused by the audit.
-SETS_SCHEMA_VERSION = 4
+# 5: classic-builder blocks give their sets from the plan, not the model.
+SETS_SCHEMA_VERSION = 5
 
 
 # ── Date helpers ──────────────────────────────────────────────────────────────

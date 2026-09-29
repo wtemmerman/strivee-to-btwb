@@ -138,3 +138,40 @@ def test_emom_of_one_movement():
     assert describe_sets(plan) == (
         "Butterfly Chest-to-bar Pull-up - EMOM\n12 min: 6 reps every minute"
     )
+
+
+def test_tempo_cycle_top_set_and_back_off():
+    """Real Mon 09-28: BTWB's AI stored 4x4 for a 1x4 top set and one 1x4 back-off."""
+    block = _titled(
+        "EMF 60 - Bench press",
+        "Week 4/15\n\nTempo Bench Week 4/5\n\nTempo 32X1 - 3 sec descente\n\nTop set -\n"
+        "1x4 RPE 9 (Target - 188.5 lb-201 lb)\n\nBack OFF -\n1x4 #88% of your today Top set\n\n"
+        "- Rest 2 min between sets -",
+    )
+    assert classic_sets(block) == ClassicSets("Tempo Bench Press", (4, 4), 120)
+
+
+def test_several_back_off_lines_and_a_rest_range():
+    block = _titled(
+        "EMF 60 - Bench press",
+        "Tempo Bench Week 2/5\n\nTop set -\n1x4 RPE 7 (Target - 179 lb-183.5 lb)\n\nBack OFF -\n"
+        "1x4 #92% of your today Top set\n1x4 #88% of your today Top set\n\n"
+        "- Rest 1min30 - 2min between sets -",
+    )
+    assert classic_sets(block) == ClassicSets("Tempo Bench Press", (4, 4, 4), 90)
+
+
+def test_lettered_top_set_and_back_off_without_tempo():
+    """Real Jul-Aug shape: "A. Top Set / Build a set of N" then "B. Back Off / N Sets of R"."""
+    block = _titled(
+        "EMF 60 : Back Squat",
+        "A. Top Set\nBuild a set of 3 Reps RPE 7\n\nB. Back Off\n"
+        "3 Sets of 4 Reps @90% of your today 3 reps\n\n- Rest 2min between sets -\n\n"
+        "RPE 7 : 3 répétitions en réserve",
+    )
+    assert classic_sets(block) == ClassicSets("Back Squat", (3, 4, 4, 4), 120)
+
+
+def test_top_set_without_back_off_is_left_to_the_ai_path():
+    block = _titled("EMF 60 - Bench press", "Top set -\n1x4 RPE 9\n\n- Rest 2 min between sets -")
+    assert classic_sets(block) is None
