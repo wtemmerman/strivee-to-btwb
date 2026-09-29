@@ -148,6 +148,15 @@ def test_fidelity_flags_dropped_rm_loading():
     assert any("dropped" in v for v in report["per_block"][0]["violations"])
 
 
+def test_fidelity_does_not_read_warm_up_as_a_1rm_loading():
+    """ "Warm-up" ends in "rm": a warm-up pace of 60% FTP20 was reported as a dropped 1RM load."""
+    src = _week(
+        {"Fri": [("Bike erg", "5min Warm-up increasing pace to 60% FTP20\n40min Steady State")]}
+    )
+    fmt = _week({"Fri": [("Bike erg", "Bike Erg - Intervals For Distance\n1 x 40:00")]})
+    assert format_fidelity(src, fmt)["passed"] is True
+
+
 def test_fidelity_hash_to_at_conversion_is_not_a_drop():
     src = _week({"Wed": [("EMF 60 : Push Press", "#90% of your 5RM from week 1\n3 Push press")]})
     out = _week({"Wed": [("EMF 60 : Push Press", "@90% of your 5RM from week 1\n3 Push press")]})
