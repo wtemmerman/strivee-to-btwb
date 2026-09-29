@@ -21,35 +21,26 @@ import re
 from collections.abc import Callable
 from datetime import date, timedelta
 
-from playwright.sync_api import Locator, Page, sync_playwright
+from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from ..core import config
-from ..core.btwb_names import confirm_movement
-from ..core.models import ClassicSets, DayProgramming, ProgrammingBlock, WeeklyProgramming
+from ..core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from .classic import _fill_classic_sets, _fill_erg_intervals
+from .common import (
+    _BASE,
+    _CALENDAR_IDLE_TIMEOUT,
+    _FIELD_COMMIT_MS,
+    _TIMEOUT,
+    BTWBError,
+    _calendar_week_url,
+    _ensure_track_selected,
+    _login,
+    _settle_calendar,
+)
 
 logger = logging.getLogger("btwb")
 
-_BASE = "https://beyondthewhiteboard.com"
-_TIMEOUT = 30_000  # ms — element/AJAX waits (incl. BTWB AI workout generation)
-_CALENDAR_IDLE_TIMEOUT = 10_000  # ms — networkidle cap for calendar pages (non-fatal)
-
-
-class BTWBError(Exception):
-    pass
-
-
-class AuthenticationError(BTWBError):
-    pass
-
-
 # ── Pure helpers (no browser — unit-testable) ─────────────────────────────────
-
-
-def _calendar_week_url(date_str: str) -> str:
-    """Build the BTWB calendar-week URL for an ISO date, dropping zero-padding."""
-    year, month, day = date_str.split("-")
-    return f"{_BASE}/plan/calendar/week/{int(year)}/{int(month)}/{int(day)}"
 
 
 def _group_dates_by_week(dates: list[str]) -> dict[str, list[str]]:
@@ -75,18 +66,6 @@ def _blocks_to_post(day: DayProgramming, existing: set[str]) -> list[Programming
 def _planned_result(block: ProgrammingBlock, date_str: str) -> dict:
     """Build the dry-run record describing a block that would be posted."""
     return {"dry_run": True, "block": block.name, "date": date_str}
-
-
-def _login(page: Page, email: str, password: str) -> None:
-    page.goto(f"{_BASE}/signin", wait_until="domcontentloaded")
-    page.locator("input[name='login']").fill(email)
-    page.locator("input[name='password']").fill(password)
-    page.locator("input[type='submit'], button[type='submit']").first.click()
-    page.wait_for_url(lambda url: "signin" not in url, timeout=_TIMEOUT)
-    if "signin" in page.url:
-        raise AuthenticationError(
-            "Login failed — still on signin page. Check BTWB_EMAIL / BTWB_PASSWORD in .env."
-        )
 
 
 def _add_instruction(page: Page, block: ProgrammingBlock) -> None:
@@ -133,8 +112,6 @@ _MOVEMENT_LINE = re.compile(r"^\s*(\d+)\s+(\S.*?)\s*$")
 # only way to create one. This seed resolves reliably and is deleted once the real
 # movements are in.
 _SEED_DESCRIPTION = "12 Dumbbell Curl"
-
-_FIELD_COMMIT_MS = 500  # let the blur-driven units controller write the hidden input
 
 _DELETE_LABEL = "SUPPRIMER"
 _COPY_LABEL = "COPIER"
@@ -300,209 +277,6 @@ def _build_from_movements(page: Page, block: ProgrammingBlock) -> None:
     _remove_seed_movement(page)
 
 
-# ── Erg intervals (BTWB's classic builder) ────────────────────────────────────
-#
-# Posting runs in a French-locale browser, so everything here is found by URL or
-# form attribute, never by label text.
-
-_INTERVAL_SECONDS = "input[name='definition[contents][][time][value]']"
-_REST_SECONDS = "input[name='definition[prescription][rest][value]']"
-_CLOCK_MINUTES = "input[name='movement_time_value_minutes']"
-# The save button sits outside the builder's form, tied to it by form=; the other
-# button tied that way is a hidden preview, the one carrying a formaction.
-_SAVE_BUTTON = "button[type='submit'][form='new_track_event']:not([formaction])"
-
-
-def _fill_clock(minutes_field, seconds: int) -> None:
-    """Fill a mins:secs pair; blurring it makes BTWB write the hidden seconds value."""
-    minutes_field.fill(str(seconds // 60))
-    seconds_field = minutes_field.locator("xpath=following::input[@type='number'][1]")
-    seconds_field.fill(str(seconds % 60))
-    seconds_field.press("Tab")
-
-
-def _fill_erg_intervals(page: Page, block: ProgrammingBlock) -> Locator:
-    """Build *block*'s "Intervals For Distance" workout and return its plan button.
-
-    The hidden seconds BTWB submits are read back before planning: a blur that did
-    not register would otherwise save an interval of nothing, silently.
-    """
-    plan = block.erg
-    if plan is None:  # invariant: only called for blocks with an erg plan
-        raise BTWBError(f"internal error: '{block.name}' has no erg plan")
-    _open_classic_template(page, plan.movement, {"distance": "for_distance"})
-    _set_row_count(page, _INTERVAL_SECONDS, len(plan.intervals))
-    rows = page.locator(_INTERVAL_SECONDS)
-
-    minutes = page.locator(_CLOCK_MINUTES)
-    for i, seconds in enumerate(plan.intervals):
-        _fill_clock(minutes.nth(i), seconds)
-    _fill_clock(minutes.nth(len(plan.intervals)), plan.rest_seconds)
-    page.wait_for_timeout(_FIELD_COMMIT_MS)
-
-    entered = [int(v or -1) for v in rows.evaluate_all("els => els.map(e => e.value)")]
-    rest = page.locator(_REST_SECONDS).input_value()
-    if entered != list(plan.intervals) or rest != str(plan.rest_seconds):
-        raise BTWBError(
-            f"'{block.name}': BTWB holds intervals {entered} and rest {rest!r}, "
-            f"not {list(plan.intervals)} and {plan.rest_seconds}"
-        )
-    logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
-    return page.locator(_SAVE_BUTTON).first
-
-
-_SET_REPS = "input[name='definition[contents][][reps][value]']"
-
-
-def _open_classic_template(page: Page, movement: str, templates: dict[str, str]) -> str:
-    """Pick *movement* in the classic builder and open its template; return the kind.
-
-    BTWB offers different templates by movement kind — the search link says which
-    (".../single/reps/4045" for a bodyweight movement) — so *templates* maps a kind
-    to the template to open.
-    """
-    page.locator("a[href='/plan/workouts/single']").first.click()
-    search = page.locator("input#name")
-    search.wait_for(state="visible", timeout=_TIMEOUT)
-    search.fill(movement)
-    link = page.get_by_role("link", name=movement, exact=True).first
-    try:
-        link.wait_for(state="visible", timeout=_TIMEOUT)
-    except PlaywrightTimeoutError as exc:
-        raise BTWBError(f"BTWB has no movement named {movement!r} — add it by hand") from exc
-    confirm_movement(movement)
-    kind = (link.get_attribute("href") or "").split("/single/")[-1].split("/")[0]
-    if kind not in templates:
-        raise BTWBError(f"'{movement}' is a {kind!r} movement; no classic template for it yet")
-    link.click()
-    template = page.locator(f"a[href$='/{templates[kind]}/new']").first
-    template.wait_for(state="visible", timeout=_TIMEOUT)
-    template.click()
-    return kind
-
-
-def _set_row_count(page: Page, row_selector: str, wanted: int) -> None:
-    rows = page.locator(row_selector)
-    rows.first.wait_for(state="attached", timeout=_TIMEOUT)
-    for control, done in (
-        ("addSet", lambda n: n >= wanted),
-        ("removeSet", lambda n: n <= wanted),
-    ):
-        while not done(rows.count()):
-            before = rows.count()
-            page.locator(f"[data-action*='plan--sets-control#{control}']").first.click()
-            page.wait_for_function(
-                f'n => document.querySelectorAll("{row_selector}").length != n',
-                arg=before,
-                timeout=_TIMEOUT,
-            )
-
-
-_PERCENT_1RM = "input[name='definition[contents][][weight][value]']:visible"
-
-
-def _values(page: Page, selector: str) -> list[str]:
-    return page.locator(selector).evaluate_all("els => els.map(e => e.value)")
-
-
-def _fill_rep_max(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
-    _open_classic_template(page, plan.movement, {"weight": "rep_max"})
-    reps = page.locator(_SET_REPS).first
-    reps.wait_for(state="visible", timeout=_TIMEOUT)
-    reps.fill(str(plan.reps[0]))
-    reps.press("Tab")
-    page.wait_for_timeout(_FIELD_COMMIT_MS)
-    if _values(page, _SET_REPS) != [str(plan.reps[0])]:
-        raise BTWBError(f"'{block.name}': BTWB holds reps {_values(page, _SET_REPS)}")
-
-
-def _fill_emom(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
-    if plan.emom_seconds is None:  # invariant: only called for EMOM plans
-        raise BTWBError(f"internal error: '{block.name}' has no EMOM interval")
-    _open_classic_template(page, plan.movement, {"reps": "single_emom", "weight": "single_emom"})
-    clocks = page.locator(_CLOCK_MINUTES)
-    clocks.first.wait_for(state="visible", timeout=_TIMEOUT)
-    every, until = plan.emom_seconds, plan.emom_seconds * len(plan.reps)
-    _fill_clock(clocks.nth(0), every)
-    _fill_clock(clocks.nth(1), until)
-    reps = page.locator(_SET_REPS).first
-    reps.fill(str(plan.reps[0]))
-    reps.press("Tab")
-    page.wait_for_timeout(_FIELD_COMMIT_MS)
-    entered = (
-        page.locator("input[name='definition[prescription][every][value]']").input_value(),
-        page.locator("input[name='definition[prescription][until][value]']").input_value(),
-        _values(page, _SET_REPS),
-    )
-    if entered != (str(every), str(until), [str(plan.reps[0])]):
-        raise BTWBError(f"'{block.name}': BTWB holds every/until/reps {entered}")
-
-
-def _fill_counted_sets(page: Page, block: ProgrammingBlock, plan: ClassicSets) -> None:
-    kind = _open_classic_template(
-        page, plan.movement, {"reps": "gymnastics_sets", "weight": "weightlifting_sets"}
-    )
-    _set_row_count(page, _SET_REPS, len(plan.reps))
-    if all(r is None for r in plan.reps):
-        page.locator("select#rep_scheme").select_option("maxreps")
-    elif any(r is None for r in plan.reps):
-        raise BTWBError(f"'{block.name}': mixed max and counted sets are not supported yet")
-    else:
-        fields = page.locator(_SET_REPS)
-        for i, reps in enumerate(plan.reps):
-            fields.nth(i).fill(str(reps))
-    if plan.percent_1rm is not None:
-        if kind != "weight":
-            raise BTWBError(f"'{block.name}': a % 1RM load on a bodyweight movement")
-        page.locator("select[name='definition[prescription][weightPerSet]']").select_option(
-            "onerepmax"
-        )
-        percents = page.locator(_PERCENT_1RM)
-        percents.first.wait_for(state="visible", timeout=_TIMEOUT)
-        for i in range(len(plan.reps)):
-            percents.nth(i).fill(str(plan.percent_1rm))
-            percents.nth(i).press("Tab")
-    if plan.rest_seconds is not None:
-        _fill_clock(page.locator(_CLOCK_MINUTES).last, plan.rest_seconds)
-    page.wait_for_timeout(_FIELD_COMMIT_MS)
-
-    expected = {
-        "sets": len(plan.reps),
-        "rest": "" if plan.rest_seconds is None else str(plan.rest_seconds),
-        "scheme": "maxreps" if plan.reps[0] is None else "assign",
-        "reps": [] if plan.reps[0] is None else [str(r) for r in plan.reps],
-        "percent": [] if plan.percent_1rm is None else [str(plan.percent_1rm)] * len(plan.reps),
-    }
-    entered = {
-        "sets": page.locator(_SET_REPS).count(),
-        "rest": page.locator(_REST_SECONDS).input_value(),
-        "scheme": page.locator("select#rep_scheme").input_value(),
-        "reps": [] if plan.reps[0] is None else _values(page, _SET_REPS),
-        "percent": [] if plan.percent_1rm is None else _values(page, _PERCENT_1RM),
-    }
-    if entered != expected:
-        raise BTWBError(f"'{block.name}': BTWB holds {entered}, not {expected}")
-
-
-def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
-    """Build *block*'s classic Sets or X Rep Max workout and return its plan button.
-
-    What BTWB holds is read back before planning: a field that did not take would
-    otherwise save a different workout, silently.
-    """
-    plan = block.sets
-    if plan is None:  # invariant: only called for blocks with a set plan
-        raise BTWBError(f"internal error: '{block.name}' has no set plan")
-    if plan.rep_max:
-        _fill_rep_max(page, block, plan)
-    elif plan.emom_seconds is not None:
-        _fill_emom(page, block, plan)
-    else:
-        _fill_counted_sets(page, block, plan)
-    logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
-    return page.locator(_SAVE_BUTTON).first
-
-
 def _generate_preview(page: Page, description: str, block_name: str) -> None:
     """Submit *description* and wait for BTWB to render a preview of it.
 
@@ -630,23 +404,6 @@ def _navigate_to_new_workout(page: Page, date_str: str, via_plus: bool) -> None:
         page.goto(direct_url, wait_until="domcontentloaded")
 
 
-def _ensure_track_selected(page: Page) -> None:
-    """Check the personal-track checkbox so its workouts render on the calendar.
-
-    BTWB only shows a track's workouts when its sidebar checkbox is ticked, so
-    both reading existing workouts and finding workouts to delete depend on this.
-    Skipped when BTWB_TRACK_ID is unset. wait_for(attached) is required — the
-    checkbox is injected by JS after domcontentloaded, so count() would return 0
-    and the click would be silently skipped without this wait.
-    """
-    if not config.BTWB_TRACK_ID:
-        return
-    track_cb = page.locator(f"#plan_track_{config.BTWB_TRACK_ID}")
-    track_cb.wait_for(state="attached", timeout=_TIMEOUT)
-    if not track_cb.is_checked():
-        track_cb.click()
-
-
 # Scan every requested date's calendar container in one pass. The week view holds
 # all 7 day containers, so titles for the whole week come from a single load.
 _SCAN_TITLES_JS = """
@@ -665,45 +422,6 @@ _SCAN_TITLES_JS = """
   return out;
 }
 """
-
-
-# A completed event carries a check badge inside its title row, and BTWB also
-# nests it under .track-event-event-results. Both were verified to agree on every
-# event of a real week; the badge is used because it is the narrower claim.
-_SCAN_COMPLETED_JS = """
-(dates) => {
-  const out = {};
-  dates.forEach(d => { out[d] = []; });
-  document.querySelectorAll('[data-date]').forEach(el => {
-    const raw = el.getAttribute('data-date') || '';
-    const d = dates.find(x => raw.includes(x));
-    if (!d) return;
-    el.querySelectorAll('.title_track_event').forEach(node => {
-      if (!node.querySelector('.badge-track-orange .mdi-check')) return;
-      const s = node.querySelector('strong');
-      const t = ((s && (s.getAttribute('title') || s.textContent)) || '').trim();
-      if (t) out[d].push(t);
-    });
-  });
-  return out;
-}
-"""
-
-
-def _settle_calendar(page: Page) -> None:
-    """Wait for the calendar day containers, then best-effort settle AJAX.
-
-    The networkidle wait is capped and non-fatal: titles are already in the DOM
-    once [data-date] is present, so a slow/long-polling calendar must not abort
-    posting or block for the full element timeout.
-    """
-    page.wait_for_selector("[data-date]", timeout=_TIMEOUT)
-    try:
-        page.wait_for_load_state("networkidle", timeout=_CALENDAR_IDLE_TIMEOUT)
-    except PlaywrightTimeoutError:
-        logger.warning(
-            "Calendar still loading after %ds — proceeding", _CALENDAR_IDLE_TIMEOUT // 1000
-        )
 
 
 def _fetch_existing_titles_for_week(page: Page, dates: list[str]) -> dict[str, set[str]]:
@@ -956,206 +674,6 @@ def delete_week(
         browser.close()
 
     return results
-
-
-# The week view carries only a one-line summary per event, and truncates it
-# ("...and 7 more"), so it cannot answer what BTWB stored. This collects the link
-# to each event instead; the body is read from the event page below.
-_SCAN_EVENT_LINKS_JS = """
-(dates) => {
-  const out = [];
-  document.querySelectorAll('[data-date]').forEach(el => {
-    const raw = el.getAttribute('data-date') || '';
-    const d = dates.find(x => raw.includes(x));
-    if (!d) return;
-    el.querySelectorAll('.calendar_track_event').forEach(ev => {
-      const s = ev.querySelector('.title_track_event strong');
-      const a = ev.querySelector("a[href*='/plan/track_events/']");
-      const t = s ? (s.getAttribute('title') || s.textContent).trim() : '';
-      if (t && a) out.push({date: d, title: t, href: a.getAttribute('href')});
-    });
-  });
-  return out;
-}
-"""
-
-# On the event page the workout tab holds the full movement list. Everything from
-# the edit buttons down is chrome; lines ending in a full stop are BTWB's own
-# canned description of the movement, not part of the prescription.
-_STORED_BODY_JS = """
-() => {
-  const root = document.querySelector('#workout');
-  if (!root) return '';
-  const frame = root.querySelector('turbo-frame.edit_workout') || root;
-  const lines = (frame.innerText || '').split('\\n').map(l => l.trim()).filter(Boolean);
-  // A saved workout ends at "MODIFIER L'ENTRAÎNEMENT"; one still in the editor
-  // ends at "PLANIFIER L'ENTRAÎNEMENT". Cut at whichever comes first.
-  const ends = ["MODIFIER L'ENTRA", "PLANIFIER L'ENTRA", "METTRE À JOUR"];
-  const end = lines.findIndex(l => ends.some(e => l.startsWith(e)));
-  const rowActions = ['MODIFIER', 'COPIER', 'SUPPRIMER', 'AJOUTER MOUVEMENT',
-                      'AJOUTER COMPLEXE', 'AJOUTER REPOS'];
-  // Lift workouts (X Rep Max, weightlifting sets) render as the editor, their
-  // values inside inputs that innerText cannot see. Each row is written out as
-  // "<reps> <movement>", the shape the stored-vs-posted check reads.
-  const names = [...frame.querySelectorAll("input[name='definition[contents][][movementName]']")];
-  const reps = [...frame.querySelectorAll("input[name='definition[contents][][reps][value]']")];
-  const after = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-  const rows = names.map((name, i) => {
-    const next = names[i + 1];
-    const count = reps.find(r => after(name, r) && (!next || after(r, next)));
-    return `${(count && count.value) || 1} ${name.value}`;
-  });
-  // A dropdown's options are part of innerText: the erg editor's RPE scale would
-  // read as "19 - 100% effort" workout lines.
-  const options = new Set([...frame.querySelectorAll('option')].map(o => o.textContent.trim()));
-  return (end === -1 ? lines : lines.slice(0, end))
-    .filter(l => !rowActions.includes(l) && !options.has(l))
-    .filter(l => !l.endsWith('.') && !l.endsWith(':'))
-    .concat(rows)
-    .join('\\n');
-}
-"""
-
-
-_SCAN_SESSION_LINKS_JS = """
-(dates) => {
-  const out = [];
-  document.querySelectorAll('[data-date]').forEach(el => {
-    const raw = el.getAttribute('data-date') || '';
-    const d = dates.find(x => raw.includes(x));
-    if (!d) return;
-    el.querySelectorAll('.calendar_track_event').forEach(ev => {
-      if (!ev.querySelector('.badge-track-orange .mdi-check')) return;
-      const s = ev.querySelector('.title_track_event strong');
-      const a = [...ev.querySelectorAll('a')]
-        .map(x => x.getAttribute('href'))
-        .find(h => h && h.includes('workout_sessions'));
-      const t = s ? (s.getAttribute('title') || s.textContent).trim() : '';
-      if (t && a) out.push({date: d, title: t, href: a});
-    });
-  });
-  return out;
-}
-"""
-
-# A logged session lists the prescription rows, then RÉSULTAT, then the result.
-_SESSION_RESULT_JS = """
-() => {
-  const t = (document.body.innerText || '').split('\\n').map(l => l.trim()).filter(Boolean);
-  const i = t.indexOf('RÉSULTAT');
-  if (i === -1) return {rows: [], result: ''};
-  return {rows: t.slice(0, i), result: t[i + 1] || ''};
-}
-"""
-
-
-def fetch_logged_loads(
-    email: str,
-    password: str,
-    dates: list[str],
-    headless: bool = True,
-) -> dict[str, dict[str, tuple[list[str], str]]]:
-    """Return {date: {title: (prescription rows, result line)}} for logged sessions.
-
-    Only sessions marked done have a result to read. Rows come back unfiltered;
-    the caller decides which of them are prescriptions, using the same
-    leading-count rule the posted-vs-stored check uses.
-    """
-    if not dates:
-        return {}
-    logged: dict[str, dict[str, tuple[list[str], str]]] = {d: {} for d in dates}
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=headless)
-        page = browser.new_context(locale="fr-FR").new_page()
-        try:
-            _login(page, email, password)
-            page.goto(_calendar_week_url(dates[0]), wait_until="domcontentloaded")
-            _ensure_track_selected(page)
-            _settle_calendar(page)
-            sessions = page.evaluate(_SCAN_SESSION_LINKS_JS, dates)
-            logger.info("Reading %d logged session(s) from BTWB", len(sessions))
-            for session in sessions:
-                page.goto(_BASE + session["href"], wait_until="domcontentloaded")
-                try:
-                    page.wait_for_load_state("networkidle", timeout=_CALENDAR_IDLE_TIMEOUT)
-                except PlaywrightTimeoutError:
-                    pass
-                found = page.evaluate(_SESSION_RESULT_JS)
-                logged[session["date"]][session["title"]] = (found["rows"], found["result"])
-        finally:
-            browser.close()
-    return logged
-
-
-def fetch_planned_workouts(
-    email: str,
-    password: str,
-    dates: list[str],
-    headless: bool = True,
-) -> dict[str, dict[str, str]]:
-    """Return {date: {title: the workout as BTWB stored it}} for *dates*.
-
-    One calendar load to find the events, then one page per event: the week view
-    only summarises a workout and truncates the summary, so it cannot say what
-    BTWB actually stored.
-
-    Like the duplicate check, this assumes *dates* fall in one week.
-    """
-    if not dates:
-        return {}
-    stored: dict[str, dict[str, str]] = {d: {} for d in dates}
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=headless)
-        page = browser.new_context(locale="fr-FR").new_page()
-        try:
-            _login(page, email, password)
-            page.goto(_calendar_week_url(dates[0]), wait_until="domcontentloaded")
-            _ensure_track_selected(page)
-            _settle_calendar(page)
-            events = page.evaluate(_SCAN_EVENT_LINKS_JS, dates)
-            logger.info("Reading %d planned workout(s) back from BTWB", len(events))
-            for event in events:
-                page.goto(_BASE + event["href"], wait_until="domcontentloaded")
-                try:
-                    page.wait_for_load_state("networkidle", timeout=_CALENDAR_IDLE_TIMEOUT)
-                except PlaywrightTimeoutError:
-                    pass
-                stored[event["date"]][event["title"]] = page.evaluate(_STORED_BODY_JS)
-        finally:
-            browser.close()
-    return stored
-
-
-def fetch_completed_titles(
-    email: str,
-    password: str,
-    dates: list[str],
-    headless: bool = True,
-) -> dict[str, set[str]]:
-    """Return {date: titles of blocks logged as done} for *dates*.
-
-    Reads the same week view the duplicate check already loads, so this is one
-    page load rather than a new way into BTWB. Only completion is read — nothing
-    about what was actually lifted — which is all the audit needs to stop
-    counting a session that was planned and skipped.
-
-    Like the duplicate check, this assumes *dates* fall in one week and loads the
-    week containing the first of them.
-    """
-    if not dates:
-        return {}
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=headless)
-        page = browser.new_context(locale="fr-FR").new_page()
-        try:
-            _login(page, email, password)
-            page.goto(_calendar_week_url(dates[0]), wait_until="domcontentloaded")
-            _ensure_track_selected(page)
-            _settle_calendar(page)
-            done: dict[str, list[str]] = page.evaluate(_SCAN_COMPLETED_JS, dates)
-        finally:
-            browser.close()
-    return {d: set(done.get(d, [])) for d in dates}
 
 
 def post_week(

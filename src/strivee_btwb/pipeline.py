@@ -5,26 +5,27 @@ Each step (capture, analyse, preview, post) is a standalone function that reads
 from the previous step's cache, so steps can be run independently or restarted.
 """
 
-import getpass
-import hashlib
-import json
 import logging
-import math
 import re
 import sys
 from datetime import date, timedelta
-from pathlib import Path
 
 import ollama
 
 from .btwb import (
     AuthenticationError,
     delete_week,
-    fetch_completed_titles,
-    fetch_logged_loads,
     fetch_planned_workouts,
     post_week,
-    sync_sessions,
+)
+from .cache import (
+    load_days,
+    load_formatted_day,
+    load_text_captures,
+    parsed_source_mtime_ns,
+    save_day,
+    save_formatted_day,
+    save_text_capture,
 )
 from .capture import (
     capture_day_as_text,
@@ -42,65 +43,20 @@ from .core.models import (
     INTER_PLUS,
     LEVEL_LABELS,
     RX,
-    ClassicSets,
     DayProgramming,
-    ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
 )
-from .garmin import GarminAuthError, fetch_with_laps
-from .garmin import connect as garmin_connect
-from .garmin import load_week as load_garmin_week
-from .garmin import login as garmin_login
-from .garmin import save_week as save_garmin_week
-from .processing import extract_sets, format_for_btwb
-from .processing.accessory import (
-    ACCESSORY_BLOCK_NAME,
-    Prescription,
-    build_block,
-    plan_accessory,
-    target_reps,
-)
+from .processing import format_for_btwb
 from .processing.erg_intervals import describe, erg_intervals
-from .processing.garmin_map import activity_date, clock, needs_laps, sessions_from_activities
 from .processing.lift_sets import classic_sets, describe_sets
-from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
 from .processing.plus_split import is_lead_in, split_plus_joins
-from .processing.volume import (
-    METCON_CAP,
-    MuscleVolume,
-    WorkSet,
-    pool_movements,
-    weekly_volume,
-)
 from .vision import count_block_titles, extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-# Bump when the parsed-cache JSON shape or the parser semantics change, so that
-# preview/post warn instead of silently consuming output from an older parser.
-# 2: blocks carry the INTER+/INTER prescriptions in their own fields instead of
-# having them folded into instruction.
-CACHE_SCHEMA_VERSION = 2
-
-# Bump when the formatting (clean_week / format_for_btwb / format prompt) changes,
-# so a stale formatted cache is recomputed instead of silently reused.
-# 2: blocks record the difficulty level their content was selected from.
-# 3: "+"-joined blocks are split into one workout per part.
-# 4: erg interval blocks carry the plan the classic builder posts.
-# 5: every note opens with the prescription as Strivee wrote it.
-# 6: single-movement set schemes carry the plan the classic builder posts.
-# 7: set plans carry their load, rep-max and EMOM shape.
-FORMATTED_SCHEMA_VERSION = 7
-
-# Bump when the set-extraction prompt or WorkSet shape changes, so a stale
-# per-day set cache is re-extracted instead of silently reused by the audit.
-# 5: classic-builder blocks give their sets from the plan, not the model.
-SETS_SCHEMA_VERSION = 5
-
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -117,222 +73,6 @@ def short_to_date(day_short: str, ws: date | None = None) -> date:
 
 def parse_days(raw: str | None) -> list[str]:
     return [d.strip() for d in raw.split(",")] if raw else WEEKDAYS[:6]
-
-
-# ── Cache ─────────────────────────────────────────────────────────────────────
-
-
-def save_day(day: DayProgramming, ws: date) -> Path:
-    """Persist a parsed day as JSON inside the per-week parsed sub-directory."""
-    out = config.PARSED_DIR / ws.isoformat()
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"parsed_{day.date.isoformat()}_{day.day_label}.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": CACHE_SCHEMA_VERSION,
-                "date": day.date.isoformat(),
-                "day_label": day.day_label,
-                "blocks": [
-                    {
-                        "name": b.name,
-                        "content": b.content,
-                        "instruction": b.instruction,
-                        "inter_plus": b.inter_plus,
-                        "inter": b.inter,
-                    }
-                    for b in day.blocks
-                ],
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    return path
-
-
-def load_days(days: list[str], ws: date) -> WeeklyProgramming:
-    """Load cached per-day JSON files from the per-week parsed directory."""
-    folder = config.PARSED_DIR / ws.isoformat()
-    parsed = []
-    for label in days:
-        matches = sorted(folder.glob(f"parsed_*_{label}.json"))
-        if not matches:
-            logger.warning("No cached analysis for %s", label)
-            continue
-        data = json.loads(matches[-1].read_text())
-        version = data.get("schema_version")
-        if version != CACHE_SCHEMA_VERSION:
-            logger.warning(
-                "Cache %s has schema_version %r (expected %d) — it may be stale; "
-                "re-run 'strivee-btwb analyse' if results look wrong.",
-                matches[-1].name,
-                version,
-                CACHE_SCHEMA_VERSION,
-            )
-        try:
-            day = DayProgramming(
-                date=date.fromisoformat(data["date"]),
-                day_label=data["day_label"],
-                blocks=[
-                    ProgrammingBlock(
-                        name=b["name"],
-                        content=b["content"],
-                        instruction=b.get("instruction", ""),
-                        inter_plus=b.get("inter_plus", ""),
-                        inter=b.get("inter", ""),
-                    )
-                    for b in data["blocks"]
-                ],
-            )
-        except (KeyError, ValueError) as e:
-            # Malformed / older-shape / empty-name cache: skip this day with a clear
-            # message rather than crashing the whole preview/post with a traceback.
-            logger.warning(
-                "Skipping unreadable cache %s (%s) — re-run: strivee-btwb analyse",
-                matches[-1].name,
-                e,
-            )
-            continue
-        logger.info("Loaded cache: %s", matches[-1].name)
-        parsed.append(day)
-    return WeeklyProgramming(week_start=ws, days=parsed)
-
-
-def _parsed_source_mtime_ns(ws: date, day_label: str) -> int | None:
-    """Modification time (ns) of the parsed file load_days would read for a day.
-
-    Used as the freshness key for the formatted cache: if the parsed source is
-    re-analysed (newer mtime), the formatted cache for that day is recomputed.
-    """
-    folder = config.PARSED_DIR / ws.isoformat()
-    matches = sorted(folder.glob(f"parsed_*_{day_label}.json"))
-    return matches[-1].stat().st_mtime_ns if matches else None
-
-
-def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | None) -> Path:
-    """Persist a cleaned+formatted day so post can reuse preview's LLM output."""
-    out = config.FORMATTED_DIR / ws.isoformat()
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"formatted_{day.date.isoformat()}_{day.day_label}.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": FORMATTED_SCHEMA_VERSION,
-                "source_mtime_ns": source_mtime_ns,
-                "date": day.date.isoformat(),
-                "day_label": day.day_label,
-                "blocks": [
-                    {
-                        "name": b.name,
-                        "content": b.content,
-                        "instruction": b.instruction,
-                        "level": b.level,
-                        "erg": None
-                        if b.erg is None
-                        else {
-                            "movement": b.erg.movement,
-                            "intervals": list(b.erg.intervals),
-                            "rest_seconds": b.erg.rest_seconds,
-                        },
-                        "sets": None
-                        if b.sets is None
-                        else {
-                            "movement": b.sets.movement,
-                            "reps": list(b.sets.reps),
-                            "rest_seconds": b.sets.rest_seconds,
-                            "percent_1rm": b.sets.percent_1rm,
-                            "rep_max": b.sets.rep_max,
-                            "emom_seconds": b.sets.emom_seconds,
-                        },
-                    }
-                    for b in day.blocks
-                ],
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    return path
-
-
-def load_formatted_day(
-    ws: date, day_label: str, expected_mtime_ns: int | None
-) -> DayProgramming | None:
-    """Return the cached formatted day iff it is fresh, else None.
-
-    Fresh means: the file exists, its schema matches the current formatter, and
-    its recorded parsed-source mtime equals the parsed file's current mtime (so
-    re-analysing a day invalidates its formatted cache).
-    """
-    folder = config.FORMATTED_DIR / ws.isoformat()
-    matches = sorted(folder.glob(f"formatted_*_{day_label}.json"))
-    if not matches:
-        return None
-    try:
-        data = json.loads(matches[-1].read_text())
-    except (OSError, ValueError):
-        return None
-    if data.get("schema_version") != FORMATTED_SCHEMA_VERSION:
-        return None
-    if data.get("source_mtime_ns") != expected_mtime_ns:
-        logger.info("Formatted cache for %s is stale (re-analysed) — reformatting", day_label)
-        return None
-    return DayProgramming(
-        date=date.fromisoformat(data["date"]),
-        day_label=data["day_label"],
-        blocks=[
-            ProgrammingBlock(
-                name=b["name"],
-                content=b["content"],
-                instruction=b.get("instruction", ""),
-                level=b.get("level", RX),
-                erg=None
-                if b.get("erg") is None
-                else ErgIntervals(
-                    movement=b["erg"]["movement"],
-                    intervals=tuple(b["erg"]["intervals"]),
-                    rest_seconds=b["erg"]["rest_seconds"],
-                ),
-                sets=None
-                if b.get("sets") is None
-                else ClassicSets(
-                    movement=b["sets"]["movement"],
-                    reps=tuple(b["sets"]["reps"]),
-                    rest_seconds=b["sets"]["rest_seconds"],
-                    percent_1rm=b["sets"]["percent_1rm"],
-                    rep_max=b["sets"]["rep_max"],
-                    emom_seconds=b["sets"]["emom_seconds"],
-                ),
-            )
-            for b in data["blocks"]
-        ],
-    )
-
-
-def save_text_capture(text: str, label: str, ws: date) -> Path:
-    """Save a UI-dump text capture and return its path."""
-    from datetime import datetime
-
-    out = config.CAPTURES_DIR / ws.isoformat()
-    out.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = out / f"strivee_{ts}_{label}.txt"
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
-def load_text_captures(days: list[str], ws: date) -> dict[str, str]:
-    """Load UI-dump text captures from the per-week captures directory."""
-    folder = config.CAPTURES_DIR / ws.isoformat()
-    result: dict[str, str] = {}
-    for day in days:
-        matches = sorted(folder.glob(f"strivee_*_{day}.txt"))
-        if not matches:
-            continue
-        logger.info("Loaded text capture: %s", matches[-1].name)
-        result[day] = matches[-1].read_text(encoding="utf-8")
-    return result
 
 
 # ── Week processing ───────────────────────────────────────────────────────────
@@ -553,7 +293,7 @@ def prepare_week_for_btwb(days: list[str], ws: date, relevel: bool = False) -> W
         hit = (
             None
             if relevel
-            else load_formatted_day(ws, day.day_label, _parsed_source_mtime_ns(ws, day.day_label))
+            else load_formatted_day(ws, day.day_label, parsed_source_mtime_ns(ws, day.day_label))
         )
         if hit is not None:
             logger.info("Reusing cached formatting for %s", day.day_label)
@@ -565,7 +305,7 @@ def prepare_week_for_btwb(days: list[str], ws: date, relevel: bool = False) -> W
         selected = select_levels(WeeklyProgramming(week_start=ws, days=to_format))
         formatted = llm_format_week(selected)
         for day in formatted.days:
-            save_formatted_day(day, ws, _parsed_source_mtime_ns(ws, day.day_label))
+            save_formatted_day(day, ws, parsed_source_mtime_ns(ws, day.day_label))
             cached[day.day_label] = day
 
     # Reassemble in the cleaned order; a day with no non-empty blocks is dropped
@@ -596,7 +336,9 @@ def _unconfirmed_movement(block: ProgrammingBlock) -> str | None:
     return plan.movement
 
 
-def log_preview(week: WeeklyProgramming) -> None:
+def log_preview(week: WeeklyProgramming) -> list[str]:
+    """Print what will be posted; return the movement names BTWB has not confirmed."""
+    unconfirmed: list[str] = []
     logger.info("=" * 60)
     logger.info("  BTWB Preview — Week starting %s", week.week_start)
     logger.info("=" * 60)
@@ -612,11 +354,13 @@ def log_preview(week: WeeklyProgramming) -> None:
                 for line in block.instruction.splitlines():
                     logger.info("      %s", line)
             if movement := _unconfirmed_movement(block):
+                unconfirmed.append(movement)
                 logger.warning(
                     "    BTWB has not been seen to hold a movement named '%s' — if it has "
                     "none, post skips this block",
                     movement,
                 )
+    return unconfirmed
 
 
 # ── Steps ─────────────────────────────────────────────────────────────────────
@@ -787,11 +531,12 @@ def _prepared_week_or_exit(days: list[str], ws: date, relevel: bool = False) -> 
     return week
 
 
-def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> None:
+def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> list[str]:
+    """Show the week as it will be posted; return the movement names BTWB has not confirmed."""
     ws = ws or week_start()
     week = _prepared_week_or_exit(days, ws, relevel)
     log_summary(week)
-    log_preview(week)
+    return log_preview(week)
 
 
 def _log_post_outcome(results: list[dict], ws: date) -> None:
@@ -893,9 +638,9 @@ def do_verify(days: list[str], ws: date | None = None) -> None:
     checked = missing = 0
     mismatches: list = []
     for day in week.days:
-        by_title = {_norm_title(t): body for t, body in stored[day.date.isoformat()].items()}
+        by_title = {norm_title(t): body for t, body in stored[day.date.isoformat()].items()}
         for block in day.blocks:
-            body = by_title.get(_norm_title(block.name))
+            body = by_title.get(norm_title(block.name))
             if body is None:
                 missing += 1
                 logger.warning("  %s — '%s' is not on BTWB", day.day_label, block.name)
@@ -967,97 +712,7 @@ def do_delete(
         logger.info("Done — %d workout(s) deleted", sum(1 for r in results if r.get("ok")))
 
 
-# ── Accessory audit ───────────────────────────────────────────────────────────
-
-
-def _sets_fingerprint(day: DayProgramming) -> str:
-    """Identify the exact block text a day's set extraction was made from.
-
-    The audit reads whichever of the two caches is available, and the formatted
-    one changes with the level choice as well as with re-analysis. Hashing the
-    text that was actually read covers both without the sets cache having to know
-    which cache it came from.
-    """
-    payload = "\x00".join(f"{b.name}\x01{b.content}" for b in day.blocks)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def save_sets_day(day: DayProgramming, ws: date, fingerprint: str, sets: list[WorkSet]) -> Path:
-    """Cache a day's extracted sets so re-running the audit costs no LLM calls."""
-    out = config.PARSED_DIR / ws.isoformat()
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"sets_{day.date.isoformat()}_{day.day_label}.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": SETS_SCHEMA_VERSION,
-                "fingerprint": fingerprint,
-                "date": day.date.isoformat(),
-                "day_label": day.day_label,
-                "sets": [
-                    {
-                        "movement": s.movement,
-                        "sets": s.sets,
-                        "reps": s.reps,
-                        "block_type": s.block_type,
-                        "source": s.source,
-                    }
-                    for s in sets
-                ],
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    return path
-
-
-def load_sets_day(day: DayProgramming, ws: date, fingerprint: str) -> list[WorkSet] | None:
-    """Return a day's cached sets iff they were extracted from this exact text."""
-    path = config.PARSED_DIR / ws.isoformat() / f"sets_{day.date.isoformat()}_{day.day_label}.json"
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return None
-    if data.get("schema_version") != SETS_SCHEMA_VERSION:
-        return None
-    if data.get("fingerprint") != fingerprint:
-        logger.info("Set cache for %s is stale — re-extracting", day.day_label)
-        return None
-    return [
-        WorkSet(
-            movement=s["movement"],
-            sets=s["sets"],
-            reps=s.get("reps", ""),
-            block_type=s["block_type"],
-            source=s.get("source", ""),
-        )
-        for s in data["sets"]
-    ]
-
-
-def week_for_audit(days: list[str], ws: date) -> tuple[WeeklyProgramming, list[str]]:
-    """Load the week to audit, preferring each day's level-selected formatting.
-
-    A day that has been previewed is counted as the athlete will actually train
-    it; one that has not falls back to the parsed RX text. Returns the week plus
-    the day labels that fell back, so the report can say so rather than quietly
-    counting a level the athlete does not do.
-    """
-    parsed = {d.day_label: d for d in load_days(days, ws).days}
-    ordered: list[DayProgramming] = []
-    fell_back: list[str] = []
-    for label in days:
-        formatted = load_formatted_day(ws, label, _parsed_source_mtime_ns(ws, label))
-        if formatted is not None:
-            ordered.append(formatted)
-        elif label in parsed:
-            ordered.append(parsed[label])
-            fell_back.append(label)
-    return WeeklyProgramming(week_start=ws, days=ordered), fell_back
-
-
-def _norm_title(name: str) -> str:
+def norm_title(name: str) -> str:
     """Collapse whitespace so a title matches across our cache and BTWB's calendar.
 
     Block names carry the source's own spacing — "EMF 60 :  Handstand Walk" has a
@@ -1065,454 +720,3 @@ def _norm_title(name: str) -> str:
     the moment either side tidied it.
     """
     return " ".join(name.split())
-
-
-def week_work_sets(
-    week: WeeklyProgramming, completed: dict[str, set[str]] | None = None
-) -> list[WorkSet]:
-    """Extract every block's sets for the week, reusing the per-day cache.
-
-    When *completed* is given, only sets from blocks logged as done on BTWB are
-    returned. The filter is applied after caching, not before: the cache stays
-    keyed on the whole day's text, so running with and without it costs no extra
-    model calls.
-    """
-    collected: list[WorkSet] = []
-    for day in week.days:
-        fingerprint = _sets_fingerprint(day)
-        cached = load_sets_day(day, week.week_start, fingerprint)
-        if cached is not None:
-            logger.info("Reusing cached set extraction for %s", day.day_label)
-            day_sets = cached
-        else:
-            logger.info("Extracting sets for %s (%d block(s))", day.day_label, len(day.blocks))
-            day_sets = [s for block in day.blocks for s in extract_sets(block)]
-            save_sets_day(day, week.week_start, fingerprint, day_sets)
-        if completed is not None:
-            done = {_norm_title(t) for t in completed.get(day.date.isoformat(), set())}
-            skipped = {b.name for b in day.blocks if _norm_title(b.name) not in done}
-            if skipped:
-                logger.info(
-                    "%s — not logged as done: %s", day.day_label, ", ".join(sorted(skipped))
-                )
-            day_sets = [s for s in day_sets if _norm_title(s.source) in done]
-        collected.extend(day_sets)
-    return collected
-
-
-def _log_gap_prescription(
-    volumes: dict[str, MuscleVolume],
-    location: str,
-    lifted: dict[str, list[Load]] | None,
-) -> None:
-    """List what to do to close each muscle's gap, with last session's load."""
-    gaps = [v for v in volumes.values() if v.gap > 0]
-    logger.info("")
-    if not gaps:
-        logger.info("  Every muscle is at target — no accessory work needed this week.")
-        return
-    logger.info("  ── To close the gap at the %s ──", location)
-    for vol in gaps:
-        options = pool_movements(vol.muscle, location)
-        count = math.ceil(vol.gap)
-        unit = "set " if count == 1 else "sets"  # trailing space keeps the column aligned
-        if not options:
-            logger.warning(
-                "  %-26s %2d %s   no %s option in the pool", vol.label, count, unit, location
-            )
-            continue
-        # Two pool entries can share one BTWB name (the same cable movement set
-        # up two ways), and printing it twice reads as a bug in the report.
-        by_name: dict[str, str] = {}
-        for movement in options:
-            by_name.setdefault(movement["btwb_name"], target_reps(movement["reps"]))
-        picks = " / ".join(f"{name} {reps}" for name, reps in list(by_name.items())[:2])
-        logger.info("  %-26s %2d %s   %s", vol.label, count, unit, picks)
-        for name in list(by_name)[:2]:
-            previous = (lifted or {}).get(name.casefold())
-            if previous:
-                logger.info(
-                    "  %-26s          last %s: %s",
-                    "",
-                    name,
-                    ", ".join(str(load) for load in previous),
-                )
-
-
-def log_audit(
-    ws: date,
-    volumes: dict[str, MuscleVolume],
-    unlisted: list[str],
-    location: str,
-    fell_back: list[str],
-    actual: bool = False,
-    plan_ws: date | None = None,
-    lifted: dict[str, list[Load]] | None = None,
-) -> None:
-    """Print the week's per-muscle volume and what it would take to close the gap."""
-    counted = "logged as done" if actual else "as programmed"
-    logger.info("=" * 68)
-    logger.info("  Accessory audit — week starting %s  (%s, %s)", ws, location, counted)
-    if plan_ws is not None and plan_ws != ws:
-        logger.info("  Measured as the baseline for the week starting %s", plan_ws)
-    logger.info("=" * 68)
-    logger.info("  Hard sets at 0-2 RIR. Conditioning counts 0.25/set, capped at")
-    logger.info("  %.1f per muscle per week; heavy singles and skill work count 0.", METCON_CAP)
-    if fell_back:
-        logger.warning(
-            "  %s counted at RX — not previewed, so no level was chosen.", ", ".join(fell_back)
-        )
-    logger.info("")
-    logger.info("  %-26s %6s %6s %6s", "MUSCLE", "TARGET", "EMF", "GAP")
-    for vol in volumes.values():
-        logger.info("  %-26s %6.1f %6.1f %6.1f", vol.label, vol.target, vol.credited, vol.gap)
-        if vol.sources:
-            top = ", ".join(f"{name} {credit:.1f}" for name, credit in vol.sources[:3])
-            logger.info("  %-26s        from %s", "", top)
-        if vol.metcon_raw > METCON_CAP:
-            logger.info(
-                "  %-26s        conditioning capped: %.1f → %.1f",
-                "",
-                vol.metcon_raw,
-                vol.metcon,
-            )
-
-    _log_gap_prescription(volumes, location, lifted)
-
-    if unlisted:
-        logger.info("")
-        logger.info("  ── Not credited (absent from movement_muscles.json) ──")
-        for name in unlisted:
-            logger.info("      %s", name)
-        logger.info("  Add any of these that train a tracked muscle, then re-run.")
-
-
-def accessory_week(ws: date, plan: dict[str, list[Prescription]]) -> WeeklyProgramming:
-    """Wrap the planned accessory work as a week ``post_week`` can take as-is."""
-    days = [
-        DayProgramming(
-            date=short_to_date(label, ws),
-            day_label=label,
-            blocks=[build_block(entries)],
-        )
-        for label, entries in plan.items()
-        if entries
-    ]
-    return WeeklyProgramming(week_start=ws, days=days)
-
-
-def log_accessory_plan(week: WeeklyProgramming) -> None:
-    """Show the accessory blocks exactly as BTWB will receive them."""
-    logger.info("")
-    logger.info("  ── Accessory blocks to post ──")
-    for day in week.days:
-        for block in day.blocks:
-            logger.info("  %s %s — [%s]", day.day_label.upper(), day.date, block.name)
-            for line in block.content.splitlines():
-                logger.info("      %s", line)
-
-
-def _confirm_accessory(week: WeeklyProgramming) -> bool:
-    total = sum(len(d.blocks) for d in week.days)
-    dates = ", ".join(f"{d.day_label} {d.date}" for d in week.days)
-    answer = input(f"\nPost {total} accessory block(s) to BTWB on {dates}? [y/N] ")
-    return answer.strip().lower() in ("y", "yes")
-
-
-def _audit_weeks(ws: date, from_last_week: bool) -> tuple[date, date]:
-    """Return (week to measure, week to plan into).
-
-    They are normally the same week. ``--from-last-week`` separates them because
-    this week's delivery is not knowable until this week is over: the most recent
-    finished week is the best available estimate of what the coming one will
-    leave untrained, and the gap it measures is structural enough for that to
-    hold — side delts and calves get nothing every week regardless.
-    """
-    return (ws - timedelta(days=7), ws) if from_last_week else (ws, ws)
-
-
-def _crossfit_only(week: WeeklyProgramming) -> WeeklyProgramming:
-    """Drop accessory blocks from a week being measured as the baseline.
-
-    The baseline has to be what CrossFit delivered and nothing else. Counting
-    last week's accessory work into it makes the system undo itself: five sets
-    one week, a satisfied target and zero the next, five again the week after —
-    half the target on average, in a loop that looks correct at every step.
-    """
-    trimmed = []
-    for day in week.days:
-        keep = [b for b in day.blocks if b.name != ACCESSORY_BLOCK_NAME]
-        if len(keep) != len(day.blocks):
-            logger.info("%s — accessory work excluded from the baseline", day.day_label)
-        trimmed.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=keep))
-    return WeeklyProgramming(week_start=week.week_start, days=trimmed)
-
-
-def _loads_lifted(week: WeeklyProgramming) -> dict[str, list[Load]]:
-    """What was lifted for each movement across the measured week's logged sessions.
-
-    Best effort: a failure here costs a hint next to a prescription, not the
-    audit, so it is reported and swallowed rather than aborting the run.
-    """
-    try:
-        logged = fetch_logged_loads(
-            config.BTWB_EMAIL,
-            config.BTWB_PASSWORD,
-            [d.date.isoformat() for d in week.days],
-        )
-    except Exception as e:
-        logger.warning("Could not read logged loads: %s", e)
-        return {}
-    lifted: dict[str, list[Load]] = {}
-    for by_title in logged.values():
-        for rows, result in by_title.values():
-            for movement, loads in loads_by_movement(rows, result).items():
-                lifted.setdefault(_norm_title(movement).casefold(), []).extend(loads)
-    return lifted
-
-
-def _completion_for(week: WeeklyProgramming) -> dict[str, set[str]]:
-    """Read from BTWB which of the week's blocks were actually logged as done."""
-    if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
-        logger.error("--actual reads your BTWB calendar; set BTWB_EMAIL / BTWB_PASSWORD in .env")
-        sys.exit(1)
-    logger.info("Reading BTWB for what was actually logged as done…")
-    try:
-        return fetch_completed_titles(
-            config.BTWB_EMAIL,
-            config.BTWB_PASSWORD,
-            [d.date.isoformat() for d in week.days],
-            headless=True,
-        )
-    except Exception as e:
-        # Falling back to the plan while the header still says "logged as done"
-        # would be a silent lie about what the numbers mean.
-        logger.error("Could not read completion from BTWB: %s", e)
-        sys.exit(1)
-
-
-def _post_accessory(planned: WeeklyProgramming, yes: bool, headless: bool, dry_run: bool) -> None:
-    """Send the planned accessory blocks to BTWB, confirming first unless told not to."""
-    if not dry_run and (not config.BTWB_EMAIL or not config.BTWB_PASSWORD):
-        logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
-        sys.exit(1)
-    if not dry_run and not yes and not _confirm_accessory(planned):
-        logger.info("Nothing posted.")
-        return
-    try:
-        results = post_week(
-            week=planned,
-            email=config.BTWB_EMAIL,
-            password=config.BTWB_PASSWORD,
-            headless=headless,
-            dry_run=dry_run,
-            # Accessory movement names are exactly the ones BTWB's AI parser
-            # resolves to the wrong exercise, so enter them through its search.
-            exact_movements=True,
-        )
-    except Exception as e:  # AuthenticationError included — every failure aborts the same way
-        logger.error("%s", e)
-        sys.exit(1)
-    verb = "would be posted" if dry_run else "posted"
-    logger.info("Done — %d accessory block(s) %s", len(results), verb)
-
-
-def do_audit(
-    days: list[str],
-    ws: date | None = None,
-    location: str = "gym",
-    on: list[str] | None = None,
-    post: bool = False,
-    yes: bool = False,
-    headless: bool = False,
-    dry_run: bool = False,
-    actual: bool = False,
-    from_last_week: bool = False,
-) -> None:
-    ws = ws or week_start()
-    measure_ws, plan_ws = _audit_weeks(ws, from_last_week)
-    # Measuring a past week only makes sense against what was actually done there.
-    actual = actual or from_last_week
-    if post and not on:
-        logger.error("--post needs --on to say which day(s) the accessory work goes on")
-        sys.exit(1)
-    if on:
-        # A typo like "Tues" would otherwise plan a day that silently never posts.
-        unknown = [label for label in on if label not in WEEKDAYS]
-        if unknown:
-            logger.error("Unknown day(s) in --on: %s (expected %s)", unknown, ", ".join(WEEKDAYS))
-            sys.exit(1)
-
-    week, fell_back = week_for_audit(days, measure_ws)
-    if not week.days:
-        logger.error(
-            "No cached analysis for the week of %s — run: strivee-btwb analyse --week %s",
-            measure_ws,
-            measure_ws,
-        )
-        sys.exit(1)
-    week = _crossfit_only(week)
-    completed = _completion_for(week) if actual else None
-
-    try:
-        work_sets = week_work_sets(week, completed)
-    except LLMUnavailableError as e:
-        logger.error("%s", e)
-        sys.exit(1)
-    volumes, unlisted = weekly_volume(work_sets)
-    # Only when BTWB is being read anyway: what was lifted last time is the whole
-    # progression signal when every set goes to failure against a fixed rep target.
-    lifted = _loads_lifted(week) if actual else None
-    log_audit(measure_ws, volumes, unlisted, location, fell_back, actual, plan_ws, lifted)
-
-    if not on:
-        return
-
-    planned = accessory_week(plan_ws, plan_accessory(volumes, location, on))
-    if not planned.days:
-        logger.info("")
-        logger.info("  Nothing to add — every muscle is already at target.")
-        return
-    log_accessory_plan(planned)
-
-    if not post:
-        logger.info("")
-        logger.info("  Re-run with --post to send these to BTWB.")
-        return
-
-    _post_accessory(planned, yes, headless, dry_run)
-
-
-# ── Garmin → BTWB cardio sync ─────────────────────────────────────────────────
-
-GARMIN_DEFAULT_DAYS_BACK = 7
-"""Days of Garmin history a sync looks at when no week is named — one training week."""
-
-
-def _garmin_window(days_back: int, ws: date | None) -> tuple[date, date]:
-    """The range to sync: a whole week when one is named, else the last N days."""
-    if ws:
-        return ws, ws + timedelta(days=6)
-    end = date.today()
-    return end - timedelta(days=days_back - 1), end
-
-
-def _mondays_between(start: date, end: date) -> list[date]:
-    first = week_start(start)
-    return [first + timedelta(weeks=n) for n in range((week_start(end) - first).days // 7 + 1)]
-
-
-def _garmin_activities(start: date, end: date, refetch: bool) -> list[dict]:
-    """Fetch the window from Garmin a week at a time, reusing finished weeks.
-
-    A week that has not ended is never served from its cache: the file was written
-    mid-week, and Wednesday cannot know about Friday's run. Garmin is rate-limited,
-    so weeks that are over are read from disk instead of asked for again.
-    """
-    client = None
-    activities: list[dict] = []
-    for monday in _mondays_between(start, end):
-        sunday = monday + timedelta(days=6)
-        cached = None if refetch else load_garmin_week(monday)
-        if cached is not None and sunday < date.today():
-            logger.info("Week of %s — %d activities from cache", monday, len(cached))
-            activities += cached
-            continue
-        client = client or garmin_connect()
-        fetched = fetch_with_laps(client, monday, sunday, needs_laps)
-        save_garmin_week(monday, fetched)
-        activities += fetched
-    return [a for a in activities if start <= activity_date(a) <= end]
-
-
-def _report_cardio(outcome: dict, post: bool) -> None:
-    logged, skipped = outcome["logged"], outcome["skipped"]
-    for entry in skipped:
-        logger.info("  already on BTWB — %s  %s", entry["date"], entry["title"])
-    verb = "logged" if post else "would log"
-    for entry in logged:
-        logger.info("  %s — %s  %s | %s", verb, entry["date"], entry["shape"], entry["result"])
-        if entry.get("url"):
-            logger.info("      %s", entry["url"])
-    logger.info("")
-    if not logged:
-        logger.info("  Nothing new — BTWB already holds every session in the window.")
-    elif post:
-        logger.info("  %d session(s) logged, %d already there.", len(logged), len(skipped))
-    else:
-        logger.info(
-            "  %d session(s) would be logged, %d already there. Re-run with --post to write them.",
-            len(logged),
-            len(skipped),
-        )
-
-
-def do_garmin(
-    days_back: int = GARMIN_DEFAULT_DAYS_BACK,
-    ws: date | None = None,
-    min_bike_km: float | None = None,
-    post: bool = False,
-    yes: bool = False,
-    headless: bool = False,
-    refetch: bool = False,
-    no_commutes: bool = False,
-) -> None:
-    """Log the runs and rides Garmin recorded into BTWB, skipping what is already there."""
-    if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
-        logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
-        sys.exit(1)
-    start, end = _garmin_window(days_back, ws)
-    logger.info("=" * 68)
-    logger.info("  Garmin → BTWB — %s to %s", start, end)
-    logger.info("=" * 68)
-
-    try:
-        activities = _garmin_activities(start, end, refetch)
-    except GarminAuthError as e:
-        logger.error("%s", e)
-        sys.exit(1)
-
-    sessions = sessions_from_activities(activities, min_bike_km, merge_commutes=not no_commutes)
-    if not sessions:
-        logger.info("  No runs or rides in the window.")
-        return
-    for session in sessions:
-        logger.info(
-            "  %s  %-10s %7.2f km  %8s  %s",
-            session.date,
-            session.movement,
-            session.distance_m / 1000,
-            clock(session.duration_s),
-            session.title,
-        )
-    logger.info("")
-
-    if post and not yes and not _confirm_cardio(sessions):
-        logger.info("Aborted — nothing written.")
-        return
-
-    try:
-        outcome = sync_sessions(sessions, start, dry_run=not post, headless=headless)
-    except Exception as e:
-        logger.error("Sync failed: %s", e)
-        sys.exit(1)
-    _report_cardio(outcome, post)
-
-
-def _confirm_cardio(sessions: list) -> bool:
-    answer = input(
-        f"\nLog up to {len(sessions)} session(s) to BTWB? Ones already there are skipped. [y/N] "
-    )
-    return answer.strip().lower() in ("y", "yes")
-
-
-def do_garmin_login() -> None:
-    """Sign in to Garmin once, so every later sync reads tokens instead of a password."""
-    email = input("Garmin Connect email: ").strip()
-    password = getpass.getpass("Garmin Connect password: ")
-    try:
-        garmin_login(email, password, lambda: input("MFA code: ").strip())
-    except Exception as e:
-        logger.error("Garmin login failed: %s", e)
-        sys.exit(1)
-    logger.info("Tokens written to %s — the sync will not ask again.", config.GARMIN_TOKENSTORE)

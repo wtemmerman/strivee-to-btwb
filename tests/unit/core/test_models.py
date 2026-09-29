@@ -109,3 +109,28 @@ def test_an_interval_session_needs_more_than_one_effort():
             duration_s=3066,
             intervals=[CardioInterval(500, 118)],
         )
+
+
+def test_every_plan_field_survives_a_json_round_trip():
+    """A hand-written cache once dropped percent_1rm and rep_max; asdict cannot."""
+    import json
+
+    from strivee_btwb.core.models import ClassicSets, ErgIntervals, plan_from_json, plan_to_json
+
+    sets = ClassicSets(
+        "Tempo Back Squat", (5, 5, None), 120, percent_1rm=70, rep_max=True, emom_seconds=75
+    )
+    erg = ErgIntervals("Bike Erg", (120, 60), 40)
+    for cls, plan in ((ClassicSets, sets), (ErgIntervals, erg)):
+        assert plan_from_json(cls, json.loads(json.dumps(plan_to_json(plan)))) == plan
+    assert plan_to_json(None) is None
+    assert plan_from_json(ClassicSets, None) is None
+
+
+def test_a_plan_written_by_another_version_fails_loud():
+    import pytest
+
+    from strivee_btwb.core.models import ClassicSets, plan_from_json
+
+    with pytest.raises(ValueError, match="do not match"):
+        plan_from_json(ClassicSets, {"movement": "Seal Row", "reps": [10], "rest_seconds": None})

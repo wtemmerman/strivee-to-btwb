@@ -16,19 +16,25 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from strivee_btwb.cache import (
+    load_text_captures,
+)
 from strivee_btwb.core import config
 from strivee_btwb.core.llm import response_cache_stats, use_response_cache
 from strivee_btwb.core.models import (
     LEVEL_LABELS,
+    ClassicSets,
     DayProgramming,
+    ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
+    plan_from_json,
+    plan_to_json,
 )
 from strivee_btwb.pipeline import (
     analyse_days,
     clean_week,
     llm_format_week,
-    load_text_captures,
     split_week,
 )
 from strivee_btwb.processing import extract_sets
@@ -74,11 +80,19 @@ def start_llm_cache(argv: list[str] | None = None) -> None:
     whether the model itself still answers as it did.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--no-cache", action="store_true", help="call the model for every prompt")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--no-cache", action="store_true", help="call the model for every prompt")
+    mode.add_argument(
+        "--offline",
+        action="store_true",
+        help="answer from the cache alone, without Ollama; a prompt it lacks fails the run",
+    )
     args = parser.parse_args(argv)
-    use_response_cache(None if args.no_cache else LLM_CACHE_DIR)
+    use_response_cache(None if args.no_cache else LLM_CACHE_DIR, offline=args.offline)
     if args.no_cache:
         logger.info("Model response cache off — every prompt goes to the model")
+    if args.offline:
+        logger.info("Offline replay — answers come from the cache only")
 
 
 def log_llm_cache() -> None:
@@ -140,6 +154,8 @@ def _week_to_dict(week: WeeklyProgramming) -> dict:
                         "instruction": b.instruction,
                         "inter_plus": b.inter_plus,
                         "inter": b.inter,
+                        "erg": plan_to_json(b.erg),
+                        "sets": plan_to_json(b.sets),
                     }
                     for b in d.blocks
                 ],
@@ -177,6 +193,8 @@ def load_baseline(kind: str, ws_iso: str) -> WeeklyProgramming:
                     instruction=b.get("instruction", ""),
                     inter_plus=b.get("inter_plus", ""),
                     inter=b.get("inter", ""),
+                    erg=plan_from_json(ErgIntervals, b.get("erg")),
+                    sets=plan_from_json(ClassicSets, b.get("sets")),
                 )
                 for b in d["blocks"]
             ],
@@ -436,6 +454,12 @@ def compare_format(baseline: WeeklyProgramming, current: WeeklyProgramming) -> d
                 continue
             ratio = _ratio(bidx[name].content, cidx[name].content)
             violations = format_invariants(cidx[name])
+            # A classic plan is compared exactly: "3 sets: 4, 4, 4" and "2 sets: 4, 4"
+            # read as near-identical text and are different workouts.
+            base_plan = bidx[name].erg or bidx[name].sets
+            cur_plan = cidx[name].erg or cidx[name].sets
+            if base_plan != cur_plan:
+                violations = [*violations, f"plan changed: {base_plan} -> {cur_plan}"]
             block_ok = ratio >= CONTENT_RATIO_THRESHOLD and not violations
             ok = ok and block_ok
             per_block.append(

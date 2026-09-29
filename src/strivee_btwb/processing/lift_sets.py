@@ -10,6 +10,7 @@ import re
 
 from ..core.models import ClassicSets, ProgrammingBlock
 from .plus_split import unsplit_name
+from .timing import clock, seconds
 
 _SETS_HEADER_RE = re.compile(r"^\s*(\d+)\s*sets?\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
 _MAX_REP_RE = re.compile(r"^\s*max\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
@@ -116,10 +117,6 @@ def btwb_movement_name(text: str) -> str:
     return _ALIASES.get(name.lower(), name)
 
 
-def _seconds(value: str, unit: str) -> int:
-    return int(value) * (1 if unit.lower().startswith("s") else 60)
-
-
 def _title_movement(block: ProgrammingBlock) -> str:
     """The movement a block's title names: "EMF 60 : Bench Press (1/2)" → "Bench Press"."""
     name = unsplit_name(block.name)
@@ -152,7 +149,7 @@ def _max_rep_sets(lines: list[str]) -> ClassicSets | None:
     return ClassicSets(
         movement=btwb_movement_name(movement.group(1)),
         reps=(None,) * int(header.group(1)),
-        rest_seconds=_seconds(rest.group(1), rest.group(2)) if rest else None,
+        rest_seconds=seconds(rest.group(1), rest.group(2)) if rest else None,
     )
 
 
@@ -178,7 +175,7 @@ def _weighted_sets(lines: list[str]) -> ClassicSets | None:
     return ClassicSets(
         movement=f"Tempo {movement}" if reps.group(3) else movement,
         reps=(int(reps.group(1)),) * int(header.group(1)),
-        rest_seconds=_seconds(rest.group(1), rest.group(2)),
+        rest_seconds=seconds(rest.group(1), rest.group(2)),
         percent_1rm=int(target.group(1)) if target else None,
     )
 
@@ -188,8 +185,8 @@ def _emom_header(line: str) -> tuple[int, int, str] | None:
     if m := _EMOM_RE.match(line):
         return 60, int(m.group(1)), m.group(2)
     if m := _EVERY_RE.match(line):
-        seconds = _seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
-        return seconds, int(m.group(4)), m.group(5)
+        every = seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
+        return every, int(m.group(4)), m.group(5)
     return None
 
 
@@ -257,7 +254,7 @@ def _top_set_back_off(lines: list[str], block: ProgrammingBlock) -> ClassicSets 
         found = _set_reps(line, _SETS_BY_REPS_RE) or _set_reps(line, _SETS_OF_REPS_RE)
         if found is None:
             if m := _REST_LEAD_RE.match(line):
-                rest = _seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
+                rest = seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
             break
         backoff.extend(found)
     if not top_reps or not backoff:
@@ -311,10 +308,6 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     return plan
 
 
-def _clock(seconds: int) -> str:
-    return f"{seconds // 60}:{seconds % 60:02d}"
-
-
 def describe_sets(plan: ClassicSets) -> str:
     """What preview shows for a classic Sets block."""
     if plan.rep_max:
@@ -323,8 +316,8 @@ def describe_sets(plan: ClassicSets) -> str:
         every, total = plan.emom_seconds, plan.emom_seconds * len(plan.reps)
         rep_word = "rep" if plan.reps[0] == 1 else "reps"
         return (
-            f"{plan.movement} - EMOM\n{plan.reps[0]} {rep_word} every {_clock(every)} "
-            f"for {_clock(total)}"
+            f"{plan.movement} - EMOM\n{plan.reps[0]} {rep_word} every {clock(every)} "
+            f"for {clock(total)}"
         )
     reps = ", ".join("max" if r is None else str(r) for r in plan.reps)
     load = f" @ {plan.percent_1rm}% 1RM" if plan.percent_1rm is not None else ""

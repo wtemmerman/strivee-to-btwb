@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from strivee_btwb import pipeline
+from strivee_btwb import garmin_sync
 from strivee_btwb.btwb import cardio
 from strivee_btwb.core.models import SINGLE_DISTANCE, CardioSession
 
@@ -24,21 +24,21 @@ def _activity(activity_id, day, km=10.0):
 
 
 def test_a_named_week_syncs_monday_to_sunday():
-    assert pipeline._garmin_window(7, date(2026, 9, 7)) == (date(2026, 9, 7), date(2026, 9, 13))
+    assert garmin_sync._garmin_window(7, date(2026, 9, 7)) == (date(2026, 9, 7), date(2026, 9, 13))
 
 
 def test_without_a_week_the_window_ends_today():
-    start, end = pipeline._garmin_window(7, None)
+    start, end = garmin_sync._garmin_window(7, None)
     assert end == date.today()
     assert (end - start).days == 6
 
 
 def test_a_window_inside_one_week_asks_for_that_week_only():
-    assert pipeline._mondays_between(date(2026, 9, 8), date(2026, 9, 11)) == [date(2026, 9, 7)]
+    assert garmin_sync._mondays_between(date(2026, 9, 8), date(2026, 9, 11)) == [date(2026, 9, 7)]
 
 
 def test_a_window_spanning_a_monday_asks_for_both_weeks():
-    assert pipeline._mondays_between(date(2026, 9, 3), date(2026, 9, 9)) == [
+    assert garmin_sync._mondays_between(date(2026, 9, 3), date(2026, 9, 9)) == [
         date(2026, 8, 31),
         date(2026, 9, 7),
     ]
@@ -55,42 +55,44 @@ def _garmin_calls(monkeypatch):
         calls["fetched"].append(start)
         return [_activity(1, start.isoformat())]
 
-    monkeypatch.setattr(pipeline, "garmin_connect", lambda: "client")
-    monkeypatch.setattr(pipeline, "fetch_with_laps", fetch)
-    monkeypatch.setattr(pipeline, "save_garmin_week", lambda ws, acts: calls["saved"].append(ws))
+    monkeypatch.setattr(garmin_sync, "garmin_connect", lambda: "client")
+    monkeypatch.setattr(garmin_sync, "fetch_with_laps", fetch)
+    monkeypatch.setattr(garmin_sync, "save_garmin_week", lambda ws, acts: calls["saved"].append(ws))
     return calls
 
 
 def test_a_finished_week_is_read_from_cache(monkeypatch, _garmin_calls):
-    finished = pipeline.week_start(date.today()) - timedelta(weeks=2)
+    finished = garmin_sync.week_start(date.today()) - timedelta(weeks=2)
     monkeypatch.setattr(
-        pipeline, "load_garmin_week", lambda ws: [_activity(9, (finished).isoformat())]
+        garmin_sync, "load_garmin_week", lambda ws: [_activity(9, (finished).isoformat())]
     )
-    activities = pipeline._garmin_activities(finished, finished + timedelta(days=6), refetch=False)
+    activities = garmin_sync._garmin_activities(
+        finished, finished + timedelta(days=6), refetch=False
+    )
     assert [a["activityId"] for a in activities] == [9]
     assert _garmin_calls["fetched"] == []
 
 
 def test_the_current_week_is_always_asked_for_again(monkeypatch, _garmin_calls):
     """A file written on Wednesday cannot know about Friday's run."""
-    this_week = pipeline.week_start(date.today())
-    monkeypatch.setattr(pipeline, "load_garmin_week", lambda ws: [_activity(9, str(this_week))])
-    pipeline._garmin_activities(this_week, date.today(), refetch=False)
+    this_week = garmin_sync.week_start(date.today())
+    monkeypatch.setattr(garmin_sync, "load_garmin_week", lambda ws: [_activity(9, str(this_week))])
+    garmin_sync._garmin_activities(this_week, date.today(), refetch=False)
     assert _garmin_calls["fetched"] == [this_week]
 
 
 def test_refetch_ignores_a_finished_weeks_cache(monkeypatch, _garmin_calls):
-    finished = pipeline.week_start(date.today()) - timedelta(weeks=2)
-    monkeypatch.setattr(pipeline, "load_garmin_week", lambda ws: [_activity(9, str(finished))])
-    pipeline._garmin_activities(finished, finished + timedelta(days=6), refetch=True)
+    finished = garmin_sync.week_start(date.today()) - timedelta(weeks=2)
+    monkeypatch.setattr(garmin_sync, "load_garmin_week", lambda ws: [_activity(9, str(finished))])
+    garmin_sync._garmin_activities(finished, finished + timedelta(days=6), refetch=True)
     assert _garmin_calls["fetched"] == [finished]
 
 
 def test_activities_outside_the_window_are_dropped(monkeypatch, _garmin_calls):
-    week = pipeline.week_start(date.today()) - timedelta(weeks=2)
+    week = garmin_sync.week_start(date.today()) - timedelta(weeks=2)
     cached = [_activity(1, str(week)), _activity(2, str(week + timedelta(days=5)))]
-    monkeypatch.setattr(pipeline, "load_garmin_week", lambda ws: cached)
-    kept = pipeline._garmin_activities(week, week + timedelta(days=2), refetch=False)
+    monkeypatch.setattr(garmin_sync, "load_garmin_week", lambda ws: cached)
+    kept = garmin_sync._garmin_activities(week, week + timedelta(days=2), refetch=False)
     assert [a["activityId"] for a in kept] == [1]
 
 

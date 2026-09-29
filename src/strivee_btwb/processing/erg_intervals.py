@@ -11,6 +11,7 @@ rather than guessed at.
 import re
 
 from ..core.models import ErgIntervals, ProgrammingBlock
+from .timing import COOLDOWN_RE, WARM_UP_RE, clock, seconds
 
 # Most specific first: "Bike Erg" must not read as a run, "Row / Ski" as a row.
 _MOVEMENTS = [
@@ -42,15 +43,9 @@ _INTENSITY_RE = re.compile(
 )
 
 
-_WARM_UP_RE = re.compile(r"warm[\s-]?up|[ée]chauffement", re.IGNORECASE)
-_COOLDOWN_RE = re.compile(r"cool[\s-]?down|retour au calme", re.IGNORECASE)
 # A section header standing alone: "Warm-up", "TEST -", "Main Part :".
 _HEADER_RE = re.compile(r"^\s*[A-Za-zÀ-ÿ][^\d]*?\s*[-:]?\s*$")
 _ANY_REST_RE = re.compile(r"^\s*-?\s*(?:no\s+)?rest\b", re.IGNORECASE)
-
-
-def _seconds(value: str, unit: str) -> int:
-    return int(value) * (1 if unit.lower().startswith("s") else 60)
 
 
 def _movement(block: ProgrammingBlock) -> str | None:
@@ -74,7 +69,7 @@ def _durations(lines: list[str]) -> list[tuple[int, str]] | None:
         label = m.group(3) if m else ""
         if not m or (label and not (_INTENSITY_RE.search(label) or _IN_SET_REST_RE.search(label))):
             return None
-        parsed.append((_seconds(m.group(1), m.group(2)), m.group(3)))
+        parsed.append((seconds(m.group(1), m.group(2)), m.group(3)))
     return parsed
 
 
@@ -108,7 +103,7 @@ def _between_sets_rest(rest_line: str | None) -> int | None:
     if rest_line and _NO_REST_RE.match(rest_line):
         return 0
     if rest_line and (m := _REST_BETWEEN_RE.match(rest_line)):
-        return _seconds(m.group(1), m.group(2))
+        return seconds(m.group(1), m.group(2))
     return None
 
 
@@ -145,7 +140,7 @@ def _repeats(lines: list[str]) -> tuple[tuple[int, ...], int] | None:
     if len(lines) != 1 or not (m := _REPEATS_RE.match(lines[0])):
         return None
     count = int(m.group(1))
-    work, second = _seconds(m.group(2), m.group(3)), _seconds(m.group(5), m.group(6))
+    work, second = seconds(m.group(2), m.group(3)), seconds(m.group(5), m.group(6))
     if _RECOVERY_RE.search(m.group(7)):
         return (work,) * count, second
     return (work, second) * count, 0
@@ -163,12 +158,12 @@ def _steady_effort(lines: list[str]) -> int | None:
     in_warm_up = False
     for line in (line for line in lines if line.strip()):
         if _HEADER_RE.match(line):
-            in_warm_up = bool(_WARM_UP_RE.search(line))
+            in_warm_up = bool(WARM_UP_RE.search(line))
             continue
         if _ANY_REST_RE.match(line):
             in_warm_up = False
             continue
-        if in_warm_up or _WARM_UP_RE.search(line) or _COOLDOWN_RE.search(line):
+        if in_warm_up or WARM_UP_RE.search(line) or COOLDOWN_RE.search(line):
             continue
         if not line.lstrip()[:1].isdigit():
             continue  # coaching or a header naming the session ("Total - 45min")
@@ -203,10 +198,6 @@ def erg_intervals(block: ProgrammingBlock) -> ErgIntervals | None:
         intervals=tuple(secs for secs, _ in durations) * found[0],
         rest_seconds=rest,
     )
-
-
-def clock(seconds: int) -> str:
-    return f"{seconds // 60}:{seconds % 60:02d}"
 
 
 def describe(plan: ErgIntervals) -> str:

@@ -77,6 +77,28 @@ def test_compare_analyse_missing_day_fails():
 # ── compare_format ──────────────────────────────────────────────────────────
 
 
+def test_compare_format_catches_a_changed_plan_the_text_ratio_misses():
+    """ "3 sets: 4, 4, 4" and "2 sets: 4, 4" are near-identical text, different workouts."""
+    from strivee_btwb.core.models import ClassicSets
+
+    def week(plan, text):
+        block = ProgrammingBlock(name="Bench", content=text, sets=plan)
+        return WeeklyProgramming(week_start=WS, days=[DayProgramming(WS, "Mon", [block])])
+
+    base = week(
+        ClassicSets("Tempo Bench Press", (4, 4, 4), 120),
+        "Tempo Bench Press - Sets\n3 sets: 4, 4, 4 reps, rest 2:00",
+    )
+    cur = week(
+        ClassicSets("Tempo Bench Press", (4, 4), 120),
+        "Tempo Bench Press - Sets\n2 sets: 4, 4 reps, rest 2:00",
+    )
+    report = compare_format(base, cur)
+    assert report["per_block"][0]["ratio"] >= 0.95  # the text alone would have passed
+    assert report["passed"] is False
+    assert "plan changed" in report["per_block"][0]["violations"][0]
+
+
 def test_compare_format_identical_passes():
     w = _week({"Mon": [("EMF 60 : Clean Pull", "Clean Pull\n2-2 @ 70%")]})
     assert compare_format(w, w)["passed"] is True
