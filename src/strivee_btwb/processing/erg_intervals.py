@@ -54,9 +54,17 @@ def _seconds(value: str, unit: str) -> int:
 
 
 def _movement(block: ProgrammingBlock) -> str | None:
-    text = f"{block.name}\n{block.content}\n{block.instruction}"
-    found = [name for name, pattern in _MOVEMENTS if pattern.search(text)]
-    return found[0] if len(found) == 1 else None
+    """The one erg the block works on, read from its title and workout first.
+
+    The note is only asked when those name none — a run titled "Optional EF" says
+    "Run" only there — since a note can mention another erg in passing: the 08-24
+    sprints' note opens with "The Rowing Club".
+    """
+    for text in (f"{block.name}\n{block.content}", block.instruction):
+        found = [name for name, pattern in _MOVEMENTS if pattern.search(text)]
+        if found:
+            return found[0] if len(found) == 1 else None
+    return None
 
 
 def _durations(lines: list[str]) -> list[tuple[int, str]] | None:
@@ -117,6 +125,32 @@ def _one_rest(work: int, in_set_rest: int | None, between: int | None) -> int | 
     return None if in_set_rest or between else 0
 
 
+# "3 x (20 sec Bike erg #HARD PACE - 40 sec # Recovery Pace)": work then recovery,
+# repeated.
+_REPEATS_RE = re.compile(
+    r"^\s*(\d+)\s*x\s*\(\s*(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])([^)]*?)\s+[-\u2013]\s+"
+    r"(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])([^)]*)\)\s*$",
+    re.IGNORECASE,
+)
+_RECOVERY_RE = re.compile(r"recovery|r[ée]cup|easy|rest|repos", re.IGNORECASE)
+
+
+def _repeats(lines: list[str]) -> tuple[tuple[int, ...], int] | None:
+    """(intervals, rest) for a block that is one "N x (work - recovery)" line.
+
+    The recovery becomes BTWB's rest between intervals; two efforts with no
+    recovery between them alternate as intervals instead.
+    """
+    lines = [line for line in lines if line.strip()]
+    if len(lines) != 1 or not (m := _REPEATS_RE.match(lines[0])):
+        return None
+    count = int(m.group(1))
+    work, second = _seconds(m.group(2), m.group(3)), _seconds(m.group(5), m.group(6))
+    if _RECOVERY_RE.search(m.group(7)):
+        return (work,) * count, second
+    return (work, second) * count, 0
+
+
 def _steady_effort(lines: list[str]) -> int | None:
     """Seconds of the one timed effort a block holds besides its warm-up, or None.
 
@@ -150,6 +184,8 @@ def erg_intervals(block: ProgrammingBlock) -> ErgIntervals | None:
     movement = _movement(block)
     lines = block.content.splitlines()
     found = _main_set(lines) if movement else None
+    if movement and found is None and (repeats := _repeats(lines)) is not None:
+        return ErgIntervals(movement=movement, intervals=repeats[0], rest_seconds=repeats[1])
     if movement and found is None and (steady := _steady_effort(lines)) is not None:
         return ErgIntervals(movement=movement, intervals=(steady,), rest_seconds=0)
     durations = _durations(found[1]) if found else None
