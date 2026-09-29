@@ -307,6 +307,9 @@ def _build_from_movements(page: Page, block: ProgrammingBlock) -> None:
 _INTERVAL_SECONDS = "input[name='definition[contents][][time][value]']"
 _REST_SECONDS = "input[name='definition[prescription][rest][value]']"
 _CLOCK_MINUTES = "input[name='movement_time_value_minutes']"
+# The save button sits outside the builder's form, tied to it by form=; the other
+# button tied that way is a hidden preview, the one carrying a formaction.
+_SAVE_BUTTON = "button[type='submit'][form='new_track_event']:not([formaction])"
 
 
 def _fill_clock(minutes_field, seconds: int) -> None:
@@ -326,29 +329,9 @@ def _fill_erg_intervals(page: Page, block: ProgrammingBlock) -> Locator:
     plan = block.erg
     if plan is None:  # invariant: only called for blocks with an erg plan
         raise BTWBError(f"internal error: '{block.name}' has no erg plan")
-    page.locator("a[href='/plan/workouts/single']").first.click()
-    search = page.locator("input#name")
-    search.wait_for(state="visible", timeout=_TIMEOUT)
-    search.fill(plan.movement)
-    page.get_by_role("link", name=plan.movement, exact=True).first.click()
-    template = page.locator("a[href$='/for_distance/new']").first
-    template.wait_for(state="visible", timeout=_TIMEOUT)
-    template.click()
-
+    _open_classic_template(page, plan.movement, {"distance": "for_distance"})
+    _set_row_count(page, _INTERVAL_SECONDS, len(plan.intervals))
     rows = page.locator(_INTERVAL_SECONDS)
-    rows.first.wait_for(state="attached", timeout=_TIMEOUT)
-    for control, done in (
-        ("addSet", lambda n: n >= len(plan.intervals)),
-        ("removeSet", lambda n: n <= len(plan.intervals)),
-    ):
-        while not done(rows.count()):
-            before = rows.count()
-            page.locator(f"[data-action*='plan--sets-control#{control}']").first.click()
-            page.wait_for_function(
-                f'n => document.querySelectorAll("{_INTERVAL_SECONDS}").length != n',
-                arg=before,
-                timeout=_TIMEOUT,
-            )
 
     minutes = page.locator(_CLOCK_MINUTES)
     for i, seconds in enumerate(plan.intervals):
@@ -364,9 +347,87 @@ def _fill_erg_intervals(page: Page, block: ProgrammingBlock) -> Locator:
             f"not {list(plan.intervals)} and {plan.rest_seconds}"
         )
     logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
-    # The save button sits outside the builder's form, tied to it by form=; the other
-    # button tied that way is a hidden preview, the one carrying a formaction.
-    return page.locator("button[type='submit'][form='new_track_event']:not([formaction])").first
+    return page.locator(_SAVE_BUTTON).first
+
+
+_SET_REPS = "input[name='definition[contents][][reps][value]']"
+
+
+def _open_classic_template(page: Page, movement: str, templates: dict[str, str]) -> str:
+    """Pick *movement* in the classic builder and open its template; return the kind.
+
+    BTWB offers different templates by movement kind — the search link says which
+    (".../single/reps/4045" for a bodyweight movement) — so *templates* maps a kind
+    to the template to open.
+    """
+    page.locator("a[href='/plan/workouts/single']").first.click()
+    search = page.locator("input#name")
+    search.wait_for(state="visible", timeout=_TIMEOUT)
+    search.fill(movement)
+    link = page.get_by_role("link", name=movement, exact=True).first
+    try:
+        link.wait_for(state="visible", timeout=_TIMEOUT)
+    except PlaywrightTimeoutError as exc:
+        raise BTWBError(f"BTWB has no movement named {movement!r} — add it by hand") from exc
+    kind = (link.get_attribute("href") or "").split("/single/")[-1].split("/")[0]
+    if kind not in templates:
+        raise BTWBError(f"'{movement}' is a {kind!r} movement; no classic template for it yet")
+    link.click()
+    template = page.locator(f"a[href$='/{templates[kind]}/new']").first
+    template.wait_for(state="visible", timeout=_TIMEOUT)
+    template.click()
+    return kind
+
+
+def _set_row_count(page: Page, row_selector: str, wanted: int) -> None:
+    rows = page.locator(row_selector)
+    rows.first.wait_for(state="attached", timeout=_TIMEOUT)
+    for control, done in (
+        ("addSet", lambda n: n >= wanted),
+        ("removeSet", lambda n: n <= wanted),
+    ):
+        while not done(rows.count()):
+            before = rows.count()
+            page.locator(f"[data-action*='plan--sets-control#{control}']").first.click()
+            page.wait_for_function(
+                f'n => document.querySelectorAll("{row_selector}").length != n',
+                arg=before,
+                timeout=_TIMEOUT,
+            )
+
+
+def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
+    """Build *block*'s classic "Sets" workout and return its plan button."""
+    plan = block.sets
+    if plan is None:  # invariant: only called for blocks with a set plan
+        raise BTWBError(f"internal error: '{block.name}' has no set plan")
+    _open_classic_template(page, plan.movement, {"reps": "gymnastics_sets"})
+    _set_row_count(page, _SET_REPS, len(plan.reps))
+    all_max = all(r is None for r in plan.reps)
+    if all_max:
+        page.locator("select#rep_scheme").select_option("maxreps")
+    elif any(r is None for r in plan.reps):
+        raise BTWBError(f"'{block.name}': mixed max and counted sets are not supported yet")
+    else:
+        fields = page.locator(_SET_REPS)
+        for i, reps in enumerate(plan.reps):
+            fields.nth(i).fill(str(reps))
+    minutes = page.locator(_CLOCK_MINUTES).last
+    if plan.rest_seconds is not None:
+        _fill_clock(minutes, plan.rest_seconds)
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+
+    rows = page.locator(_SET_REPS).count()
+    rest = page.locator(_REST_SECONDS).input_value()
+    scheme = page.locator("select#rep_scheme").input_value()
+    expected_rest = "" if plan.rest_seconds is None else str(plan.rest_seconds)
+    if rows != len(plan.reps) or rest != expected_rest or (all_max and scheme != "maxreps"):
+        raise BTWBError(
+            f"'{block.name}': BTWB holds {rows} set(s), rest {rest!r}, scheme {scheme!r}, "
+            f"not {len(plan.reps)}, {expected_rest!r}{', maxreps' if all_max else ''}"
+        )
+    logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
+    return page.locator(_SAVE_BUTTON).first
 
 
 def _generate_preview(page: Page, description: str, block_name: str) -> None:
@@ -427,6 +488,8 @@ def _fill_and_plan(
 
     if block.erg is not None:
         plan_button = _fill_erg_intervals(page, block)
+    elif block.sets is not None:
+        plan_button = _fill_classic_sets(page, block)
     else:
         _generate_preview(page, _SEED_DESCRIPTION if exact_movements else block.content, block.name)
         plan_button = page.locator("button:has-text('Planifier'):not([disabled])")
@@ -653,6 +716,12 @@ def _post_day(
                 block.name,
                 str(e).splitlines()[0],
             )
+            results.append({"block": block.name, "date": date_str, "skipped": True})
+            prev_saved = False
+        except BTWBError as e:
+            # The classic builder refusing a block (an unknown movement, fields that did
+            # not take) is about that block alone; the rest of the day still posts.
+            logger.warning("Block '%s' skipped — %s", block.name, e)
             results.append({"block": block.name, "date": date_str, "skipped": True})
             prev_saved = False
 

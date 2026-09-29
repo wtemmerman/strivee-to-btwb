@@ -12,6 +12,7 @@ from strivee_btwb.core.models import (
     INTER,
     INTER_PLUS,
     RX,
+    ClassicSets,
     DayProgramming,
     ErgIntervals,
     ProgrammingBlock,
@@ -585,6 +586,22 @@ def test_formatted_cache_keeps_the_erg_plan(tmp_path, monkeypatch):
     loaded = load_formatted_day(date(2026, 9, 28), "Thu", expected_mtime_ns=7)
     assert loaded is not None
     assert loaded.blocks[0].erg == plan
+
+
+def test_formatted_cache_keeps_the_set_plan(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path)
+    plan = ClassicSets("Strict Handstand Push-up", (None, None), None)
+    day = DayProgramming(
+        date=date(2026, 9, 30),
+        day_label="Wed",
+        blocks=[ProgrammingBlock(name="HSPU (2/2)", content="Sets", sets=plan)],
+    )
+    save_formatted_day(day, date(2026, 9, 28), source_mtime_ns=7)
+    loaded = load_formatted_day(date(2026, 9, 28), "Wed", expected_mtime_ns=7)
+    assert loaded is not None
+    assert loaded.blocks[0].sets == plan
 
 
 def test_prepare_week_reuses_cache_on_second_call(monkeypatch):

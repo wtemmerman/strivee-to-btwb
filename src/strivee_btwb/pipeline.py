@@ -40,6 +40,7 @@ from .core.models import (
     INTER_PLUS,
     LEVEL_LABELS,
     RX,
+    ClassicSets,
     DayProgramming,
     ErgIntervals,
     ProgrammingBlock,
@@ -60,6 +61,7 @@ from .processing.accessory import (
 )
 from .processing.erg_intervals import describe, erg_intervals
 from .processing.garmin_map import activity_date, clock, needs_laps, sessions_from_activities
+from .processing.lift_sets import classic_sets, describe_sets
 from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
 from .processing.plus_split import split_plus_joins
@@ -88,7 +90,8 @@ CACHE_SCHEMA_VERSION = 2
 # 3: "+"-joined blocks are split into one workout per part.
 # 4: erg interval blocks carry the plan the classic builder posts.
 # 5: every note opens with the prescription as Strivee wrote it.
-FORMATTED_SCHEMA_VERSION = 5
+# 6: single-movement set schemes carry the plan the classic builder posts.
+FORMATTED_SCHEMA_VERSION = 6
 
 # Bump when the set-extraction prompt or WorkSet shape changes, so a stale
 # per-day set cache is re-extracted instead of silently reused by the audit.
@@ -228,6 +231,13 @@ def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | Non
                             "intervals": list(b.erg.intervals),
                             "rest_seconds": b.erg.rest_seconds,
                         },
+                        "sets": None
+                        if b.sets is None
+                        else {
+                            "movement": b.sets.movement,
+                            "reps": list(b.sets.reps),
+                            "rest_seconds": b.sets.rest_seconds,
+                        },
                     }
                     for b in day.blocks
                 ],
@@ -276,6 +286,13 @@ def load_formatted_day(
                     movement=b["erg"]["movement"],
                     intervals=tuple(b["erg"]["intervals"]),
                     rest_seconds=b["erg"]["rest_seconds"],
+                ),
+                sets=None
+                if b.get("sets") is None
+                else ClassicSets(
+                    movement=b["sets"]["movement"],
+                    reps=tuple(b["sets"]["reps"]),
+                    rest_seconds=b["sets"]["rest_seconds"],
                 ),
             )
             for b in data["blocks"]
@@ -362,10 +379,11 @@ def _format_block(block: ProgrammingBlock) -> ProgrammingBlock:
     RPE or tempo — so the note opens with the prescription as Strivee wrote it.
     """
     note = "\n\n".join(p for p in (block.content.strip(), block.instruction.strip()) if p)
-    plan = erg_intervals(block)
-    if plan is None:
-        return format_for_btwb(block).replace(instruction=note)
-    return block.replace(content=describe(plan), instruction=note, erg=plan)
+    if (plan := erg_intervals(block)) is not None:
+        return block.replace(content=describe(plan), instruction=note, erg=plan)
+    if (sets := classic_sets(block)) is not None:
+        return block.replace(content=describe_sets(sets), instruction=note, sets=sets)
+    return format_for_btwb(block).replace(instruction=note)
 
 
 def _merge_level(first: ProgrammingBlock, second: ProgrammingBlock, level: str) -> str:

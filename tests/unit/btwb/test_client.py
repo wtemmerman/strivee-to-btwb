@@ -386,6 +386,27 @@ def test_post_day_marks_block_skipped_on_timeout(monkeypatch, caplog):
     assert "timed out on btwb" in caplog.text.lower()
 
 
+def test_a_block_the_classic_builder_refuses_does_not_stop_the_day(monkeypatch, caplog):
+    """An unknown movement is that block's problem; the next block still posts."""
+    page = MagicMock()
+    monkeypatch.setattr(client, "_fetch_existing_block_names", lambda *a, **k: set())
+    refused = client.BTWBError("BTWB has no movement named 'Ring Muscle-up Unbroken'")
+    monkeypatch.setattr(client, "_fill_and_plan", MagicMock(side_effect=[refused, None]))
+    monkeypatch.setattr(client, "_navigate_to_new_workout", lambda *a, **k: None)
+    day = DayProgramming(
+        date=date(2026, 9, 30),
+        day_label="Wed",
+        blocks=[ProgrammingBlock(name="A", content="x"), ProgrammingBlock(name="B", content="y")],
+    )
+    with caplog.at_level(logging.WARNING, logger="btwb"):
+        results = _post_day(page, day, dry_run=False)
+    assert results == [
+        {"block": "A", "date": "2026-09-30", "skipped": True},
+        {"block": "B", "date": "2026-09-30", "ok": True},
+    ]
+    assert "no movement named" in caplog.text
+
+
 # ── _navigate_to_new_workout (mocked page) ────────────────────────────────────
 
 

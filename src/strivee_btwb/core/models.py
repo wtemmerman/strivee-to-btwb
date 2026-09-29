@@ -33,6 +33,19 @@ class ErgIntervals:
 
 
 @dataclass(frozen=True)
+class ClassicSets:
+    """A single-movement set scheme posted through BTWB's classic "Sets" template.
+
+    ``None`` in *reps* is a max-rep set. BTWB takes one rest for all sets; ``None``
+    there is "rest as needed", which BTWB spells as an empty field.
+    """
+
+    movement: str  # BTWB's exact movement name, e.g. "Strict Handstand Push-up"
+    reps: tuple[int | None, ...]
+    rest_seconds: int | None
+
+
+@dataclass(frozen=True)
 class ProgrammingBlock:
     """A named programming block within a day (e.g. 'Back Squat', 'WOD')."""
 
@@ -43,6 +56,7 @@ class ProgrammingBlock:
     inter: str = ""  # INTER variant as published, "" when the source has none
     level: str = RX  # which level `content` currently holds
     erg: ErgIntervals | None = None  # set when posted through BTWB's classic builder
+    sets: ClassicSets | None = None  # likewise, for a single-movement set scheme
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
