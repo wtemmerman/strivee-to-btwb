@@ -136,7 +136,7 @@ def test_emom_of_one_movement():
     plan = classic_sets(block)
     assert plan == ClassicSets("Butterfly Chest-to-bar Pull-up", (6,) * 12, None, emom_seconds=60)
     assert describe_sets(plan) == (
-        "Butterfly Chest-to-bar Pull-up - EMOM\n12 min: 6 reps every minute"
+        "Butterfly Chest-to-bar Pull-up - EMOM\n6 reps every 1:00 for 12:00"
     )
 
 
@@ -175,3 +175,74 @@ def test_lettered_top_set_and_back_off_without_tempo():
 def test_top_set_without_back_off_is_left_to_the_ai_path():
     block = _titled("EMF 60 - Bench press", "Top set -\n1x4 RPE 9\n\n- Rest 2 min between sets -")
     assert classic_sets(block) is None
+
+
+def test_every_seconds_emom_with_cue_and_load_around_it():
+    """Real Wed 09-28: posted as "Every 1:15 for 7:30: Squat Snatch", the slow pull lost."""
+    block = _titled(
+        "EMF 60 - Snatch",
+        "Every 75 sec x 6 sets of :\n\n1 Slow Pull Squat Snatch (5 sec floor to hip)\n\n"
+        "#70 to 80% 129.5 lb/148 lb\n\nFROM THE GROUND\n\nForce de position et bon placement.",
+    )
+    plan = classic_sets(block)
+    assert plan == ClassicSets("Slow Pull Squat Snatch", (1,) * 6, None, emom_seconds=75)
+    assert describe_sets(plan) == "Slow Pull Squat Snatch - EMOM\n1 rep every 1:15 for 7:30"
+
+
+def test_emom_without_the_word_reps_and_after_a_load_line():
+    assert classic_sets(_titled("EMF 60 : Weighted Pull-up", "EMOMx6 :\n2 Weighted Pull-up")) == (
+        ClassicSets("Weighted Pull-up", (2,) * 6, None, emom_seconds=60)
+    )
+    press = _titled("EMF 60 : Push Press", "Push press heavy\n\nEMOMx6 :\n2 Push press")
+    assert classic_sets(press) == ClassicSets("Push Press", (2,) * 6, None, emom_seconds=60)
+
+
+def test_every_minutes_and_seconds_header():
+    block = _titled(
+        "EMF 60 : Power Clean",
+        "Every 90 sec x 6 sets of :\n"
+        "3 Touch and Go power clean #90% of your last week heavy 5 reps",
+    )
+    assert classic_sets(block) == ClassicSets("Power Clean", (3,) * 6, None, emom_seconds=90)
+
+
+def test_an_emom_with_more_structure_or_a_complex_is_left_alone():
+    """Real 06-08: four rounds of EMOMx3 with a rest, not one EMOM of three minutes."""
+    rounds = _titled(
+        "EMF 60 : Clean and Jerk",
+        "EMOMx3\n1 Squat Clean And Jerk\n\n- Rest 1min -\n\nx4 sets\n\nSet 1 - 70% (les 3minutes)",
+    )
+    assert classic_sets(rounds) is None
+    complex_ = _titled(
+        "EMF 60 : Overhead squat",
+        "Every 1min30 x 4 sets of :\n\n5 Overhead squat from Ground (Clean + back rack + jerk)",
+    )
+    assert classic_sets(complex_) is None
+    start = _titled(
+        "EMF 60 : Overhead squat",
+        "Every 1min30 x4 sets of :\n4 Overhead squat from Ground (Clean and Jerk Start)",
+    )
+    assert classic_sets(start) is None
+    alternating = _titled(
+        "EMF 60 - Snatch",
+        "EMOMx6\n\nMin 1 - 1 Pause Power snatch #Above the Knee\nMin 2 -1 Pause Squat snatch",
+    )
+    assert classic_sets(alternating) is None
+
+
+def test_an_emom_loaded_off_an_rm_stays_on_the_ai_path():
+    """Real 04-13 / 05-18: the % of 1RM or 5RM would be lost from the workout."""
+    assert (
+        classic_sets(
+            _titled(
+                "EMF 60 : Strict press", "Strict press\n\nEMOMx5 :\n1 strict press #86% of your 1RM"
+            )
+        )
+        is None
+    )
+    assert (
+        classic_sets(
+            _titled("EMF 60 : Push Press", "#85% of your 5RM from week 1\n\nEMOMx6 :\n2 Push press")
+        )
+        is None
+    )
