@@ -992,9 +992,24 @@ _STORED_BODY_JS = """
   const end = lines.findIndex(l => ends.some(e => l.startsWith(e)));
   const rowActions = ['MODIFIER', 'COPIER', 'SUPPRIMER', 'AJOUTER MOUVEMENT',
                       'AJOUTER COMPLEXE', 'AJOUTER REPOS'];
+  // Lift workouts (X Rep Max, weightlifting sets) render as the editor, their
+  // values inside inputs that innerText cannot see. Each row is written out as
+  // "<reps> <movement>", the shape the stored-vs-posted check reads.
+  const names = [...frame.querySelectorAll("input[name='definition[contents][][movementName]']")];
+  const reps = [...frame.querySelectorAll("input[name='definition[contents][][reps][value]']")];
+  const after = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const rows = names.map((name, i) => {
+    const next = names[i + 1];
+    const count = reps.find(r => after(name, r) && (!next || after(r, next)));
+    return `${(count && count.value) || 1} ${name.value}`;
+  });
+  // A dropdown's options are part of innerText: the erg editor's RPE scale would
+  // read as "19 - 100% effort" workout lines.
+  const options = new Set([...frame.querySelectorAll('option')].map(o => o.textContent.trim()));
   return (end === -1 ? lines : lines.slice(0, end))
-    .filter(l => !rowActions.includes(l))
+    .filter(l => !rowActions.includes(l) && !options.has(l))
     .filter(l => !l.endsWith('.') && !l.endsWith(':'))
+    .concat(rows)
     .join('\\n');
 }
 """

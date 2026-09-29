@@ -451,6 +451,10 @@ def _shared_lead(texts: list[list[str]]) -> int:
     return n
 
 
+class LevelChoiceNeededError(RuntimeError):
+    """A multi-level block has no cached level choice and nobody can be asked."""
+
+
 def _ask_level(block: ProgrammingBlock, day: DayProgramming) -> str:
     """Prompt for which published level of *block* to post; RX on a bare Enter."""
     levels = block.available_levels()
@@ -472,10 +476,13 @@ def _ask_level(block: ProgrammingBlock, day: DayProgramming) -> str:
         try:
             answer = input(f"    Level? [{choices}, Enter = RX] ").strip()
         except EOFError:
-            # No tty (cron, piped input): posting RX matches the pre-selection
-            # behaviour, but say so rather than appearing to have asked.
-            logger.warning("No input available — keeping RX for '%s'", block.name)
-            return RX
+            # No terminal to ask (cron, piped input, a post after a cache-version
+            # bump). Falling back to RX posted the wrong level without a word.
+            raise LevelChoiceNeededError(
+                f"{day.day_label} '{block.name}' needs a level choice and there is no "
+                f"terminal to ask. Run in a terminal: strivee-btwb preview "
+                f"--week {day.date.isoformat()} --days {day.day_label} --relevel"
+            ) from None
         if not answer:
             return RX
         if answer.isdigit() and 1 <= int(answer) <= len(levels):
@@ -736,16 +743,22 @@ def do_analyse(days: list[str], ws: date | None = None) -> None:
     logger.info("Analysis done (%d day(s) cached)", saved)
 
 
-def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> None:
-    ws = ws or week_start()
+def _prepared_week_or_exit(days: list[str], ws: date, relevel: bool = False) -> WeeklyProgramming:
+    """The formatted week preview, post and verify work on — or exit before BTWB is touched."""
     try:
         week = prepare_week_for_btwb(days, ws, relevel)
-    except LLMUnavailableError as e:
+    except (LLMUnavailableError, LevelChoiceNeededError) as e:
         logger.error("%s", e)
         sys.exit(1)
     if not week.days:
         logger.error("No cached analysis found — run: strivee-btwb analyse")
         sys.exit(1)
+    return week
+
+
+def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> None:
+    ws = ws or week_start()
+    week = _prepared_week_or_exit(days, ws, relevel)
     log_summary(week)
     log_preview(week)
 
@@ -777,17 +790,9 @@ def do_post(
     relevel: bool = False,
 ) -> None:
     ws = ws or week_start()
-    try:
-        # Reuses preview's formatted cache when fresh, so post does not re-run the
-        # LLM and does not re-ask the level choices preview already collected.
-        week = prepare_week_for_btwb(days, ws, relevel)
-    except LLMUnavailableError as e:
-        # Abort before opening a browser / posting anything to BTWB.
-        logger.error("%s", e)
-        sys.exit(1)
-    if not week.days:
-        logger.error("No cached analysis found — run: strivee-btwb analyse")
-        sys.exit(1)
+    # Reuses preview's formatted cache when fresh, so post does not re-run the
+    # LLM and does not re-ask the level choices preview already collected.
+    week = _prepared_week_or_exit(days, ws, relevel)
     log_summary(week)
 
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
@@ -841,14 +846,7 @@ def do_verify(days: list[str], ws: date | None = None) -> None:
     if not config.BTWB_EMAIL or not config.BTWB_PASSWORD:
         logger.error("BTWB_EMAIL and BTWB_PASSWORD must be set in .env")
         sys.exit(1)
-    try:
-        week = prepare_week_for_btwb(days, ws)
-    except LLMUnavailableError as e:
-        logger.error("%s", e)
-        sys.exit(1)
-    if not week.days:
-        logger.error("No cached analysis found — run: strivee-btwb analyse")
-        sys.exit(1)
+    week = _prepared_week_or_exit(days, ws)
 
     dates = [d.date.isoformat() for d in week.days]
     logger.info("Reading back what BTWB stored for %d day(s)…", len(dates))

@@ -20,6 +20,7 @@ from strivee_btwb.core.models import (
 )
 from strivee_btwb.pipeline import (
     CACHE_SCHEMA_VERSION,
+    LevelChoiceNeededError,
     clean_week,
     do_analyse,
     do_capture,
@@ -369,7 +370,9 @@ def test_select_levels_reprompts_on_invalid_answer(monkeypatch):
     assert select_levels(week).days[0].blocks[0].content == "20 C2B"
 
 
-def test_select_levels_keeps_rx_and_warns_without_a_tty(monkeypatch, caplog):
+def test_select_levels_refuses_to_guess_without_a_tty(monkeypatch):
+    """A post after a cache-version bump had nobody to ask and posted RX silently."""
+
     def no_input(_prompt):
         raise EOFError
 
@@ -377,11 +380,21 @@ def test_select_levels_keeps_rx_and_warns_without_a_tty(monkeypatch, caplog):
     week = _make_week(
         _make_day(blocks=[ProgrammingBlock(name="WOD", content="20 RMU", inter="20 C2B")])
     )
-    with caplog.at_level(logging.WARNING):
-        block = select_levels(week).days[0].blocks[0]
-    assert block.content == "20 RMU"
-    assert block.level == RX
-    assert any("No input available" in r.message for r in caplog.records)
+    with pytest.raises(LevelChoiceNeededError, match="--relevel"):
+        select_levels(week)
+
+
+def test_post_stops_before_btwb_when_a_level_choice_is_missing(monkeypatch, caplog):
+    def needs_level(*_a, **_k):
+        raise LevelChoiceNeededError("Wed 'HSPU' needs a level choice")
+
+    monkeypatch.setattr("strivee_btwb.pipeline.prepare_week_for_btwb", needs_level)
+    posted = MagicMock()
+    monkeypatch.setattr("strivee_btwb.pipeline.post_week", posted)
+    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
+        do_post(["Wed"], yes=True, headless=True, ws=FIXTURE_WEEK)
+    posted.assert_not_called()
+    assert "needs a level choice" in caplog.text
 
 
 def test_clean_week_does_not_merge_different_names():
