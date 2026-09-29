@@ -154,13 +154,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
 
-    p = sub.add_parser("delete", help="Delete all planned workouts for a week on BTWB")
+    p = sub.add_parser("delete", help="Delete planned workouts for a week on BTWB")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
     p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
     p.add_argument("--headless", action="store_true", help="Run browser without a visible window")
     p.add_argument(
         "--dry-run", action="store_true", help="List the workouts that would be deleted, then stop"
+    )
+    p.add_argument(
+        "--only",
+        metavar="TITLE",
+        action="append",
+        help="Delete only the workout with this exact title (repeatable); others are kept",
     )
 
     _add_garmin_commands(sub)
@@ -233,6 +239,7 @@ def main() -> None:
             getattr(args, "headless", False),
             ws,
             getattr(args, "dry_run", False),
+            frozenset(args.only) if getattr(args, "only", None) else None,
         )
     elif args.command == "run":
         relevel = getattr(args, "relevel", False)

@@ -685,3 +685,16 @@ def test_post_week_live_path_logs_in_and_posts(monkeypatch):
     assert results == [{"block": "A", "ok": True}]
     client._login.assert_called_once()
     client._post_day.assert_called_once()
+
+
+def test_a_title_filter_deletes_only_what_it_names():
+    from strivee_btwb.btwb.client import _select_events
+
+    events = [
+        {"date": "2026-09-30", "id": "1", "title": "EMF 60 - Weighted pull-up"},
+        {"date": "2026-09-30", "id": "2", "title": "EMF 60 - Snatch"},
+        {"date": "2026-09-30", "id": "3", "title": ""},  # unreadable title: never matched
+    ]
+    only = frozenset({"EMF 60 - Weighted pull-up", "Not planned"})
+    assert [e["id"] for e in _select_events(events, only)] == ["1"]
+    assert _select_events(events, None) == events

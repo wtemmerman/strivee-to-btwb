@@ -811,6 +811,19 @@ def test_do_delete_passes_iso_dates_for_requested_days(monkeypatch):
     assert kwargs["confirm"] is None  # --yes skips confirmation
 
 
+def test_do_delete_passes_the_title_filter(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "test@example.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "password")
+    mock_delete = MagicMock(return_value=[])
+    monkeypatch.setattr("strivee_btwb.pipeline.delete_week", mock_delete)
+
+    only = frozenset({"EMF 60 - Weighted pull-up"})
+    do_delete(["Wed"], yes=True, headless=True, ws=FIXTURE_WEEK, titles=only)
+    assert mock_delete.call_args.kwargs["titles"] == only
+
+
 def test_do_delete_uses_confirm_prompt_when_not_yes(monkeypatch):
     import strivee_btwb.core.config as cfg
 

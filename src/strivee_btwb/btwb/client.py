@@ -679,14 +679,14 @@ _SCAN_DELETABLE_JS = """
       if (!form) return;
       const action = form.getAttribute('action') || '';
       const tokenEl = form.querySelector("input[name='authenticity_token']");
-      const titleEl = ev.querySelector("a .flex-fill");
+      const titleEl = ev.querySelector('.title_track_event strong');
       const idMatch = action.match(/(\\d+)\\s*$/);
       out.push({
         date: matched,
         id: idMatch ? idMatch[1] : '',
         action,
         token: tokenEl ? tokenEl.value : '',
-        title: titleEl ? titleEl.textContent.trim() : '',
+        title: titleEl ? (titleEl.getAttribute('title') || titleEl.textContent).trim() : '',
       });
     });
   });
@@ -741,6 +741,20 @@ def _delete_event(page: Page, event: dict) -> bool:
     return True
 
 
+def _select_events(events: list[dict], titles: frozenset[str] | None) -> list[dict]:
+    """The events to delete: all of them, or only those titled exactly as asked.
+
+    An event whose title could not be read never matches a title filter, so a
+    filtered delete can only ever remove what it names.
+    """
+    if titles is None:
+        return events
+    missing = titles - {e["title"] for e in events}
+    if missing:
+        logger.warning("Not planned on those dates: %s", ", ".join(sorted(missing)))
+    return [e for e in events if e["title"] in titles]
+
+
 def delete_week(
     email: str,
     password: str,
@@ -748,13 +762,15 @@ def delete_week(
     dry_run: bool = False,
     headless: bool = False,
     confirm: Callable[[list[dict]], bool] | None = None,
+    titles: frozenset[str] | None = None,
 ) -> list[dict]:
-    """Delete every planned workout on the given ISO dates from BTWB.
+    """Delete the planned workouts on the given ISO dates from BTWB.
 
-    Logs in, scans the calendar for deletable workouts on ``dates``, optionally
-    asks ``confirm`` to proceed, then deletes each one. With ``dry_run`` the
-    workouts that would be deleted are logged and returned without deleting.
-    Completed sessions (which have no delete option) are never touched.
+    Logs in, scans the calendar for deletable workouts on ``dates`` — only those
+    titled in *titles*, when given — optionally asks ``confirm`` to proceed, then
+    deletes each one. With ``dry_run`` the workouts that would be deleted are
+    logged and returned without deleting. Completed sessions (which have no
+    delete option) are never touched.
     """
     results: list[dict] = []
     with sync_playwright() as pw:
@@ -766,7 +782,7 @@ def delete_week(
         _login(page, email, password)
         logger.info("Authenticated")
 
-        events = _collect_deletable_events(page, dates)
+        events = _select_events(_collect_deletable_events(page, dates), titles)
         for e in events:
             logger.info("Found: %s — %s", e["date"], e["title"] or f"id {e['id']}")
 

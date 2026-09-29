@@ -880,6 +880,7 @@ def do_delete(
     headless: bool,
     ws: date | None = None,
     dry_run: bool = False,
+    titles: frozenset[str] | None = None,
 ) -> None:
     ws = ws or week_start()
     dates = [short_to_date(d, ws).isoformat() for d in days]
@@ -897,6 +898,7 @@ def do_delete(
             dry_run=dry_run,
             headless=headless,
             confirm=None if (yes or dry_run) else _confirm_delete,
+            titles=titles,
         )
     except AuthenticationError as e:
         logger.error("%s", e)
