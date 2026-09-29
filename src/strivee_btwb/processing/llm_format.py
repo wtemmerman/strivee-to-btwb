@@ -29,9 +29,13 @@ def _movement_from_block_name(name: str) -> str | None:
 
 
 def _ensure_movement_in_content(block: ProgrammingBlock) -> ProgrammingBlock:
-    """Prepend the movement name to content when it is only named in the block title."""
+    """Prepend the movement name to content when it is only named in the block title.
+
+    Not for a part of a split block: the title names the whole block, and BTWB read
+    "Handstand walk" above a part of wall-facing holds as the first hold's movement.
+    """
     movement = _movement_from_block_name(block.name)
-    if not movement:
+    if not movement or unsplit_name(block.name) != block.name:
         return block
     if movement.lower() in block.content.lower():
         return block
