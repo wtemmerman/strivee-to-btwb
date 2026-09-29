@@ -55,6 +55,19 @@ def test_compare_analyse_low_content_similarity_fails():
     assert report["per_day"][0]["min_ratio"] < 0.95
 
 
+def test_compare_analyse_changed_variant_fails():
+    """RX untouched but INTER+ replaced by a rest line — the 07-06 regression shape."""
+    block = ProgrammingBlock(
+        name="BMU", content="A. Accumulated 8 reps", inter_plus="8 Sets : 2/3 BMU"
+    )
+    base = WeeklyProgramming(week_start=WS, days=[DayProgramming(WS, "Tue", [block])])
+    cur = WeeklyProgramming(
+        week_start=WS,
+        days=[DayProgramming(WS, "Tue", [block.replace(inter_plus="Rest 1min between sets")])],
+    )
+    assert compare_analyse(base, cur)["passed"] is False
+
+
 def test_compare_analyse_missing_day_fails():
     base = _week({"Mon": [("WOD", "x")], "Tue": [("WOD", "y")]})
     cur = _week({"Mon": [("WOD", "x")]})

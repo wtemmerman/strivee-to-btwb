@@ -1,0 +1,214 @@
+"""Read a single-movement set scheme for BTWB's classic "Sets" template.
+
+BTWB's AI generator refuses some plain set schemes outright — "2 sets of : Max rep
+strict HSPU with Abmat" came back with no preview however often it was asked —
+while its classic Sets template takes them directly. Only a block that is nothing
+but the scheme is read; anything more stays on the AI path.
+"""
+
+import re
+
+from ..core.models import ClassicSets, ProgrammingBlock
+from .plus_split import unsplit_name
+
+_SETS_HEADER_RE = re.compile(r"^\s*(\d+)\s*sets?\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
+_MAX_REP_RE = re.compile(r"^\s*max\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
+_REST_RE = re.compile(
+    r"^\s*-?\s*rest\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])"
+    r"(?:\s+between\s+sets?)?\s*-?\s*$",
+    re.IGNORECASE,
+)
+_REPS_LINE_RE = re.compile(r"^\s*(\d+)\s*reps?\s+(.+?)(?:\s+tempo\s+(\w+))?\s*$", re.IGNORECASE)
+_TARGET_1RM_RE = re.compile(
+    r"^\s*target\s+weight\s*:\s*[#@]?\s*(\d+)\s*%\s*(?:of\s+)?1\s*RM\b", re.IGNORECASE
+)
+_WINDOW_RE = re.compile(r"^\s*in\s+an?\s+\d+\s*min(?:ute)?s?\s+window\s*:?\s*$", re.IGNORECASE)
+_RM_LINE_RE = re.compile(r"^\s*(\d+)\s*RM\s+(.+?)\s*$", re.IGNORECASE)
+_BUILD_HEAVY_RE = re.compile(
+    r"^\s*build\s+(?:a|an)?\s*(?:new\s+)?heavy\s+(single|double|triple)\s*-?\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+_HEAVY_REPS = {"single": 1, "double": 2, "triple": 3}
+_EMOM_RE = re.compile(r"^\s*EMOM\s*x?\s*(\d+)\s*(?:min(?:ute)?s?)?\s*:?\s*$", re.IGNORECASE)
+_EMOM_REPS_RE = re.compile(r"^\s*(\d+)\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
+# "2-pause Squat clean", "Squat clean with pause": BTWB names it "Pause Squat Clean".
+_COUNTED_PAUSE_RE = re.compile(r"^\s*\d+\s*-\s*pause\s+", re.IGNORECASE)
+# A trailing cue — "#Bellow and above the knee", "@eyes level" — is coaching.
+_CUE_RE = re.compile(r"\s+[#@].*$")
+# BTWB's names where Strivee's differ.
+_ALIASES = {"barbell seal row": "Seal Row"}
+# The aid a movement is scaled with is coaching, not the movement: BTWB has
+# "Strict Handstand Push-up", the note keeps "with Abmat".
+_AID_RE = re.compile(r"\s+(?:with|avec)\s+.*$", re.IGNORECASE)
+# Coaching qualifiers, not part of any BTWB movement name.
+_QUALIFIER_RE = re.compile(
+    r"\b(?:unbroken|ub|touch\s+and\s+go)\b|@?\s*\brpe\s*[\d.,-]+", re.IGNORECASE
+)
+_TITLE_MOVEMENT_RE = re.compile(r"^EMF\s+\w+\s*[:\-]\s*(.+)$", re.IGNORECASE)
+# "(OPTION)", "- OPTION" say the block is optional, not which movement it is.
+_TITLE_NOISE_RE = re.compile(r"\(.*?\)|[-\s]+option\b", re.IGNORECASE)
+_PHRASES = [
+    (re.compile(r"\bchest[\s-]+to[\s-]+bar\b", re.IGNORECASE), "Chest-to-bar"),
+    (re.compile(r"\btoes[\s-]+to[\s-]+bar\b", re.IGNORECASE), "Toes-to-bar"),
+]
+_ABBREVIATIONS = {
+    "hspu": "Handstand Push-up",
+    "c2b": "Chest-to-bar Pull-up",
+    "t2b": "Toes-to-bar",
+    "ttb": "Toes-to-bar",
+    "du": "Double Under",
+    "dus": "Double Unders",
+    "rmu": "Ring Muscle-up",
+    "bmu": "Bar Muscle-up",
+}
+
+
+def btwb_movement_name(text: str) -> str:
+    """The BTWB name a Strivee movement is written as: aids dropped, abbreviations expanded.
+
+    Posting looks the result up by exact name and skips the block, reported for
+    adding by hand, when BTWB has no such movement: a wrong guess never posts the
+    wrong movement.
+    """
+    text = _QUALIFIER_RE.sub("", _AID_RE.sub("", _CUE_RE.sub("", text)))
+    text = _COUNTED_PAUSE_RE.sub("Pause ", text)
+    for pattern, name in _PHRASES:
+        text = pattern.sub(name, text)
+    words = [_ABBREVIATIONS.get(w.lower(), w) for w in text.split()]
+    # Shouted words ("RING") are written as BTWB spells names; expansions stay as given.
+    words = [w.capitalize() if w.isupper() and len(w) > 1 else w for w in words]
+    name = " ".join(w[:1].upper() + w[1:] for w in " ".join(words).split())
+    return _ALIASES.get(name.lower(), name)
+
+
+def _seconds(value: str, unit: str) -> int:
+    return int(value) * (1 if unit.lower().startswith("s") else 60)
+
+
+def _title_movement(block: ProgrammingBlock) -> str:
+    """The movement a block's title names: "EMF 60 : Bench Press (1/2)" → "Bench Press"."""
+    name = unsplit_name(block.name)
+    m = _TITLE_MOVEMENT_RE.match(name)
+    return _TITLE_NOISE_RE.sub("", m.group(1) if m else name).strip()
+
+
+def _squashed(text: str) -> str:
+    return re.sub(r"[^a-z]", "", text.lower())
+
+
+def _agrees_with_title(movement_text: str, block: ProgrammingBlock) -> bool:
+    """Whether the movement read from a line is the one the block's title names.
+
+    "Clean" and "2-pause Squat clean" agree; "Back Squat" and "3RM en 4 semaines"
+    — a programme header read as a rep max — do not, and the block is left alone.
+    """
+    read, title = _squashed(btwb_movement_name(movement_text)), _squashed(_title_movement(block))
+    return bool(read and title) and (read in title or title in read)
+
+
+def _max_rep_sets(lines: list[str]) -> ClassicSets | None:
+    """ "N sets of : / Max rep <movement> / - Rest X -" and nothing more."""
+    if len(lines) not in (2, 3):
+        return None
+    header, movement = _SETS_HEADER_RE.match(lines[0]), _MAX_REP_RE.match(lines[1])
+    rest = _REST_RE.match(lines[2]) if len(lines) == 3 else None
+    if not header or not movement or (len(lines) == 3 and not rest):
+        return None
+    return ClassicSets(
+        movement=btwb_movement_name(movement.group(1)),
+        reps=(None,) * int(header.group(1)),
+        rest_seconds=_seconds(rest.group(1), rest.group(2)) if rest else None,
+    )
+
+
+def _weighted_sets(lines: list[str]) -> ClassicSets | None:
+    """ "N sets of : / R Reps <movement> [Tempo 31X1] / - Rest X - / Target weight : #P% 1RM"."""
+    if len(lines) not in (3, 4):
+        return None
+    header, reps, rest = (
+        _SETS_HEADER_RE.match(lines[0]),
+        _REPS_LINE_RE.match(lines[1]),
+        _REST_RE.match(lines[2]),
+    )
+    target = _TARGET_1RM_RE.match(lines[3]) if len(lines) == 4 else None
+    if not header or not reps or not rest or (len(lines) == 4 and not target):
+        return None
+    # A load on the reps line ("@75-80% of your 1RM") is a range or a reference BTWB's
+    # one % per set cannot hold; the AI path keeps it in the workout.
+    if "%" in reps.group(2):
+        return None
+    movement = btwb_movement_name(reps.group(2))
+    if not movement:
+        return None
+    return ClassicSets(
+        movement=f"Tempo {movement}" if reps.group(3) else movement,
+        reps=(int(reps.group(1)),) * int(header.group(1)),
+        rest_seconds=_seconds(rest.group(1), rest.group(2)),
+        percent_1rm=int(target.group(1)) if target else None,
+    )
+
+
+def _emom(lines: list[str]) -> ClassicSets | None:
+    """ "EMOMx12 : / 6 reps <movement>" and nothing more: a set every minute."""
+    if len(lines) != 2:
+        return None
+    header, reps = _EMOM_RE.match(lines[0]), _EMOM_REPS_RE.match(lines[1])
+    if not header or not reps:
+        return None
+    return ClassicSets(
+        movement=btwb_movement_name(reps.group(2)),
+        reps=(int(reps.group(1)),) * int(header.group(1)),
+        rest_seconds=None,
+        emom_seconds=60,
+    )
+
+
+def _rep_max(lines: list[str]) -> ClassicSets | None:
+    """ "[In a N min window :] / 10RM <movement>" or "Build a heavy double - <movement>".
+
+    Whatever follows the rep-max line is coaching, and the note already carries it.
+    """
+    start = 1 if lines and _WINDOW_RE.match(lines[0]) else 0
+    if len(lines) <= start:
+        return None
+    line = lines[start]
+    if m := _RM_LINE_RE.match(line):
+        reps, text = int(m.group(1)), m.group(2)
+    elif m := _BUILD_HEAVY_RE.match(line):
+        reps, text = _HEAVY_REPS[m.group(1).lower()], m.group(2)
+    else:
+        return None
+    return ClassicSets(
+        movement=btwb_movement_name(text), reps=(reps,), rest_seconds=None, rep_max=True
+    )
+
+
+def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
+    """The block as one of the single-movement schemes BTWB's classic builder takes.
+
+    None for anything else — a block only partly read would post a different
+    workout, while the AI path at worst posts it badly. A reps line that names no
+    movement ("6 Reps RPE 7") takes the title's.
+    """
+    lines = [line for line in block.content.splitlines() if line.strip()]
+    if len(lines) > 1 and (m := _REPS_LINE_RE.match(lines[1])):
+        if not btwb_movement_name(m.group(2)):
+            lines[1] = f"{m.group(1)} Reps {_title_movement(block)}"
+    plan = _max_rep_sets(lines) or _weighted_sets(lines) or _emom(lines) or _rep_max(lines)
+    if plan is None or not _agrees_with_title(plan.movement, block):
+        return None
+    return plan
+
+
+def describe_sets(plan: ClassicSets) -> str:
+    """What preview shows for a classic Sets block."""
+    if plan.rep_max:
+        return f"{plan.movement} - X Rep Max\n{plan.reps[0]} rep max"
+    if plan.emom_seconds is not None:
+        return f"{plan.movement} - EMOM\n{len(plan.reps)} min: {plan.reps[0]} reps every minute"
+    reps = ", ".join("max" if r is None else str(r) for r in plan.reps)
+    load = f" @ {plan.percent_1rm}% 1RM" if plan.percent_1rm is not None else ""
+    seconds = plan.rest_seconds
+    rest = "rest as needed" if seconds is None else f"rest {seconds // 60}:{seconds % 60:02d}"
+    sets = f"{len(plan.reps)} set{'s' if len(plan.reps) > 1 else ''}"
+    return f"{plan.movement} - Sets\n{sets}: {reps} reps{load}, {rest}"

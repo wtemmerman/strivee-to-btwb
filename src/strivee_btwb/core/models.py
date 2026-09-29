@@ -8,6 +8,7 @@ cached object. Use :meth:`ProgrammingBlock.replace` to derive an edited copy.
 
 from dataclasses import dataclass, field, replace
 from datetime import date
+from typing import Any
 
 RX = "rx"
 INTER_PLUS = "inter_plus"
@@ -15,6 +16,37 @@ INTER = "inter"
 
 LEVEL_LABELS = {RX: "RX", INTER_PLUS: "INTER+", INTER: "INTER"}
 """Display labels for the difficulty levels Strivee publishes, hardest first."""
+
+
+@dataclass(frozen=True)
+class ErgIntervals:
+    """A cardio main set posted as BTWB's "Intervals For Distance" workout.
+
+    Each interval is a fixed time and the athlete logs how far they got, so the
+    watts or pace a coach prescribes never has to be turned into a distance.
+    BTWB takes one rest for all intervals.
+    """
+
+    movement: str  # BTWB's exact movement name, e.g. "Bike Erg"
+    intervals: tuple[int, ...]  # work seconds, in order
+    rest_seconds: int
+
+
+@dataclass(frozen=True)
+class ClassicSets:
+    """A single-movement set scheme posted through BTWB's classic "Sets" template.
+
+    ``None`` in *reps* is a max-rep set. BTWB takes one rest for all sets; ``None``
+    there is "rest as needed", which BTWB spells as an empty field. A *rep_max*
+    plan is BTWB's "X Rep Max": one set of ``reps[0]``, built up to a heavy one.
+    """
+
+    movement: str  # BTWB's exact movement name, e.g. "Strict Handstand Push-up"
+    reps: tuple[int | None, ...]
+    rest_seconds: int | None
+    percent_1rm: int | None = None  # every set's load, when prescribed as a % of 1RM
+    rep_max: bool = False
+    emom_seconds: int | None = None  # one set every this many seconds: BTWB's EMOM
 
 
 @dataclass(frozen=True)
@@ -27,12 +59,14 @@ class ProgrammingBlock:
     inter_plus: str = ""  # INTER+ variant as published, "" when the source has none
     inter: str = ""  # INTER variant as published, "" when the source has none
     level: str = RX  # which level `content` currently holds
+    erg: ErgIntervals | None = None  # set when posted through BTWB's classic builder
+    sets: ClassicSets | None = None  # likewise, for a single-movement set scheme
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
             raise ValueError("ProgrammingBlock.name must be a non-empty string")
 
-    def replace(self, **changes: str) -> "ProgrammingBlock":
+    def replace(self, **changes: Any) -> "ProgrammingBlock":
         """Return a copy of this block with the given fields replaced."""
         return replace(self, **changes)
 

@@ -12,7 +12,9 @@ from strivee_btwb.core.models import (
     INTER,
     INTER_PLUS,
     RX,
+    ClassicSets,
     DayProgramming,
+    ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
 )
@@ -24,6 +26,7 @@ from strivee_btwb.pipeline import (
     do_delete,
     do_post,
     do_preview,
+    llm_format_week,
     load_days,
     load_formatted_day,
     load_text_captures,
@@ -514,6 +517,106 @@ def test_formatted_cache_miss_when_absent():
     assert load_formatted_day(FIXTURE_WEEK, "Wed", expected_mtime_ns=1) is None
 
 
+def test_llm_format_week_formats_each_joined_part_on_its_own(monkeypatch):
+    """The formatter must never see a "+" join — it dropped the part above one."""
+    seen: list[str] = []
+
+    def recording_format(block, **_):
+        seen.append(block.content)
+        return block
+
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", recording_format)
+    block = ProgrammingBlock(name="A", content="3 sets of :\n3 Negatives\n+\n2 sets of :\nMax HSPU")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 30), day_label="Wed", blocks=[block])],
+    )
+    result = llm_format_week(week)
+    assert seen == ["3 sets of :\n3 Negatives", "2 sets of :\nMax HSPU"]
+    assert [b.name for b in result.days[0].blocks] == ["A (1/2)", "A (2/2)"]
+
+
+def test_an_erg_interval_block_skips_the_llm_and_keeps_its_prescription(monkeypatch):
+    """The plan goes to BTWB's form fields; the watts must still reach the athlete."""
+
+    def no_llm(block, **_):
+        raise AssertionError("an erg interval block must not be LLM-formatted")
+
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", no_llm)
+    content = "4 sets of :\n2min #103-108% of FTP20 (290 W-305 W)\n2min Full REST"
+    block = ProgrammingBlock(name="EMF 60 - Bike erg", content=content, instruction="RPE 8")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 29), day_label="Tue", blocks=[block])],
+    )
+    (bike,) = llm_format_week(week).days[0].blocks
+    assert bike.erg == ErgIntervals("Bike Erg", (120,) * 4, 120)
+    assert bike.content == "Bike Erg - Intervals For Distance\n4 x 2:00, rest 2:00"
+    assert bike.instruction == f"{content}\n\nRPE 8"
+
+
+def test_the_note_keeps_what_the_formatter_and_btwb_drop(monkeypatch):
+    """Real Wed pull-up: BTWB stored "3-3" and lost "RPE 7" / "RPE 9"."""
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.format_for_btwb",
+        lambda block, **_: block.replace(content="Weighted pull-up\n2 sets of 3"),
+    )
+    content = "1 set of : 3 Reps RPE 7\n- Rest 2min -\n1 set of : 3 Reps RPE 9"
+    block = ProgrammingBlock(name="EMF 60 - Weighted pull-up", content=content, instruction="Goal")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 30), day_label="Wed", blocks=[block])],
+    )
+    (pull_up,) = llm_format_week(week).days[0].blocks
+    assert pull_up.content == "Weighted pull-up\n2 sets of 3"
+    assert pull_up.instruction == f"{content}\n\nGoal"
+
+
+def test_formatted_cache_keeps_the_erg_plan(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path)
+    plan = ErgIntervals("Run", (480, 240, 480, 240), 0)
+    day = DayProgramming(
+        date=date(2026, 10, 1),
+        day_label="Thu",
+        blocks=[ProgrammingBlock(name="EF", content="Run - Intervals For Distance", erg=plan)],
+    )
+    save_formatted_day(day, date(2026, 9, 28), source_mtime_ns=7)
+    loaded = load_formatted_day(date(2026, 9, 28), "Thu", expected_mtime_ns=7)
+    assert loaded is not None
+    assert loaded.blocks[0].erg == plan
+
+
+def test_formatted_cache_keeps_the_set_plan(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path)
+    plan = ClassicSets("Tempo Back Squat", (5, 5, 5), 120, percent_1rm=70, emom_seconds=None)
+    day = DayProgramming(
+        date=date(2026, 9, 30),
+        day_label="Wed",
+        blocks=[ProgrammingBlock(name="HSPU (2/2)", content="Sets", sets=plan)],
+    )
+    save_formatted_day(day, date(2026, 9, 28), source_mtime_ns=7)
+    loaded = load_formatted_day(date(2026, 9, 28), "Wed", expected_mtime_ns=7)
+    assert loaded is not None
+    assert loaded.blocks[0].sets == plan
+    rep_max = ClassicSets("Pause Squat Clean", (2,), None, rep_max=True)
+    save_formatted_day(
+        DayProgramming(
+            date=date(2026, 9, 30),
+            day_label="Wed",
+            blocks=[ProgrammingBlock(name="Clean", content="X Rep Max", sets=rep_max)],
+        ),
+        date(2026, 9, 28),
+        source_mtime_ns=8,
+    )
+    reloaded = load_formatted_day(date(2026, 9, 28), "Wed", expected_mtime_ns=8)
+    assert reloaded is not None
+    assert reloaded.blocks[0].sets == rep_max
+
+
 def test_prepare_week_reuses_cache_on_second_call(monkeypatch):
     import strivee_btwb.core.config as cfg
 
@@ -736,6 +839,19 @@ def test_do_delete_passes_iso_dates_for_requested_days(monkeypatch):
     kwargs = mock_delete.call_args.kwargs
     assert kwargs["dates"] == ["2026-04-27", "2026-04-28"]
     assert kwargs["confirm"] is None  # --yes skips confirmation
+
+
+def test_do_delete_passes_the_title_filter(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "BTWB_EMAIL", "test@example.com")
+    monkeypatch.setattr(cfg, "BTWB_PASSWORD", "password")
+    mock_delete = MagicMock(return_value=[])
+    monkeypatch.setattr("strivee_btwb.pipeline.delete_week", mock_delete)
+
+    only = frozenset({"EMF 60 - Weighted pull-up"})
+    do_delete(["Wed"], yes=True, headless=True, ws=FIXTURE_WEEK, titles=only)
+    assert mock_delete.call_args.kwargs["titles"] == only
 
 
 def test_do_delete_uses_confirm_prompt_when_not_yes(monkeypatch):

@@ -6,8 +6,10 @@ no filesystem) can be unit-tested in tests/unit/benchmark/.
 
 from __future__ import annotations
 
+import argparse
 import difflib
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -15,15 +17,24 @@ from datetime import date
 from pathlib import Path
 
 from strivee_btwb.core import config
-from strivee_btwb.core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
+from strivee_btwb.core.llm import response_cache_stats, use_response_cache
+from strivee_btwb.core.models import (
+    LEVEL_LABELS,
+    DayProgramming,
+    ProgrammingBlock,
+    WeeklyProgramming,
+)
 from strivee_btwb.pipeline import (
     analyse_days,
     clean_week,
     llm_format_week,
     load_text_captures,
+    split_week,
 )
 from strivee_btwb.processing import extract_sets
 from strivee_btwb.processing.volume import weekly_volume
+
+logger = logging.getLogger("benchmark")
 
 # Accuracy gate: a per-block content similarity below this fails the comparison.
 CONTENT_RATIO_THRESHOLD = 0.95
@@ -33,6 +44,7 @@ _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 _BENCH_DIR = Path(__file__).parent
 BASELINE_DIR = _BENCH_DIR / "baselines"
 RESULTS_DIR = _BENCH_DIR / "results"
+LLM_CACHE_DIR = _BENCH_DIR / "llm_cache"
 
 
 # ── week discovery ────────────────────────────────────────────────────────────
@@ -49,6 +61,30 @@ def text_era_weeks() -> list[str]:
         if any(wk.glob("strivee_*.txt")):
             weeks.append(wk.name)
     return weeks
+
+
+# ── model response cache ───────────────────────────────────────────────────────
+
+
+def start_llm_cache(argv: list[str] | None = None) -> None:
+    """Answer unchanged model calls from LLM_CACHE_DIR unless --no-cache is given.
+
+    Most changes are to the code around the model, so a run need only ask it the
+    prompts that changed. --no-cache asks it everything, which is the way to see
+    whether the model itself still answers as it did.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-cache", action="store_true", help="call the model for every prompt")
+    args = parser.parse_args(argv)
+    use_response_cache(None if args.no_cache else LLM_CACHE_DIR)
+    if args.no_cache:
+        logger.info("Model response cache off — every prompt goes to the model")
+
+
+def log_llm_cache() -> None:
+    hits, misses = response_cache_stats()
+    if hits or misses:
+        logger.info("Model response cache: %d answered from cache, %d asked", hits, misses)
 
 
 # ── stage runners (these exercise the real pipeline code paths) ────────────────
@@ -236,10 +272,12 @@ def _index_blocks(day: DayProgramming) -> dict[str, ProgrammingBlock]:
 
 
 def compare_analyse(baseline: WeeklyProgramming, current: WeeklyProgramming) -> dict:
-    """Compare two analyse results: block name-sets and per-block content ratio.
+    """Compare two analyse results: block name-sets and per-block prescription ratios.
 
     Passes when every day has the same set of block names (case/space-insensitive)
-    and every matched block's content similarity >= CONTENT_RATIO_THRESHOLD.
+    and every matched block's content, INTER+ and INTER similarity is each >=
+    CONTENT_RATIO_THRESHOLD. The variants are compared because a level-split
+    regression leaves RX untouched: picking INTER+ then posts a rest line.
     """
     base_days = {d.day_label: d for d in baseline.days}
     cur_days = {d.day_label: d for d in current.days}
@@ -256,8 +294,9 @@ def compare_analyse(baseline: WeeklyProgramming, current: WeeklyProgramming) -> 
         bnames, cnames = set(_index_blocks(bd)), set(_index_blocks(cd))
         names_equal = bnames == cnames
         ratios = [
-            _ratio(_index_blocks(bd)[n].content, _index_blocks(cd)[n].content)
+            _ratio(_index_blocks(bd)[n].level_text(level), _index_blocks(cd)[n].level_text(level))
             for n in (bnames & cnames)
+            for level in LEVEL_LABELS
         ]
         min_ratio = min(ratios) if ratios else 1.0
         day_ok = names_equal and min_ratio >= CONTENT_RATIO_THRESHOLD
@@ -342,7 +381,7 @@ def format_fidelity(source: WeeklyProgramming, formatted: WeeklyProgramming) -> 
     """Source-grounded format checks, independent of the (same-model) baseline.
 
     For each block matched by name between the formatter's INPUT (cleaned analyse
-    output) and its OUTPUT, flags:
+    output, split at "+" joins as llm_format_week does) and its OUTPUT, flags:
       A. invented load numbers — a %/kg/lb/RM/BW number in the output absent from
          the input (catches hallucinations like 'Up to a heavy single' -> '1xBW');
       B. dropped RM-loadings — a percentage on a pre-level-header RM-loading line
@@ -352,7 +391,7 @@ def format_fidelity(source: WeeklyProgramming, formatted: WeeklyProgramming) -> 
     sub-level sections only deletes content (never adds numbers), and dropped-load
     detection ignores anything at or below the first athlete-level header.
     """
-    s_days = {d.day_label: _index_blocks(d) for d in source.days}
+    s_days = {d.day_label: _index_blocks(d) for d in split_week(source).days}
     f_days = {d.day_label: _index_blocks(d) for d in formatted.days}
     per_block = []
     ok = True

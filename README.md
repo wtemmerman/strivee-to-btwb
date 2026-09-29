@@ -197,6 +197,8 @@ The model is asked for that split but does not reliably deliver it — it often 
 - text above the first header is shared context only when RX has a section of its own; with no RX header that text **is** the RX prescription, and prefixing it onto a scaled variant would make the athlete do the harder work too
 - a dangling `+` at the end of `content` means the prescription was cut in half; the rest is pulled back from `instruction` and the shared half is prefixed onto the variants
 - selection criteria stay in the coaching note verbatim — `EMF - INTER + (Je peux faire 1 Strict Muscle-up)` says *who* picks a level, it is not a prescription
+- a header can carry its level's target on the same line (`RX 30 Reps UBK +`, `INTER + Sub 7min`). Without emoji that looks exactly like an inline value (`Rx - #2x22,5/ 2x15kg`), so it counts as a header only when a workout sits beneath it and at least two levels are headed that way; stacked one-per-level lines stay inline. The target joins the coaching note like a criterion
+- per-level goal times in the coaching note (an `RX` section there that is not the RX workout) are advice for every level, never lifted into a variant — picking INTER+ would otherwise post `Homme - Sub 14:00` as the session
 - a variant identical to RX is dropped (a combined `RX INTER` header is one workout, so there is no choice to make), and prescriptions copied into `instruction` are removed so the note never repeats the workout
 
 Known gap: when the model writes the variants into their fields itself and drops the level headers, nothing marks which part was shared, so a variant can arrive holding only its own half. The parse prompt asks for standalone variants (rule 7) to prevent it — but check the preview, which prints the full text of whatever level you chose.
@@ -240,6 +242,8 @@ Loads the cached JSON, asks which difficulty level to post for every block that 
 Levels normally open with the work everyone does, which would make every menu line read identically, so the menu shows only what differs and says how many opening lines they share.
 
 Only the chosen level is posted — no manual rewriting of the workout. The choices are stored in the formatted cache, so `post` reuses preview's answers instead of asking again; `--relevel` discards them, asks again, and reformats.
+
+**One workout per joined part.** A `+`, `Into` or `Then` on its own line joins two pieces of work in one Strivee block ("3 sets of negatives + 2 sets of max reps", "bike sprints Into row sets"). BTWB's generator reads that as one workout and mangles or refuses it, and the formatter drops one side of an `Into`, so after the level is chosen the block is split and each part is formatted and posted on its own, titled `… (1/2)`, `… (2/2)`; the coaching note goes on the first. Cardio blocks join a warm-up and a cooldown the same way — those are not work to log, so a leading part that says warm-up and a trailing part that says cooldown (or ramps down, like the bike's `5min #65 to 40% FTP20`) move to the note, and only the main set is posted.
 
 <details>
 <summary>Example preview output (Monday)</summary>
@@ -310,12 +314,34 @@ The `content` field (the prescription for the level chosen at preview) is posted
 
 Opens a Playwright browser session, logs into BTWB, and submits each block via the planning form. Blocks already present on BTWB for that date are skipped automatically (duplicate detection via the weekly calendar). The `instruction` field is posted to BTWB's dedicated coaching note field.
 
+**Erg intervals go through BTWB's classic builder, not its AI.** Strivee prescribes erg work by time and watts; BTWB's AI generator asks for a distance per interval or refuses the block. Its classic *Intervals For Distance* template takes exactly what is prescribed — a time per interval and one rest — and the athlete logs the distance. So a cardio block whose main set reads cleanly (`4 sets of : 2min … / 2min Full REST`, `8min RPE 4 / 4min RPE 7 / x 3sets`) skips the LLM formatter: preview shows the plan (`Bike Erg - Intervals For Distance / 4 x 2:00, rest 2:00`), the whole prescription — watts, warm-up, cooldown — goes word for word into the coaching note, and posting fills the template's fields and reads the entered seconds back before planning. A block that does not read cleanly (two modalities, a rest only between sets of several pieces, one steady effort, a distance) stays on the AI path rather than being guessed at.
+
+**Single-movement lifts and gymnastics go through the classic builder too.** BTWB's AI refused `2 sets of : Max rep strict HSPU with Abmat` and `Build a heavy double - 2-pause Squat clean`, stored a tempo back squat at 70% as a plain `5-5-5`, and turned a 10RM seal row into a "Burpee Alternating Dumbbell Clean&Jerk". A block that is nothing but one of these schemes posts through the matching classic template:
+
+| Strivee | BTWB template |
+|---|---|
+| `3 sets of : 5 Reps Back Squat Tempo 31X1` / rest / `Target weight : #70% 1RM` | Sets, `Tempo Back Squat`, % 1RM |
+| `3 Sets of : 6 Reps RPE 7` (movement only in the title) | Sets, the title's movement, heaviest weight |
+| `2 sets of : Max rep strict HSPU with Abmat` | Sets, `Strict Handstand Push-up`, all max reps |
+| `10RM Barbell Seal Row`, `Build a heavy double - 2-pause Squat clean` | X Rep Max, `Seal Row`, `Pause Squat Clean` |
+| `EMOMx12 : 6 reps Butterfly Chest to bar pull-up` | EMOM, `Butterfly Chest-to-bar Pull-up` |
+
+The movement is written the way BTWB names it — the aid (`with Abmat`) and cues (`RPE 7`, `Unbroken`, `touch and go`, `#Bellow the knee`) left to the note, abbreviations expanded — and must agree with the block's title, so a programme header like `3RM en 4 semaines` never posts as a rep max. Posting looks the name up exactly; an unknown one skips that block, reported for adding by hand, and the rest of the day still posts. A load BTWB cannot hold (`@75-80% of your 1RM`) keeps the block on the AI path. A leading `Accumulated N reps / movement` drill list, which names no BTWB movement, goes to the note of the work it leads into.
+
+Every note opens with the prescription as Strivee wrote it, whichever path posts the block: BTWB keeps structure and drops detail (RPE, tempo, a variant), and the athlete should still see it.
+
 <details>
 <summary>Result on BTWB</summary>
 
 ![BTWB calendar](docs/screenshots/btwb_calendar.png)
 
 </details>
+
+To replace a workout, delete only it — `--only` takes exact titles and leaves the rest of the day, accessory work included, alone:
+
+```bash
+uv run strivee-btwb delete --week 2026-09-28 --days Wed --only "EMF 60 - Weighted pull-up" --dry-run
+```
 
 ### Step 5 — Verify
 
@@ -882,6 +908,7 @@ tests/
 | `parsed/<week>/sets_*.json` | Per-day set extraction for `audit`, keyed on a hash of the block text it was read from |
 | `garmin/<week>/` | Raw Garmin activities as fetched, laps included for runs |
 | `tests/benchmark/baselines/`, `tests/benchmark/results/` | Benchmark snapshots + timing CSVs |
+| `tests/benchmark/llm_cache/` | Benchmark-only model answers, keyed on model digest + prompt + options |
 | `htmlcov/` | Coverage HTML report |
 
 ---
@@ -897,6 +924,19 @@ noted, since it means the week is being under-counted silently.
 
 The set stage only runs for weeks that have a `sets` baseline, so run
 `make benchmark-baseline` once to start gating it.
+
+**Model response cache.** A full run asks the model about 950 prompts — about an hour on
+one GPU — yet most changes are to the code around the model, not to what it is asked. At
+temperature 0 the model gives a prompt the same answer every time, so the benchmark stores
+each answer under `tests/benchmark/llm_cache/`, keyed on the model's digest, the full prompt
+and the options, and asks the model only the prompts that changed. A change to parsing or
+splitting reruns every week in about a second; a prompt edit or a re-pulled model misses the
+cache and pays in full for what it touched. Real `analyse`/`preview` runs never use it.
+`--no-cache` asks the model everything — the way to check the model still answers as it did:
+
+```bash
+uv run python -m tests.benchmark.compare --no-cache
+```
 
 The slow parts are the local LLM stages (analyse, format) and the device/browser
 round-trips (capture, post). Optimizations are gated by an accuracy benchmark
@@ -947,7 +987,7 @@ The text model (`qwen3:8b`) receives the raw accessibility-tree text for one day
 
 ### Dropped-block recovery
 
-A `EMF ...` block sandwiched between two excluded blocks (e.g. a short "EMF 60 - Optional RUN" between an excluded "Hebdomadaire" announcement and an excluded "Swim Workout") is sometimes merged into a neighbour by the full-text parse and lost. `count_block_titles` still finds the title with a regex, so after the main parse any non-excluded title that is missing from the result triggers a **focused single-block re-extraction** (`recover_block.txt`) — asking the model for just that one block, which it handles reliably even when the full multi-block parse failed the boundary. Recovery only runs when a block is actually missing, so complete days are untouched.
+A `EMF ...` block sandwiched between two excluded blocks (e.g. a short "EMF 60 - Optional RUN" between an excluded "Hebdomadaire" announcement and an excluded "Swim Workout") is sometimes merged into a neighbour by the full-text parse and lost. `count_block_titles` still finds the title with a regex, so after the main parse any non-excluded title that is missing from the result triggers a **focused single-block re-extraction** (`recover_block.txt`) — asking the model for just that one block, which it handles reliably even when the full multi-block parse failed the boundary. Recovery only runs when a block is actually missing, so complete days are untouched. Optional extras published under a bare `<Name> - OPTION` title (`Gymnastic Vaccin - OPTION`) count as titles too; the model never returns them on its own and folds them into the block above, so recovery restores them and the trim cuts the block above at their title.
 
 ### LLM-based BTWB formatting
 

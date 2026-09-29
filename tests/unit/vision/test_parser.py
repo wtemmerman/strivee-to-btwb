@@ -257,6 +257,121 @@ def test_extract_levels_never_empties_content():
     assert r.content.strip()
 
 
+def test_extract_levels_splits_headers_that_carry_a_target():
+    """Real Wed shape: each level's target sits on its header line ("RX sub 5min").
+
+    Read as inline values, all three levels were posted as one RX workout.
+    """
+    block = ProgrammingBlock(
+        name="EMF 60 - Strict Handstand push-up",
+        content=(
+            "WEEK 4 - Development\n\nRX sub 5min\n\nEMOMx6 :\nmin 1 - 30 Sec Max complex\n\n"
+            "INTER + Sub 7min\n\nEMOMx6 :\nmin 1 - 30 Sec Max Wall walk\n\n"
+            "INTER No finish\n\n3 sets of :\n3 Negative Deficit strict HSPU\n\n"
+            "Objectif : Accumuler du volume sur le mouvement !"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.content == "WEEK 4 - Development\nEMOMx6 :\nmin 1 - 30 Sec Max complex"
+    assert r.inter_plus == "WEEK 4 - Development\nEMOMx6 :\nmin 1 - 30 Sec Max Wall walk"
+    assert r.inter == "WEEK 4 - Development\n3 sets of :\n3 Negative Deficit strict HSPU"
+    # The targets are the level-selection advice, so they go to the coaching note.
+    assert r.instruction == (
+        "Objectif : Accumuler du volume sur le mouvement !\n\n"
+        "RX sub 5min\n\nINTER + Sub 7min\n\nINTER No finish"
+    )
+
+
+def test_extract_levels_mixes_targeted_and_bare_headers():
+    """Real Sat shape: only INTER is bare; RX and INTER+ carry distances and times."""
+    block = ProgrammingBlock(
+        name="EMF 60 - Handstand walk",
+        content=(
+            "RX - 120m Sub 8:00\n3 sets of :\n1 B/F Ramp Handstand walk\n\n"
+            "INTER + 80m sub 8min\nAccumulated 8-12 Reps / Movement\n\n"
+            "INTER\nWall facing Handstand Hold x90 sec"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.content == "3 sets of :\n1 B/F Ramp Handstand walk"
+    assert r.inter_plus == "Accumulated 8-12 Reps / Movement"
+    assert r.inter == "Wall facing Handstand Hold x90 sec"
+
+
+def test_extract_levels_level_line_holding_the_workout_is_not_a_header():
+    """Real 07-06 case: only a rest line sits under each, so the line is the workout.
+
+    Read as headers, INTER+ became "Rest 1min/ 1Min30 between sets" and the sets
+    moved into the note.
+    """
+    content = (
+        "A.\nAccumulated 8 Reps /movement for Quality\n\nB.\n"
+        "INTER + : 8 Sets : 2/3 Bar Muscle-Up\nRest 1min/ 1Min30 between sets\n\n"
+        "INTER : 8 sets : 1/2 Bar Muscle Up / Spotted Bar Muscle Up\n"
+        "Rest 1min/1min30 between sets"
+    )
+    r = _extract_levels(ProgrammingBlock(name="A", content=content))
+    assert r.content == content
+    assert r.available_levels() == [RX]
+
+
+def test_extract_levels_combined_header_repeating_emf():
+    """Real 08-24 header "EMF - INTER + EMF - RX": RX lost its whole workout."""
+    block = ProgrammingBlock(
+        name="EMF 60 : Gymnastic strength",
+        content=(
+            "Strict Ring Strength\n\nEMF - INTER (Je ne suis pas à l'aise sur les anneaux)\n\n"
+            "EMOMx12 :\nmin 1 to 4 - 3 Weighted strict chest to ring\n\n"
+            "EMF - INTER + EMF - RX\n\nAMRAP 6:00\nMax rep strict ring Muscle-up"
+        ),
+    )
+    r = _extract_levels(block)
+    assert r.content == "Strict Ring Strength\nAMRAP 6:00\nMax rep strict ring Muscle-up"
+    assert (
+        r.inter == "Strict Ring Strength\nEMOMx12 :\nmin 1 to 4 - 3 Weighted strict chest to ring"
+    )
+    assert r.available_levels() == [RX, INTER]  # INTER+ is RX's workout, so no choice
+
+
+def test_extract_levels_keeps_stacked_inline_loads():
+    """Real Sat Muscle endurance: one load per level, stacked — one workout, not three."""
+    content = (
+        "For time :\n100M Farmer carry with 2DB\n21 DB bench press\n\n"
+        "Rx - #2x22,5/ 2x15kg\nINTER + - #2x17,5/2x12,5\nINTER - #2x15/ 2x10kg"
+    )
+    r = _extract_levels(ProgrammingBlock(name="A", content=content))
+    assert r.content == content
+    assert r.available_levels() == [RX]
+
+
+def test_extract_levels_lone_targeted_line_is_not_a_split():
+    """One level line followed by coaching names a single level — nothing to split."""
+    content = "For time :\n21 DB bench press\n\nINTER - #2x15/ 2x10kg\nAdaptez la charge !"
+    r = _extract_levels(ProgrammingBlock(name="A", content=content))
+    assert r.content == content
+    assert r.available_levels() == [RX]
+
+
+def test_extract_levels_leaves_per_level_goals_in_the_note():
+    """Real Wed shape: goal times per level in the note are advice, not workouts.
+
+    Lifted, INTER+ became a choice that posts "Homme - Sub 14:00" as the session.
+    """
+    instruction = (
+        "Goal :\n\nRX\nHomme - Sub 11:00\nFemme - Sub 14:00\n\n"
+        "INTER +\nHomme - Sub 14:00\nFemme - Sub 16:00\n\n"
+        "INTER\nHomme - Sub 16:00\nFemme - Sub 18:00"
+    )
+    block = ProgrammingBlock(
+        name="A",
+        content="For time :\n40 Calories Ski erg\n\nTime CAP 18:00",
+        instruction=instruction,
+    )
+    r = _extract_levels(block)
+    assert r.available_levels() == [RX]
+    assert r.instruction == instruction
+
+
 def test_resplit_moves_trailing_coaching_to_instruction():
     content = (
         "Build to 5RM Front squat\n\nDépart sol OBLIGATOIRE.\n\n"
@@ -614,6 +729,69 @@ def test_extract_recovers_block_merged_into_excluded_neighbour(monkeypatch):
     names = [b.name for b in result.blocks]
     assert names == ["EMF 60 - Optional RUN"]  # Hebdomadaire excluded, Optional RUN recovered
     assert result.blocks[0].content == "45-60min Long Run"
+
+
+def test_count_block_titles_counts_option_titles(monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+    # The coach's day plan mentions the option in prose — that line is not a title.
+    text = (
+        "Chest to bar OPTION - 15min\nEMF 60 - Bike erg\nRPE 8\n"
+        "Gymnastic Vaccin - OPTION\nAMRAP 3:00\nMax ring Muscle-up"
+    )
+    assert count_block_titles(text) == ["EMF 60 - Bike erg", "Gymnastic Vaccin - OPTION"]
+
+
+def test_extract_splits_an_option_block_out_of_the_block_above(monkeypatch):
+    """Real Tue case: Bike erg swallowed the Gymnastic Vaccin every week.
+
+    Its short lines ("AMRAP 3:00") are too common for the per-line trim, so the
+    foreign title is where the block has to end.
+    """
+    import strivee_btwb.core.config as cfg
+
+    source = (
+        "EMF 60 - Bike erg\n6min Bike erg #Increasing Pace\n1min #FTP20 Pace / 1min easy\n"
+        "4 sets of :\n2min #103-108% of FTP20\nRPE 8\nAjouter PRs manquants\n"
+        "Gymnastic Vaccin - OPTION\nAMRAP 3:00\nMax ring Muscle-up\n- Rest 1Min -\n"
+        "AMRAP 3:00\nMax wall walk\nInviter un ami"
+    )
+    swallowed = (
+        "6min Bike erg #Increasing Pace\n1min #FTP20 Pace / 1min easy\n"
+        "4 sets of :\n2min #103-108% of FTP20\nRPE 8\nAjouter PRs manquants\n"
+        "Gymnastic Vaccin - OPTION\nAMRAP 3:00\nMax ring Muscle-up\n- Rest 1Min -\n"
+        "AMRAP 3:00\nMax wall walk"
+    )
+    primary = {
+        "message": {
+            "content": json.dumps(
+                {"blocks": [{"name": "EMF 60 - Bike erg", "content": swallowed, "instruction": ""}]}
+            )
+        }
+    }
+    recover_json = json.dumps(
+        {
+            "content": "AMRAP 3:00\nMax ring Muscle-up\n- Rest 1Min -\nAMRAP 3:00\nMax wall walk",
+            "instruction": "}",
+        }
+    )
+    recover = {"message": {"content": recover_json}}
+    monkeypatch.setattr(
+        "strivee_btwb.core.llm.ollama.chat", MagicMock(side_effect=[primary, recover])
+    )
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text(source, "Tue", date(2026, 9, 29))
+    bike, vaccin = result.blocks
+    assert bike.content == (
+        "6min Bike erg #Increasing Pace\n1min #FTP20 Pace / 1min easy\n"
+        "4 sets of :\n2min #103-108% of FTP20\nRPE 8"
+    )
+    assert vaccin.name == "Gymnastic Vaccin - OPTION"
+    assert vaccin.content.startswith("AMRAP 3:00\nMax ring Muscle-up")
+    # The live recovery returned "}" as the note for this block.
+    assert vaccin.instruction == ""
 
 
 def test_extract_no_recovery_when_all_titles_present(monkeypatch):

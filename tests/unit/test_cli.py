@@ -74,6 +74,13 @@ def test_parser_delete_flags():
     assert args.dry_run is True
 
 
+def test_parser_delete_only_is_repeatable():
+    args = _build_parser().parse_args(
+        ["delete", "--only", "EMF 60 - Weighted pull-up", "--only", "EMF 60 - Back Squat"]
+    )
+    assert args.only == ["EMF 60 - Weighted pull-up", "EMF 60 - Back Squat"]
+
+
 def test_parser_requires_subcommand():
     with pytest.raises(SystemExit):
         _build_parser().parse_args([])

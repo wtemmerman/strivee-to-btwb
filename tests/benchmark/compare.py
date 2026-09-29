@@ -28,7 +28,9 @@ from .harness import (
     format_week,
     load_baseline,
     load_sets_baseline,
+    log_llm_cache,
     sets_week,
+    start_llm_cache,
     text_era_weeks,
     time_stage,
 )
@@ -44,6 +46,7 @@ def _warm() -> None:
 
 def main() -> None:
     setup(debug=False)
+    start_llm_cache()
     from datetime import date
 
     weeks = [w for w in text_era_weeks() if baseline_exists("analyse", w)]
@@ -106,6 +109,7 @@ def main() -> None:
             status,
         )
 
+    log_llm_cache()
     _write_csv(timings, "compare_timing.csv")
     cur_total = sum(t.seconds for t in timings)
     base_total = _baseline_total()

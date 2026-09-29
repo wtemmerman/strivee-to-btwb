@@ -386,6 +386,27 @@ def test_post_day_marks_block_skipped_on_timeout(monkeypatch, caplog):
     assert "timed out on btwb" in caplog.text.lower()
 
 
+def test_a_block_the_classic_builder_refuses_does_not_stop_the_day(monkeypatch, caplog):
+    """An unknown movement is that block's problem; the next block still posts."""
+    page = MagicMock()
+    monkeypatch.setattr(client, "_fetch_existing_block_names", lambda *a, **k: set())
+    refused = client.BTWBError("BTWB has no movement named 'Ring Muscle-up Unbroken'")
+    monkeypatch.setattr(client, "_fill_and_plan", MagicMock(side_effect=[refused, None]))
+    monkeypatch.setattr(client, "_navigate_to_new_workout", lambda *a, **k: None)
+    day = DayProgramming(
+        date=date(2026, 9, 30),
+        day_label="Wed",
+        blocks=[ProgrammingBlock(name="A", content="x"), ProgrammingBlock(name="B", content="y")],
+    )
+    with caplog.at_level(logging.WARNING, logger="btwb"):
+        results = _post_day(page, day, dry_run=False)
+    assert results == [
+        {"block": "A", "date": "2026-09-30", "skipped": True},
+        {"block": "B", "date": "2026-09-30", "ok": True},
+    ]
+    assert "no movement named" in caplog.text
+
+
 # ── _navigate_to_new_workout (mocked page) ────────────────────────────────────
 
 
@@ -685,3 +706,16 @@ def test_post_week_live_path_logs_in_and_posts(monkeypatch):
     assert results == [{"block": "A", "ok": True}]
     client._login.assert_called_once()
     client._post_day.assert_called_once()
+
+
+def test_a_title_filter_deletes_only_what_it_names():
+    from strivee_btwb.btwb.client import _select_events
+
+    events = [
+        {"date": "2026-09-30", "id": "1", "title": "EMF 60 - Weighted pull-up"},
+        {"date": "2026-09-30", "id": "2", "title": "EMF 60 - Snatch"},
+        {"date": "2026-09-30", "id": "3", "title": ""},  # unreadable title: never matched
+    ]
+    only = frozenset({"EMF 60 - Weighted pull-up", "Not planned"})
+    assert [e["id"] for e in _select_events(events, only)] == ["1"]
+    assert _select_events(events, None) == events

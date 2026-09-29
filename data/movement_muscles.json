@@ -108,6 +108,18 @@
     "Strict Chest-to-Bar Pull-up": {
       "biceps": 0.7
     },
+    "Chest to Bar": {
+      "biceps": 0.35
+    },
+    "Strict Chest to Bar": {
+      "biceps": 0.7
+    },
+    "CTB": {
+      "biceps": 0.35
+    },
+    "Strict CTB": {
+      "biceps": 0.7
+    },
     "Strict Chest-to-Ring Pull-up": {
       "biceps": 0.7
     },
@@ -128,6 +140,12 @@
       "biceps": 0.25
     },
     "Strict Bar Muscle-up": {
+      "biceps": 0.6
+    },
+    "BMU": {
+      "biceps": 0.25
+    },
+    "Strict BMU": {
       "biceps": 0.6
     },
     "Ring Muscle-up": {
@@ -224,6 +242,9 @@
     "Kettlebell Swing": {
       "hamstring": 0.2
     },
+    "KB Swing": {
+      "hamstring": 0.2
+    },
     "GHD Hip Extension": {
       "hamstring": 0.4
     },
@@ -266,6 +287,15 @@
     "Box Step-up": {
       "quad_rf": 0.3
     },
+    "Box Step Over": {
+      "quad_rf": 0.3
+    },
+    "Cossack Squat": {
+      "quad_rf": 0.2
+    },
+    "Barbell Squat": {
+      "quad_rf": 0.3
+    },
     "Thruster": {
       "quad_rf": 0.25
     },
@@ -293,6 +323,15 @@
     "Box Jump": {
       "calf": 0.2
     },
+    "Broad Jump": {
+      "calf": 0.2
+    },
+    "Single Leg Hop": {
+      "calf": 0.2
+    },
+    "Single Leg Death Jump": {
+      "calf": 0.2
+    },
     "Run": {
       "calf": 0.1
     },
@@ -302,6 +341,7 @@
     "Row": {},
     "RowErg": {},
     "Ski Erg": {},
+    "Cal Ski": {},
     "SkiErg": {},
     "Clean": {},
     "Power Clean": {},
@@ -321,10 +361,17 @@
     "GHD Sit-up": {},
     "Plank": {},
     "Hollow Hold": {},
+    "Hollow Body Hold": {},
+    "V-up": {},
+    "L-sit": {},
+    "Leg Lift": {},
+    "Pallof Press": {},
     "Handstand Walk": {},
     "Handstand Hold": {},
     "Wall Facing Handstand Hold": {},
+    "Wall Walk": {},
     "Farmer Carry": {},
+    "Famer Carry": {},
     "Sled Push": {},
     "Sled Pull": {},
     "Bike": {},

@@ -169,3 +169,16 @@ def test_format_for_btwb_uses_configured_model(mock_chat, monkeypatch):
     block = ProgrammingBlock(name="WOD", content="For time:\n21 Pull-ups")
     format_for_btwb(block)
     assert mock_chat.call_args.kwargs["model"] == "my-model"
+
+
+def test_a_split_part_is_not_given_the_title_movement():
+    """Real Sat part: "Handstand walk" above wall-facing holds became the first hold."""
+    block = ProgrammingBlock(
+        name="EMF 60 - Handstand walk (1/2)", content="Wall facing Handstand Hold x90 sec"
+    )
+    assert _ensure_movement_in_content(block) == block
+
+
+def test_movement_from_a_split_part_drops_the_part_number():
+    """ "(1/2)" belongs to the BTWB title, not to the movement written into the workout."""
+    assert _movement_from_block_name("EMF 60 - Handstand walk (1/2)") == "Handstand walk"

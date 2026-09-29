@@ -17,8 +17,13 @@ Conflating the two is dangerous for this tool: a silent fallback on an
 infrastructure failure means raw, unformatted programming gets posted to BTWB.
 """
 
+import functools
+import hashlib
+import json
 import logging
 import time
+from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import ollama
@@ -46,6 +51,54 @@ _TRANSIENT_EXC: tuple[type[Exception], ...] = (
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
 )
+
+
+@dataclass
+class _ResponseCache:
+    directory: Path | None = None
+    hits: int = 0
+    misses: int = 0
+
+
+_cache = _ResponseCache()
+
+
+def use_response_cache(directory: Path | None) -> None:
+    """Answer repeated calls from *directory* instead of the model; None turns it off.
+
+    For the benchmark only. At temperature 0 the model gives a prompt the answer it
+    gave last time, so a run after a change to the code around the model need only
+    ask it the prompts that changed. Real runs never set this: a stale answer must
+    not be able to reach BTWB.
+    """
+    _cache.directory = directory
+    _cache.hits = _cache.misses = 0
+
+
+def response_cache_stats() -> tuple[int, int]:
+    """(hits, misses) since the cache was last turned on."""
+    return _cache.hits, _cache.misses
+
+
+@functools.cache
+def _model_digest(model: str) -> str:
+    """The pulled model's digest, so re-pulling an updated model misses the cache."""
+    try:
+        models = ollama.list()["models"]
+    except Exception as exc:
+        raise LLMUnavailableError(f"Ollama unreachable while reading models ({exc})") from exc
+    for entry in models:
+        if entry["model"] == model:
+            return entry["digest"]
+    raise LLMUnavailableError(f"Model '{model}' is not pulled ('ollama pull {model}').")
+
+
+def _cache_path(directory: Path, kwargs: dict) -> Path:
+    # keep_alive changes how long the model stays loaded, never what it answers.
+    keyed = {k: v for k, v in kwargs.items() if k != "keep_alive"}
+    keyed["digest"] = _model_digest(kwargs["model"])
+    key = hashlib.sha256(json.dumps(keyed, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return directory / key[:2] / f"{key}.json"
 
 
 def _chat(
@@ -77,6 +130,22 @@ def _chat(
     if fmt is not None:
         kwargs["format"] = fmt
 
+    if _cache.directory is None:
+        return _call(kwargs, model, retries, backoff_s)
+    path = _cache_path(_cache.directory, kwargs)
+    if path.exists():
+        _cache.hits += 1
+        return json.loads(path.read_text())["response"]
+    _cache.misses += 1
+    content = _call(kwargs, model, retries, backoff_s)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"model": model, "response": content}, ensure_ascii=False))
+    tmp.replace(path)  # a run killed mid-write must not leave a truncated answer behind
+    return content
+
+
+def _call(kwargs: dict, model: str, retries: int, backoff_s: float) -> str:
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
         try:

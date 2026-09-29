@@ -38,6 +38,7 @@ formatted/
 # Benchmark artifacts (generated locally from saved captures; model/machine-specific)
 tests/benchmark/baselines/
 tests/benchmark/results/
+tests/benchmark/llm_cache/
 
 # Keep fixtures and docs screenshots, ignore any accidental PNGs elsewhere
 *.png

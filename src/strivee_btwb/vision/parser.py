@@ -233,9 +233,19 @@ def _parse_blocks_response(raw: str, day_label: str) -> dict:
 # header lines "EMF 60'" / "EMF 45'" (prime symbol, no separator).
 _EMF_TITLE_RE = re.compile(r"^EMF\s+(?:\d+|RX)\b\s*[:\-]", re.IGNORECASE)
 
+# Strivee also publishes optional extras under a bare "<Name> - OPTION" title
+# ("Gymnastic Vaccin - OPTION"). Missing it lets the model fold the extra into the
+# block above it. Case-sensitive: the coach's day plan mentions options in prose
+# ("Chest to bar OPTION - 15min"), never as a whole line ending in " - OPTION".
+_OPTION_TITLE_RE = re.compile(r"^[^\W\d_][\w' ]*?\s+-\s+OPTION$")
+
+
+def _is_block_title(line: str) -> bool:
+    return bool(_EMF_TITLE_RE.match(line) or _OPTION_TITLE_RE.match(line))
+
 
 def count_block_titles(text: str) -> list[str]:
-    """List the non-excluded ``EMF ...`` block titles found in *text*.
+    """List the non-excluded block titles (``EMF ...``, ``... - OPTION``) in *text*.
 
     A conservative, best-effort lower bound on how many blocks the model should
     return: it is instructed to emit one entry per title, so a shorter result
@@ -248,7 +258,7 @@ def count_block_titles(text: str) -> list[str]:
     return [
         s
         for line in text.splitlines()
-        if (s := line.strip()) and _EMF_TITLE_RE.match(s) and not _is_excluded(s)
+        if (s := line.strip()) and _is_block_title(s) and not _is_excluded(s)
     ]
 
 
@@ -258,15 +268,13 @@ def _norm_title(name: str) -> str:
 
 
 def _source_slices(text: str) -> dict[str, str]:
-    """Map each EMF title to the raw source lines beneath it, up to the next title.
+    """Map each block title to the raw source lines beneath it, up to the next title.
 
     The title regex is reliable where the model is not, so these slices are the
     ground truth for what a block may contain.
     """
     lines = text.splitlines()
-    starts = [
-        (i, s) for i, line in enumerate(lines) if (s := line.strip()) and _EMF_TITLE_RE.match(s)
-    ]
+    starts = [(i, s) for i, line in enumerate(lines) if (s := line.strip()) and _is_block_title(s)]
     slices: dict[str, str] = {}
     for n, (i, title) in enumerate(starts):
         end = starts[n + 1][0] if n + 1 < len(starts) else len(lines)
@@ -308,7 +316,11 @@ def _content_matches_source(content: str, own_slice: str) -> bool:
 
 
 def _strip_foreign_lines(
-    content: str, own: str, others: list[str], allow_empty: bool = False
+    content: str,
+    own: str,
+    others: list[str],
+    allow_empty: bool = False,
+    foreign_titles: frozenset[str] = frozenset(),
 ) -> str:
     """Drop lines that belong to a different block's section.
 
@@ -329,6 +341,13 @@ def _strip_foreign_lines(
             and any(norm in hay for hay in other_hays)
         )
     ]
+    # Another block's title means the model ran through the boundary: everything from
+    # there on is that block's, including short lines ("AMRAP 3:00") the per-line
+    # check above has to leave alone.
+    for i, line in enumerate(kept):
+        if _norm_title(line) in foreign_titles:
+            kept = kept[:i]
+            break
     trimmed = "\n".join(kept).strip()
     # For a prescription, trimming everything means the evidence was misleading —
     # keep it whole rather than post an empty workout. A coaching note may legitimately
@@ -384,11 +403,14 @@ def _trim_foreign_content(
             trimmed_blocks.append(block)
             continue
         others = [s for key, s in slices.items() if key != _norm_title(block.name)]
-        content = _strip_foreign_lines(block.content, own, others)
+        titles = frozenset(key for key in slices if key != _norm_title(block.name))
+        content = _strip_foreign_lines(block.content, own, others, foreign_titles=titles)
         # The coaching note gets the same treatment: a neighbour's level section
         # landing here is lifted into a difficulty level by _extract_levels, which
         # would offer a choice belonging to a different workout.
-        instruction = _strip_foreign_lines(block.instruction, own, others, allow_empty=True)
+        instruction = _strip_foreign_lines(
+            block.instruction, own, others, allow_empty=True, foreign_titles=titles
+        )
         if (content, instruction) != (block.content, block.instruction):
             logger.warning("%s: trimmed another block's text out of '%s'", day_label, block.name)
         trimmed_blocks.append(block.replace(content=content, instruction=instruction))
@@ -425,7 +447,7 @@ _EMOJI_RE = re.compile(
 # A whole line that is pure Strivee chrome: nav tabs, score/media counters, the
 # "rejoindre Strivee" footer. Anchored to the full line so it never clips content.
 _UI_CHROME_RE = re.compile(
-    r"^(?:wod|box|noter|prs|profil|\d+\s*scores?|\d+\s*medias?|"
+    r"^(?:wod|box|noter|prs|profil|ajouter prs manquants|\d+\s*scores?|\d+\s*medias?|"
     r"à rejoindre strivee|tous les outils.*)$",
     re.IGNORECASE,
 )
@@ -472,16 +494,64 @@ def _resplit_trailing_coaching(content: str, instruction: str) -> tuple[str, str
 # been stripped: "RX", "Rx :", "INTER+", "INTER -", "EMF - INTER +", and the
 # qualifier form Strivee uses ("INTER (Je ne passes pas les RMU)"). Combined
 # headers ("RX INTER", "Rx - INTER+ -") name several levels that share one
-# prescription. A line carrying prescription text after the marker
-# ("RX - 5 Ring Muscle-up") is NOT a header — those inline values are handled by
-# _fill_placeholder_movements.
+# prescription. A line carrying text after the marker ("RX - 5 Ring Muscle-up") is
+# not matched here: it is usually an inline value, handled by
+# _fill_placeholder_movements, and only sometimes a header (_LEVEL_LEAD_RE).
 _LEVEL_TOKEN = r"INTER\s*\+|INTER|RX"
 _LEVEL_HEADER_RE = re.compile(
     rf"^\s*(?:EMF\s*[-:]?\s*)?(?P<levels>(?:{_LEVEL_TOKEN})"
-    rf"(?:\s*[-\u2013/&+,]?\s*(?:{_LEVEL_TOKEN}))*)"
+    rf"(?:\s*[-\u2013/&+,]?\s*(?:EMF\s*[-:]?\s*)?(?:{_LEVEL_TOKEN}))*)"
     r"\s*[-\u2013:]?\s*(?:\([^)]*\))?\s*[-\u2013:]?\s*$",
     re.IGNORECASE,
 )
+
+# A level marker followed by that level's target on the same line: "RX 30 Reps UBK +",
+# "INTER + Sub 7min", "RX - 120m Sub 8:00". Once emoji are stripped this is shaped
+# exactly like an inline value ("Rx - #2x22,5/ 2x15kg", "RX - 5 Ring Muscle-up"),
+# so the line alone cannot tell them apart — see _targeted_headers.
+_LEVEL_LEAD_RE = re.compile(
+    rf"^\s*(?:EMF\s*[-:]?\s*)?(?P<levels>{_LEVEL_TOKEN})(?![A-Za-z])\s*\S",
+    re.IGNORECASE,
+)
+
+_REST_LINE_RE = re.compile(r"^\s*-?\s*(?:rest|repos)\b", re.IGNORECASE)
+
+
+def _targeted_headers(lines: list[str]) -> set[int]:
+    """Indices of level lines that carry a target yet open a section of their own.
+
+    A targeted header has its level's workout beneath it, so the next non-blank line
+    is not another level line — inline values come stacked one per level — and what
+    lies beneath is more than a rest line: under "INTER + : 8 Sets : 2/3 Bar
+    Muscle-Up" only "Rest 1min between sets" follows, because the line itself is the
+    workout. At least two levels must be headed that way, or a lone "INTER - #2x15kg"
+    followed by coaching would split one workout.
+    """
+    strict = {i for i, line in enumerate(lines) if _LEVEL_HEADER_RE.match(line)}
+    lead = {i for i, line in enumerate(lines) if i not in strict and _LEVEL_LEAD_RE.match(line)}
+    level_lines = strict | lead
+    headers: set[int] = set()
+    for i in lead:
+        end = next((j for j in range(i + 1, len(lines)) if j in level_lines), len(lines))
+        body = [line for line in lines[i + 1 : end] if line.strip()]
+        if any(not _REST_LINE_RE.match(line) for line in body):
+            headers.add(i)
+    levels = {
+        level
+        for i in strict | headers
+        if (m := _LEVEL_HEADER_RE.match(lines[i]) or _LEVEL_LEAD_RE.match(lines[i]))
+        for level in _header_levels(m.group("levels"))
+    }
+    return headers if headers and len(levels) >= 2 else set()
+
+
+def _header_is_advice(header: str) -> bool:
+    """Whether a level header carries selection advice worth keeping in the note.
+
+    Strivee writes the "which level am I?" criterion or the level's target into the
+    header itself: "EMF - INTER + (Je peux faire 1 Strict Muscle-up)", "RX sub 5min".
+    """
+    return bool(_QUALIFIER_RE.search(header)) or not _LEVEL_HEADER_RE.match(header)
 
 
 def _header_levels(header: str) -> list[str]:
@@ -505,8 +575,10 @@ def _split_level_sections(text: str) -> tuple[str, list[tuple[list[str], str, st
     """
     preamble: list[str] = []
     sections: list[tuple[list[str], str, list[str]]] = []
-    for line in text.splitlines():
-        m = _LEVEL_HEADER_RE.match(line) if line.strip() else None
+    lines = text.splitlines()
+    targeted = _targeted_headers(lines)
+    for i, line in enumerate(lines):
+        m = _LEVEL_HEADER_RE.match(line) or (_LEVEL_LEAD_RE.match(line) if i in targeted else None)
         if m:
             sections.append((_header_levels(m.group("levels")), line.rstrip(), []))
         elif sections:
@@ -534,7 +606,7 @@ def _levels_from_content(content: str, fields: dict[str, str], advice: list[str]
     preamble, sections = _split_level_sections(content)
     if not sections:
         return
-    advice.extend(h for _lv, h, body in sections if body and _QUALIFIER_RE.search(h))
+    advice.extend(h for _lv, h, body in sections if body and _header_is_advice(h))
 
     # A level's prescription is every section naming it, in source order: Strivee
     # writes shared work under a combined "RX INTER+ INTER" header and then a
@@ -565,6 +637,14 @@ def _levels_from_instruction(instruction: str, fields: dict[str, str]) -> str:
     preamble, sections = _split_level_sections(instruction)
     if not sections:
         return instruction
+    # RX's prescription is content. An RX section in the note holding something else
+    # makes the sections per-level advice — goal times ("Homme - Sub 11:00") — and
+    # lifting them would offer INTER+ as a choice that posts a goal as the workout.
+    if any(
+        RX in levels and body and _norm_level_text(body) != _norm_level_text(fields[RX])
+        for levels, _header, body in sections
+    ):
+        return instruction
     kept = [preamble] if preamble else []
     for levels, header, body in sections:
         placed = []
@@ -577,7 +657,7 @@ def _levels_from_instruction(instruction: str, fields: dict[str, str]) -> str:
         if placed:
             # The prescription lives in its own field now. Keep only the header, and
             # only when it carries selection advice — never a duplicate of the workout.
-            if _QUALIFIER_RE.search(header):
+            if _header_is_advice(header):
                 kept.append(header)
         else:
             # Advice-only sections, and levels we could not place, stay as written.
@@ -853,6 +933,10 @@ def extract_day_programming_from_text(
     for b in blocks:
         content = _fill_placeholder_movements(_clean_block_text(b.content))
         instruction = _clean_block_text(b.instruction)
+        # A note with no word in it is JSON debris — the model has returned "}" for a
+        # block with no coaching, which BTWB would show as the note.
+        if not re.search(r"\w", instruction):
+            instruction = ""
         # _extract_levels both splits the levels and relocates each one's trailing
         # coaching, so coaching is NOT resplit before it: content now holds every
         # level, and splitting at the first "Objectif" line would cut the block
