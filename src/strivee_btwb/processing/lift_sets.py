@@ -43,12 +43,32 @@ _REST_LEAD_RE = re.compile(
     r"^\s*-?\s*rest\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])\s*(\d+)?", re.IGNORECASE
 )
 _TEMPO_RE = re.compile(r"\btempo\b", re.IGNORECASE)
-_EMOM_RE = re.compile(r"^\s*EMOM\s*x?\s*(\d+)\s*(?:min(?:ute)?s?)?\s*:?\s*$", re.IGNORECASE)
-_EMOM_REPS_RE = re.compile(r"^\s*(\d+)\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
+_EMOM_RE = re.compile(
+    r"^\s*EMOM\s*x?\s*(\d+)\s*(?:min(?:ute)?s?|sets?)?\s*:?\s*(.*)$", re.IGNORECASE
+)
+# "Every 75 sec x 6 sets of :", "Every 1min30 x 4 sets of:", "Every 90 sec x 5 sets"
+_EVERY_RE = re.compile(
+    r"^\s*every\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])\s*(\d+)?\s*x\s*(\d+)\s*"
+    r"(?:sets?|rounds?)?\s*(?:of)?\s*:?\s*(.*)$",
+    re.IGNORECASE,
+)
+# A bracket naming another lift — "(Clean + back rack + jerk)", "(Clean and Jerk
+# Start)" — says the movement is part of a complex.
+_BRACKETED_LIFT_RE = re.compile(r"\([^)]*\b(?:clean|jerk|snatch)\b[^)]*\)", re.IGNORECASE)
+
+
+def _is_complex(movement_text: str) -> bool:
+    return "+" in movement_text or bool(_BRACKETED_LIFT_RE.search(movement_text))
+
+
+_RM_LOAD_RE = re.compile(r"\d+\s*%.*?(?<![a-z])\d*\s*RM\b", re.IGNORECASE)
+_EMOM_STRUCTURE_RE = re.compile(r"^\s*(?:x\s*\d+|sets?\s*\d+|-?\s*rest\b)", re.IGNORECASE)
+_EMOM_REPS_RE = re.compile(r"^\s*(\d+)\s*(?:reps?\s+)?([A-Za-z].*?)\s*$", re.IGNORECASE)
 # "2-pause Squat clean", "Squat clean with pause": BTWB names it "Pause Squat Clean".
 _COUNTED_PAUSE_RE = re.compile(r"^\s*\d+\s*-\s*pause\s+", re.IGNORECASE)
-# A trailing cue — "#Bellow and above the knee", "@eyes level" — is coaching.
-_CUE_RE = re.compile(r"\s+[#@].*$")
+# A trailing cue — "#Bellow and above the knee", "@eyes level", "(5 sec floor to
+# hip)" — is coaching.
+_CUE_RE = re.compile(r"\s+[#@].*$|\s*\([^)]*\)")
 # BTWB's names where Strivee's differ.
 _ALIASES = {"barbell seal row": "Seal Row"}
 # The aid a movement is scaled with is coaching, not the movement: BTWB has
@@ -64,6 +84,7 @@ _TITLE_NOISE_RE = re.compile(r"\(.*?\)|[-\s]+option\b", re.IGNORECASE)
 _PHRASES = [
     (re.compile(r"\bchest[\s-]+to[\s-]+bar\b", re.IGNORECASE), "Chest-to-bar"),
     (re.compile(r"\btoes[\s-]+to[\s-]+bar\b", re.IGNORECASE), "Toes-to-bar"),
+    (re.compile(r"\s+and\s+jerk\b", re.IGNORECASE), " & Jerk"),
 ]
 _ABBREVIATIONS = {
     "hspu": "Handstand Push-up",
@@ -162,18 +183,50 @@ def _weighted_sets(lines: list[str]) -> ClassicSets | None:
     )
 
 
+def _emom_header(line: str) -> tuple[int, int, str] | None:
+    """(seconds per set, sets, what follows on the line) for an EMOM or "Every" header."""
+    if m := _EMOM_RE.match(line):
+        return 60, int(m.group(1)), m.group(2)
+    if m := _EVERY_RE.match(line):
+        seconds = _seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
+        return seconds, int(m.group(4)), m.group(5)
+    return None
+
+
 def _emom(lines: list[str]) -> ClassicSets | None:
-    """ "EMOMx12 : / 6 reps <movement>" and nothing more: a set every minute."""
-    if len(lines) != 2:
+    """One movement, one rep count, a set every N seconds: BTWB's EMOM.
+
+    "EMOMx12 : / 6 reps Butterfly Chest to bar pull-up", "Every 75 sec x 6 sets of : /
+    1 Slow Pull Squat Snatch (5 sec floor to hip) / #70 to 80% …", "EMOMx6: 1
+    Weighted Dip". Loads, cues and coaching around the movement line go to the
+    note; any other line opening with a number — a second movement, a "min 1 -"
+    scheme read as such — leaves the block alone.
+    """
+    headers = [(i, h) for i, line in enumerate(lines) if (h := _emom_header(line))]
+    if len(headers) != 1:
         return None
-    header, reps = _EMOM_RE.match(lines[0]), _EMOM_REPS_RE.match(lines[1])
-    if not header or not reps:
+    at, (every, sets, inline) = headers[0]
+    if any(line.lstrip()[:1].isdigit() for line in lines[:at]):
+        return None
+    rest_of_block = ([inline] if inline.strip() else []) + lines[at + 1 :]
+    if not rest_of_block or not (movement := _EMOM_REPS_RE.match(rest_of_block[0])):
+        return None
+    # "+" in the movement is a complex ("Overhead squat from Ground (Clean + back
+    # rack + jerk)"); "x4 sets", "Set 1 -" or a rest after it is more structure than
+    # one EMOM — the 06-08 clean and jerk was four rounds of EMOMx3.
+    # A load of a % of some RM ("#86% of your 1RM", "#85% of your 5RM from week 1")
+    # has no place in BTWB's EMOM; the AI path keeps it in the workout.
+    if any(_RM_LOAD_RE.search(line) for line in lines):
+        return None
+    if _is_complex(movement.group(2)) or any(
+        line.lstrip()[:1].isdigit() or _EMOM_STRUCTURE_RE.match(line) for line in rest_of_block[1:]
+    ):
         return None
     return ClassicSets(
-        movement=btwb_movement_name(reps.group(2)),
-        reps=(int(reps.group(1)),) * int(header.group(1)),
+        movement=btwb_movement_name(movement.group(2)),
+        reps=(int(movement.group(1)),) * sets,
         rest_seconds=None,
-        emom_seconds=60,
+        emom_seconds=every,
     )
 
 
@@ -258,12 +311,21 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     return plan
 
 
+def _clock(seconds: int) -> str:
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
 def describe_sets(plan: ClassicSets) -> str:
     """What preview shows for a classic Sets block."""
     if plan.rep_max:
         return f"{plan.movement} - X Rep Max\n{plan.reps[0]} rep max"
     if plan.emom_seconds is not None:
-        return f"{plan.movement} - EMOM\n{len(plan.reps)} min: {plan.reps[0]} reps every minute"
+        every, total = plan.emom_seconds, plan.emom_seconds * len(plan.reps)
+        rep_word = "rep" if plan.reps[0] == 1 else "reps"
+        return (
+            f"{plan.movement} - EMOM\n{plan.reps[0]} {rep_word} every {_clock(every)} "
+            f"for {_clock(total)}"
+        )
     reps = ", ".join("max" if r is None else str(r) for r in plan.reps)
     load = f" @ {plan.percent_1rm}% 1RM" if plan.percent_1rm is not None else ""
     seconds = plan.rest_seconds
