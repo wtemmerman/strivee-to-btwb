@@ -585,6 +585,21 @@ def test_the_note_keeps_what_the_formatter_and_btwb_drop(monkeypatch):
     assert pull_up.instruction == f"{content}\n\nGoal"
 
 
+def test_a_warm_up_moved_into_the_note_stays_ahead_of_the_prescription(monkeypatch):
+    """Real Fri bike: the note read main set, then warm-up — backwards for the athlete."""
+    monkeypatch.setattr("strivee_btwb.pipeline.format_for_btwb", lambda block, **_: block)
+    content = "5min Warm-up increasing pace\n+\n5 sets of :\n2min #55% FTP20\n2min #65% FTP20"
+    block = ProgrammingBlock(name="EMF 60 - Bike erg", content=content, instruction="Zone 2")
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 10, 2), day_label="Fri", blocks=[block])],
+    )
+    (bike,) = llm_format_week(week).days[0].blocks
+    assert bike.instruction == (
+        "5min Warm-up increasing pace\n\n5 sets of :\n2min #55% FTP20\n2min #65% FTP20\n\nZone 2"
+    )
+
+
 def test_formatted_cache_keeps_the_erg_plan(tmp_path, monkeypatch):
     import strivee_btwb.core.config as cfg
 

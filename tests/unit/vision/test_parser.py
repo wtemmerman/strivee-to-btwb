@@ -1139,3 +1139,36 @@ def test_variant_with_a_real_prescription_survives():
         name="A", content="3 Sets of :\n4 Reps", inter="For quality -\n50m HSW"
     )
     assert _extract_levels(block).available_levels() == [RX, INTER]
+
+
+def test_clean_cuts_embedded_video_cards():
+    """Real 08-03 note: a line of coaching, then the videos Strivee lists below it."""
+    text = (
+        "Un grand classique de la prog EMF RX !\nJump to pike\nMia Gianelli\nthumbnail-image\n"
+        "Mia Gianelli866 abonnés\nRegarder sur\nJump to pike\nTight and patient arch"
+    )
+    assert _clean_block_text(text) == "Un grand classique de la prog EMF RX !"
+
+
+def test_clean_cuts_a_youtube_titled_card_and_keeps_the_prescription():
+    """Real 06-29 note: the card opens with the title, then "<title> - YouTube"."""
+    text = (
+        "Objectif : gagner en contrôle en bas !\n\nPin Back Squat\nPin Back Squat - YouTube\n"
+        "Lecteur vidéo YouTube\nCatalyst Athletics\nthumbnail-image\n"
+        "Catalyst Athletics153 k abonnés\nRegarder sur"
+    )
+    assert _clean_block_text(text) == "Objectif : gagner en contrôle en bas !"
+
+
+def test_clean_cuts_a_card_whose_thumbnail_did_not_load():
+    text = (
+        "Rest as needed between sets.\nTop To Bottom BMU into Arch drop\nEMF Training\n"
+        "EMF Training6,04 k abonnés"
+    )
+    assert _clean_block_text(text) == "Rest as needed between sets."
+
+
+def test_clean_drops_the_week_header_that_leaks_into_a_note():
+    """Real 08-10 run note: the app's "EMF 60'" and day tabs under the coaching."""
+    text = "Objectif : endurance !\n\nEMF 60'\nLUN\n10\nMAR\n11\nDIM\n16"
+    assert _clean_block_text(text) == "Objectif : endurance !"

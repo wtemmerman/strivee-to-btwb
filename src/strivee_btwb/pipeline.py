@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -64,7 +65,7 @@ from .processing.garmin_map import activity_date, clock, needs_laps, sessions_fr
 from .processing.lift_sets import classic_sets, describe_sets
 from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
-from .processing.plus_split import split_plus_joins
+from .processing.plus_split import is_lead_in, split_plus_joins
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,
@@ -380,13 +381,27 @@ def llm_format_week(week: WeeklyProgramming) -> WeeklyProgramming:
     return WeeklyProgramming(week_start=week.week_start, days=days)
 
 
+def _note_with_prescription(block: ProgrammingBlock) -> str:
+    """The note: the prescription as Strivee wrote it, then the coach's notes.
+
+    A warm-up or drill list the split moved into the note stays ahead of the
+    prescription, in the order the session is done.
+    """
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", block.instruction) if p.strip()]
+    lead = 0
+    while lead < len(paragraphs) and is_lead_in(paragraphs[lead]):
+        lead += 1
+    ordered = paragraphs[:lead] + [block.content.strip()] + paragraphs[lead:]
+    return "\n\n".join(p for p in ordered if p)
+
+
 def _format_block(block: ProgrammingBlock) -> ProgrammingBlock:
     """Format one workout: an erg interval set for the classic builder, else via the LLM.
 
     Either way BTWB keeps the structure and drops detail — an erg's watts, a lift's
     RPE or tempo — so the note opens with the prescription as Strivee wrote it.
     """
-    note = "\n\n".join(p for p in (block.content.strip(), block.instruction.strip()) if p)
+    note = _note_with_prescription(block)
     if (plan := erg_intervals(block)) is not None:
         return block.replace(content=describe(plan), instruction=note, erg=plan)
     if (sets := classic_sets(block)) is not None:

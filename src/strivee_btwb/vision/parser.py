@@ -790,12 +790,62 @@ def _fill_placeholder_movements(content: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
+# A video Strivee embeds under a block reaches the text as a card: title, channel,
+# "thumbnail-image", "<channel>866 abonnés", "Regarder sur", title — sometimes after
+# "<title> - YouTube" / "Lecteur vidéo YouTube". Cards always follow the block's
+# real text, so the first one starts what is left to cut.
+_EMBED_ANCHOR_RE = re.compile(
+    r"^(?:thumbnail-image|regarder sur|lecteur vidéo youtube|.+ - youtube|"
+    r".*\d[\d.,]*\s*k?\s*abonnés|cette vidéo est privée)$",
+    re.IGNORECASE,
+)
+_YOUTUBE_TITLE_RE = re.compile(r"^(.+) - youtube$", re.IGNORECASE)
+# The app's week header — "EMF 60'" then the day tabs "LUN / 28 / MAR / 29 ..." —
+# can land in a note when the model runs a block into the top of the page.
+_WEEK_HEADER_RE = re.compile(r"^EMF\s+\d+'$")
+_DAY_TAB_RE = re.compile(r"^(?:LUN|MAR|MER|JEU|VEN|SAM|DIM|\d{1,2})$")
+
+
+def _embed_start(lines: list[str]) -> int | None:
+    """Index of the first line of the first video card, or None if there is none."""
+    anchor = next((i for i, line in enumerate(lines) if _EMBED_ANCHOR_RE.match(line)), None)
+    if anchor is None:
+        return None
+    if m := _YOUTUBE_TITLE_RE.match(lines[anchor]):
+        # "<title>" often stands just above "<title> - YouTube".
+        return anchor - 1 if anchor and lines[anchor - 1] == m.group(1) else anchor
+    if lines[anchor].lower() in ("thumbnail-image",) or "abonnés" in lines[anchor]:
+        # Title and channel stand above the thumbnail (or the subscriber line when
+        # the thumbnail did not load); the channel is where the subscriber line starts.
+        subscribers = next((line for line in lines[anchor:] if "abonnés" in line), "")
+        start = anchor
+        if start and subscribers.startswith(lines[start - 1]):
+            start -= 1
+        return start - 1 if start and lines[start - 1] else start
+    return anchor
+
+
+def _drop_week_header(lines: list[str]) -> list[str]:
+    kept: list[str] = []
+    skipping = False
+    for line in lines:
+        if _WEEK_HEADER_RE.match(line):
+            skipping = True
+            continue
+        if skipping and _DAY_TAB_RE.match(line):
+            continue
+        skipping = False
+        kept.append(line)
+    return kept
+
+
 def _clean_block_text(text: str) -> str:
-    """Strip emoji and Strivee UI chrome from one content/instruction field.
+    """Strip emoji, Strivee UI chrome and embedded videos from one text field.
 
     Drops everything from an "Inviter un ami" line onward (the invite footer ends
-    the real text), removes whole-line nav/score chrome, strips emoji, and tidies
-    the whitespace the removals leave behind while preserving paragraph breaks.
+    the real text) and from the first embedded video card onward, removes
+    whole-line nav/score chrome and the week header, strips emoji, and tidies the
+    whitespace the removals leave behind while preserving paragraph breaks.
     """
     lines: list[str] = []
     for raw in text.splitlines():
@@ -809,6 +859,9 @@ def _clean_block_text(text: str) -> str:
         if not line or _UI_CHROME_RE.match(line):
             continue
         lines.append(line)
+    lines = _drop_week_header(lines)
+    if (start := _embed_start(lines)) is not None:
+        lines = lines[:start]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
