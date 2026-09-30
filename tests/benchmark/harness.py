@@ -366,13 +366,15 @@ def _pre_level_loading_percents(text: str) -> set[str]:
 
     These are top-level prescription loadings the formatter must keep. Restricted
     to lines that carry both a '%' and 'RM' so coaching lines like '90% d'effort'
-    (correctly removed) never register as a dropped loading.
+    (correctly removed) never register as a dropped loading. 'RM' must stand as
+    its own token ('1RM', '5RM') — inside a word it read "Warm-up … 60% FTP20" as
+    a 1RM loading.
     """
     out: set[str] = set()
     for line in text.splitlines():
         if _LEVEL_HEADER_RE.match(line.strip()):
             break
-        if re.search(r"\d+\s*%", line) and re.search(r"RM\b", line, re.IGNORECASE):
+        if re.search(r"\d+\s*%", line) and re.search(r"(?<![a-z])RM\b", line, re.IGNORECASE):
             out.update(re.findall(r"(\d+(?:\.\d+)?)\s*%", line))
     return out
 

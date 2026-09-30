@@ -73,9 +73,51 @@ def test_two_modalities_are_declined():
     assert erg_intervals(block) is None
 
 
-def test_a_steady_effort_without_sets_is_left_to_the_ai_path():
-    block = _block("EMF 60 - Bike erg", "40min Steady State #55-60% FTP 20\n\nTotal - 45min")
-    assert erg_intervals(block) is None
+def test_a_steady_effort_after_its_warm_up_is_one_interval():
+    """Real Fri 09-07: a warm-up line, one 40-minute effort, a total."""
+    block = _block(
+        "EMF 60 - Bike erg",
+        "Bike Erg : Endurance Fondamentale\n\n5min Warm-up increasing pace to 60% FTP20\n\n"
+        "40min Steady State #55-60% FTP 20\n\nTotal - 45min",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (2400,), 0)
+
+
+def test_a_test_after_a_warm_up_section_is_one_interval():
+    """Real Tue 09-07: the warm-up section's own timed lines are not the effort."""
+    block = _block(
+        "EMF 60 - Bike erg",
+        "Warm-up\n\n6min Bike erg #Increasing Pace\n1min #Target Pace / 1min easy\n\n"
+        "- Rest 1Min and GO -\n\nTEST -\n20min Max wattage Bike erg",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (1200,), 0)
+
+
+def test_a_free_easy_session_under_a_header():
+    block = _block(
+        "EMF RX - Optional EF",
+        "Endurance FOCUS - 60min\n\n60min easy run - free session (MAIS ça doit rester easy !)",
+    )
+    assert erg_intervals(block) == ErgIntervals("Run", (3600,), 0)
+
+
+def test_a_range_or_a_distance_is_left_to_the_ai_path():
+    assert (
+        erg_intervals(_block("EMF 60 - Optional RUN", "Easy long run -\n\n20-40 min #easy RPE 3-4"))
+        is None
+    )
+    assert (
+        erg_intervals(
+            _block(
+                "EMF 60 : Run Session", "Warm-up\n400m easy run\n\nTEST\n1 miles (1600m) For Time"
+            )
+        )
+        is None
+    )
+
+
+def test_describe_a_single_effort():
+    assert describe(ErgIntervals("Run", (3600,), 0)) == "Run - Intervals For Distance\n1 x 60:00"
 
 
 def test_describe_says_what_will_be_posted():

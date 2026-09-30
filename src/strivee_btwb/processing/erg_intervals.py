@@ -42,6 +42,13 @@ _INTENSITY_RE = re.compile(
 )
 
 
+_WARM_UP_RE = re.compile(r"warm[\s-]?up|[ée]chauffement", re.IGNORECASE)
+_COOLDOWN_RE = re.compile(r"cool[\s-]?down|retour au calme", re.IGNORECASE)
+# A section header standing alone: "Warm-up", "TEST -", "Main Part :".
+_HEADER_RE = re.compile(r"^\s*[A-Za-zÀ-ÿ][^\d]*?\s*[-:]?\s*$")
+_ANY_REST_RE = re.compile(r"^\s*-?\s*(?:no\s+)?rest\b", re.IGNORECASE)
+
+
 def _seconds(value: str, unit: str) -> int:
     return int(value) * (1 if unit.lower().startswith("s") else 60)
 
@@ -110,10 +117,41 @@ def _one_rest(work: int, in_set_rest: int | None, between: int | None) -> int | 
     return None if in_set_rest or between else 0
 
 
+def _steady_effort(lines: list[str]) -> int | None:
+    """Seconds of the one timed effort a block holds besides its warm-up, or None.
+
+    "5min Warm-up … / 40min Steady State #55-60% FTP 20 / Total - 45min" and
+    "Warm-up / 6min … / - Rest 1Min and GO - / TEST - / 20min Max wattage Bike erg"
+    are one 40- and one 20-minute effort. A range ("45-60min") or a distance
+    ("1200m Run") is not a time BTWB can hold, so it leaves the block alone.
+    """
+    efforts: list[int] = []
+    in_warm_up = False
+    for line in (line for line in lines if line.strip()):
+        if _HEADER_RE.match(line):
+            in_warm_up = bool(_WARM_UP_RE.search(line))
+            continue
+        if _ANY_REST_RE.match(line):
+            in_warm_up = False
+            continue
+        if in_warm_up or _WARM_UP_RE.search(line) or _COOLDOWN_RE.search(line):
+            continue
+        if not line.lstrip()[:1].isdigit():
+            continue  # coaching or a header naming the session ("Total - 45min")
+        timed = _durations([line])
+        if timed is None:
+            return None  # a distance, a range, anything not a plain time
+        efforts.append(timed[0][0])
+    return efforts[0] if len(efforts) == 1 else None
+
+
 def erg_intervals(block: ProgrammingBlock) -> ErgIntervals | None:
     """The block's main set as fixed-time intervals, or None if it does not read as one."""
     movement = _movement(block)
-    found = _main_set(block.content.splitlines()) if movement else None
+    lines = block.content.splitlines()
+    found = _main_set(lines) if movement else None
+    if movement and found is None and (steady := _steady_effort(lines)) is not None:
+        return ErgIntervals(movement=movement, intervals=(steady,), rest_seconds=0)
     durations = _durations(found[1]) if found else None
     if not movement or not found or not durations:
         return None
@@ -138,6 +176,8 @@ def clock(seconds: int) -> str:
 def describe(plan: ErgIntervals) -> str:
     """What preview shows for an erg block, in place of the workout text BTWB won't see."""
     times = plan.intervals
+    if len(times) == 1:
+        return f"{plan.movement} - Intervals For Distance\n1 x {clock(times[0])}"
     if len(set(times)) == 1:
         work = f"{len(times)} x {clock(times[0])}"
     else:
