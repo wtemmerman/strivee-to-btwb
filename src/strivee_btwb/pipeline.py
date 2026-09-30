@@ -64,11 +64,12 @@ from .processing.accessory import (
     target_reps,
 )
 from .processing.erg_intervals import describe, erg_intervals
-from .processing.garmin_map import activity_date, clock, needs_laps, sessions_from_activities
+from .processing.garmin_map import activity_date, needs_laps, sessions_from_activities
 from .processing.lift_sets import classic_sets, describe_sets
 from .processing.loads import Load, loads_by_movement
 from .processing.movement_check import check_stored
 from .processing.plus_split import is_lead_in, split_plus_joins
+from .processing.timing import clock
 from .processing.volume import (
     METCON_CAP,
     MuscleVolume,

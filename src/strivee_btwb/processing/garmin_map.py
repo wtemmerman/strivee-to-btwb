@@ -26,6 +26,7 @@ from datetime import date
 
 from ..core import config
 from ..core.models import INTERVALS, SINGLE_DISTANCE, CardioInterval, CardioSession
+from .timing import clock
 
 logger = logging.getLogger("processing")
 
@@ -147,14 +148,6 @@ def same_each_interval(intervals: list[CardioInterval]) -> bool:
 
 
 # ── Notes ─────────────────────────────────────────────────────────────────────
-
-
-def clock(seconds: float) -> str:
-    """Format a duration the way a training log reads it: 51:07, or 1:02:30."""
-    total = round(seconds)
-    hours, rest = divmod(total, 3600)
-    minutes, secs = divmod(rest, 60)
-    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
 def pace_per_km(distance_m: float, duration_s: float) -> str:

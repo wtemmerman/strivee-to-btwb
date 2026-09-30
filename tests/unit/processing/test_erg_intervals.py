@@ -117,7 +117,7 @@ def test_a_range_or_a_distance_is_left_to_the_ai_path():
 
 
 def test_describe_a_single_effort():
-    assert describe(ErgIntervals("Run", (3600,), 0)) == "Run - Intervals For Distance\n1 x 60:00"
+    assert describe(ErgIntervals("Run", (3600,), 0)) == "Run - Intervals For Distance\n1 x 1:00:00"
 
 
 def test_describe_says_what_will_be_posted():

@@ -13,14 +13,13 @@ work to log, so they move to the coaching note and only the main set is posted.
 import re
 
 from ..core.models import ProgrammingBlock
+from .timing import COOLDOWN_RE, WARM_UP_RE
 
 _JOIN_LINE_RE = re.compile(r"^\s*(\+|into|then)\s*$", re.MULTILINE | re.IGNORECASE)
 # A join can also sit inside one round: "4 sets, each for time of : / 30 sec hold /
 # Into / 15m Handstand walk / - Rest 1min between sets -" is one workout.
 _ROUNDS_HEADER_RE = re.compile(r"^\s*\d+\s*(?:sets?|rounds?)\b.*(?:of|:)\s*$", re.IGNORECASE)
 _REST_BETWEEN_RE = re.compile(r"\brest\b.*\bbetween\s+(?:sets?|rounds?)\b", re.IGNORECASE)
-_WARM_UP_RE = re.compile(r"warm[\s-]?up|[ée]chauffement", re.IGNORECASE)
-_COOLDOWN_RE = re.compile(r"cool[\s-]?down|retour au calme", re.IGNORECASE)
 # "Accumulated 8 Reps /movement" over a list of drills: technique work ahead of the
 # main piece, with no movement BTWB knows — the AI filled one with snatches.
 _DRILLS_RE = re.compile(r"^\s*accumulated\b.*\bmovement\b", re.IGNORECASE)
@@ -67,7 +66,7 @@ def is_lead_in(paragraph: str) -> bool:
 
     Those come before the work they lead into, so the note keeps them first.
     """
-    return bool(_WARM_UP_RE.search(paragraph) or _DRILLS_RE.match(paragraph))
+    return bool(WARM_UP_RE.search(paragraph) or _DRILLS_RE.match(paragraph))
 
 
 def _is_ramp_down(part: str) -> bool:
@@ -89,18 +88,18 @@ def split_plus_joins(block: ProgrammingBlock) -> list[ProgrammingBlock]:
         return [block]
 
     warm_ups: list[str] = []
-    while len(parts) > 1 and (_WARM_UP_RE.search(parts[0]) or _DRILLS_RE.match(parts[0])):
+    while len(parts) > 1 and (WARM_UP_RE.search(parts[0]) or _DRILLS_RE.match(parts[0])):
         warm_ups.append(parts.pop(0))
     cooldowns: list[str] = []
-    while parts and (_COOLDOWN_RE.search(parts[-1]) or _is_ramp_down(parts[-1])):
+    while parts and (COOLDOWN_RE.search(parts[-1]) or _is_ramp_down(parts[-1])):
         cooldowns.insert(0, parts.pop())
     if not parts:
         return [block]  # nothing left that is work — post it as published
 
     note = "\n\n".join(
-        [p if _DRILLS_RE.match(p) else _labelled(p, "Warm-up", _WARM_UP_RE) for p in warm_ups]
+        [p if _DRILLS_RE.match(p) else _labelled(p, "Warm-up", WARM_UP_RE) for p in warm_ups]
         + ([block.instruction] if block.instruction.strip() else [])
-        + [_labelled(p, "Cooldown", _COOLDOWN_RE) for p in cooldowns]
+        + [_labelled(p, "Cooldown", COOLDOWN_RE) for p in cooldowns]
     )
     if len(parts) == 1:
         return [block.replace(content=parts[0], instruction=note)]
