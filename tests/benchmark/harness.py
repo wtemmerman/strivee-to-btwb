@@ -80,11 +80,19 @@ def start_llm_cache(argv: list[str] | None = None) -> None:
     whether the model itself still answers as it did.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--no-cache", action="store_true", help="call the model for every prompt")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--no-cache", action="store_true", help="call the model for every prompt")
+    mode.add_argument(
+        "--offline",
+        action="store_true",
+        help="answer from the cache alone, without Ollama; a prompt it lacks fails the run",
+    )
     args = parser.parse_args(argv)
-    use_response_cache(None if args.no_cache else LLM_CACHE_DIR)
+    use_response_cache(None if args.no_cache else LLM_CACHE_DIR, offline=args.offline)
     if args.no_cache:
         logger.info("Model response cache off — every prompt goes to the model")
+    if args.offline:
+        logger.info("Offline replay — answers come from the cache only")
 
 
 def log_llm_cache() -> None:

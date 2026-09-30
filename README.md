@@ -951,6 +951,12 @@ cache and pays in full for what it touched. Real `analyse`/`preview` runs never 
 uv run python -m tests.benchmark.compare --no-cache
 ```
 
+`--offline` does the opposite: every answer comes from the cache and Ollama is never
+contacted — the model's digest is read from the `models.json` an online run records
+beside the cache — and a prompt with no cached answer fails the run rather than reaching
+the model. It is what would let CI run the gate; today it cannot, because the captures,
+parsed caches and baselines it needs are gitignored as personal data.
+
 The slow parts are the local LLM stages (analyse, format) and the device/browser
 round-trips (capture, post). Optimizations are gated by an accuracy benchmark
 (`make benchmark`) that re-parses saved captures and diffs against a snapshot of

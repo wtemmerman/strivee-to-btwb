@@ -56,6 +56,7 @@ _TRANSIENT_EXC: tuple[type[Exception], ...] = (
 @dataclass
 class _ResponseCache:
     directory: Path | None = None
+    offline: bool = False
     hits: int = 0
     misses: int = 0
 
@@ -63,16 +64,22 @@ class _ResponseCache:
 _cache = _ResponseCache()
 
 
-def use_response_cache(directory: Path | None) -> None:
+def use_response_cache(directory: Path | None, *, offline: bool = False) -> None:
     """Answer repeated calls from *directory* instead of the model; None turns it off.
 
     For the benchmark only. At temperature 0 the model gives a prompt the answer it
     gave last time, so a run after a change to the code around the model need only
     ask it the prompts that changed. Real runs never set this: a stale answer must
     not be able to reach BTWB.
+
+    *offline* answers from the cache alone, Ollama untouched: the model's digest
+    comes from the one an online run recorded, and a prompt with no cached answer
+    fails loud instead of reaching the model.
     """
     _cache.directory = directory
+    _cache.offline = offline
     _cache.hits = _cache.misses = 0
+    _model_digest.cache_clear()
 
 
 def response_cache_stats() -> tuple[int, int]:
@@ -80,9 +87,36 @@ def response_cache_stats() -> tuple[int, int]:
     return _cache.hits, _cache.misses
 
 
+def _digests_path() -> Path:
+    if _cache.directory is None:  # invariant: only consulted with the cache on
+        raise LLMUnavailableError("internal error: model digests read with the cache off")
+    return _cache.directory / "models.json"
+
+
 @functools.cache
 def _model_digest(model: str) -> str:
-    """The pulled model's digest, so re-pulling an updated model misses the cache."""
+    """The pulled model's digest, so re-pulling an updated model misses the cache.
+
+    Online it comes from Ollama and is recorded beside the cache; offline it is read
+    back from that record.
+    """
+    path = _digests_path()
+    recorded = json.loads(path.read_text()) if path.exists() else {}
+    if _cache.offline:
+        if model not in recorded:
+            raise LLMUnavailableError(
+                f"Offline replay: no digest recorded for '{model}' — run the benchmark "
+                "online once to fill the cache."
+            )
+        return recorded[model]
+    digest = _pulled_digest(model)
+    if recorded.get(model) != digest:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({**recorded, model: digest}, indent=2))
+    return digest
+
+
+def _pulled_digest(model: str) -> str:
     try:
         models = ollama.list()["models"]
     except Exception as exc:
@@ -136,6 +170,11 @@ def _chat(
     if path.exists():
         _cache.hits += 1
         return json.loads(path.read_text())["response"]
+    if _cache.offline:
+        raise LLMUnavailableError(
+            "Offline replay: a prompt has no cached answer — the code changed what the "
+            "model is asked. Run the benchmark online to answer it."
+        )
     _cache.misses += 1
     content = _call(kwargs, model, retries, backoff_s)
     path.parent.mkdir(parents=True, exist_ok=True)

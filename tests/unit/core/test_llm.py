@@ -209,3 +209,39 @@ def test_without_the_cache_every_call_asks_the_model():
         chat_text("prompt", "qwen3:8b")
         chat_text("prompt", "qwen3:8b")
     assert mock_chat.call_count == 2
+
+
+def test_an_online_run_records_the_digest_for_offline_replay(cached, tmp_path):
+    import json
+
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("A")):
+        chat_text("prompt", "qwen3:8b")
+    assert json.loads((tmp_path / "models.json").read_text()) == {"qwen3:8b": "sha256:aaa"}
+
+
+def test_offline_replay_answers_from_the_cache_without_ollama(cached, tmp_path, monkeypatch):
+    from strivee_btwb.core import llm
+
+    with patch("strivee_btwb.core.llm.ollama.chat", return_value=_response("A")):
+        chat_text("prompt", "qwen3:8b")
+
+    def no_ollama(*_a, **_k):
+        raise AssertionError("offline replay must not reach Ollama")
+
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.list", no_ollama)
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", no_ollama)
+    llm.use_response_cache(tmp_path, offline=True)
+    assert chat_text("prompt", "qwen3:8b") == "A"
+    with pytest.raises(LLMUnavailableError, match="no cached answer"):
+        chat_text("a prompt the code never asked before", "qwen3:8b")
+
+
+def test_offline_replay_without_a_recorded_digest_fails_loud(tmp_path):
+    from strivee_btwb.core import llm
+
+    llm.use_response_cache(tmp_path, offline=True)
+    try:
+        with pytest.raises(LLMUnavailableError, match="no digest recorded"):
+            chat_text("prompt", "qwen3:8b")
+    finally:
+        llm.use_response_cache(None)
