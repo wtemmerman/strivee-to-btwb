@@ -47,6 +47,8 @@ from .core.models import (
     ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
+    plan_from_json,
+    plan_to_json,
 )
 from .garmin import GarminAuthError, fetch_with_laps
 from .garmin import connect as garmin_connect
@@ -228,23 +230,8 @@ def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | Non
                         "content": b.content,
                         "instruction": b.instruction,
                         "level": b.level,
-                        "erg": None
-                        if b.erg is None
-                        else {
-                            "movement": b.erg.movement,
-                            "intervals": list(b.erg.intervals),
-                            "rest_seconds": b.erg.rest_seconds,
-                        },
-                        "sets": None
-                        if b.sets is None
-                        else {
-                            "movement": b.sets.movement,
-                            "reps": list(b.sets.reps),
-                            "rest_seconds": b.sets.rest_seconds,
-                            "percent_1rm": b.sets.percent_1rm,
-                            "rep_max": b.sets.rep_max,
-                            "emom_seconds": b.sets.emom_seconds,
-                        },
+                        "erg": plan_to_json(b.erg),
+                        "sets": plan_to_json(b.sets),
                     }
                     for b in day.blocks
                 ],
@@ -287,23 +274,8 @@ def load_formatted_day(
                 content=b["content"],
                 instruction=b.get("instruction", ""),
                 level=b.get("level", RX),
-                erg=None
-                if b.get("erg") is None
-                else ErgIntervals(
-                    movement=b["erg"]["movement"],
-                    intervals=tuple(b["erg"]["intervals"]),
-                    rest_seconds=b["erg"]["rest_seconds"],
-                ),
-                sets=None
-                if b.get("sets") is None
-                else ClassicSets(
-                    movement=b["sets"]["movement"],
-                    reps=tuple(b["sets"]["reps"]),
-                    rest_seconds=b["sets"]["rest_seconds"],
-                    percent_1rm=b["sets"]["percent_1rm"],
-                    rep_max=b["sets"]["rep_max"],
-                    emom_seconds=b["sets"]["emom_seconds"],
-                ),
+                erg=plan_from_json(ErgIntervals, b.get("erg")),
+                sets=plan_from_json(ClassicSets, b.get("sets")),
             )
             for b in data["blocks"]
         ],

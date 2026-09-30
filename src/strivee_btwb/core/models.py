@@ -6,9 +6,9 @@ matches how the data actually flows and rules out a stage accidentally editing a
 cached object. Use :meth:`ProgrammingBlock.replace` to derive an edited copy.
 """
 
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import date
-from typing import Any
+from typing import Any, TypeVar, get_origin, get_type_hints
 
 RX = "rx"
 INTER_PLUS = "inter_plus"
@@ -47,6 +47,33 @@ class ClassicSets:
     percent_1rm: int | None = None  # every set's load, when prescribed as a % of 1RM
     rep_max: bool = False
     emom_seconds: int | None = None  # one set every this many seconds: BTWB's EMOM
+
+
+_Plan = TypeVar("_Plan", "ErgIntervals", "ClassicSets")
+
+
+def plan_to_json(plan: "ErgIntervals | ClassicSets | None") -> dict | None:
+    """A plan as JSON-ready data, every field included — none can be forgotten."""
+    return None if plan is None else asdict(plan)
+
+
+def plan_from_json(cls: type[_Plan], data: dict | None) -> _Plan | None:
+    """Rebuild a plan from :func:`plan_to_json` output.
+
+    Keys must match the fields exactly: a cache written by another version of the
+    plan fails loud rather than coming back with a field silently defaulted.
+    """
+    if data is None:
+        return None
+    names = {f.name for f in fields(cls)}
+    if set(data) != names:
+        raise ValueError(f"{cls.__name__} fields {sorted(names)} do not match {sorted(data)}")
+    hints = get_type_hints(cls)
+    values: dict[str, Any] = {
+        name: tuple(value) if get_origin(hints[name]) is tuple else value
+        for name, value in data.items()
+    }
+    return cls(**values)
 
 
 @dataclass(frozen=True)
