@@ -127,3 +127,27 @@ def test_describe_says_what_will_be_posted():
     assert describe(ErgIntervals("Run", (480, 240), 0)) == (
         "Run - Intervals For Distance\n2 intervals: 8:00, 4:00, no rest"
     )
+
+
+def test_sprint_repeats_rest_on_their_recovery():
+    """Real 08-10 sprints: a 20-second effort, a 40-second recovery, four times."""
+    block = _block(
+        "EMF 60 : Energy System Training (1/2)",
+        "4 x (20 sec Bike erg #HARD PACE - 40 sec # Recovery Pace)",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (20,) * 4, 40)
+
+
+def test_the_workout_names_the_erg_before_the_note_does():
+    """Real 08-24: the note's "The Rowing Club" made one bike block read as two ergs."""
+    block = _block(
+        "EMF 60 : Energy System Training (1/2)",
+        "3 x (20 sec Bike erg #HARD PACE - 40 sec # Recovery Pace)",
+        "The Rowing Club\n\n6 min Bike erg Warm-up - Increasing pace",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (20,) * 3, 40)
+
+
+def test_two_efforts_without_recovery_alternate():
+    block = _block("Bike erg", "3 x (1min Bike erg #HARD - 2min #Moderate)")
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (60, 120) * 3, 0)
