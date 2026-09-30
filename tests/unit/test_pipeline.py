@@ -600,6 +600,31 @@ def test_a_warm_up_moved_into_the_note_stays_ahead_of_the_prescription(monkeypat
     )
 
 
+def test_preview_warns_about_a_movement_btwb_has_not_confirmed(tmp_path, monkeypatch, caplog):
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.core import btwb_names
+
+    monkeypatch.setattr(cfg, "DATA_DIR", tmp_path)
+    btwb_names._read.cache_clear()
+    btwb_names.confirm_movement("Seal Row")
+    known = ProgrammingBlock(
+        name="Seal", content="X", sets=ClassicSets("Seal Row", (10,), None, rep_max=True)
+    )
+    unknown = ProgrammingBlock(
+        name="Clean", content="X", sets=ClassicSets("Hang Pause Clean", (2,), None, rep_max=True)
+    )
+    week = WeeklyProgramming(
+        week_start=date(2026, 9, 28),
+        days=[DayProgramming(date=date(2026, 9, 28), day_label="Mon", blocks=[known, unknown])],
+    )
+    with caplog.at_level(logging.WARNING):
+        log_preview(week)
+    btwb_names._read.cache_clear()
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "'Hang Pause Clean'" in warnings[0]
+
+
 def test_formatted_cache_keeps_the_erg_plan(tmp_path, monkeypatch):
     import strivee_btwb.core.config as cfg
 
