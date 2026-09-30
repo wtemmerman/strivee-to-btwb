@@ -29,6 +29,20 @@ _BUILD_HEAVY_RE = re.compile(
     re.IGNORECASE,
 )
 _HEAVY_REPS = {"single": 1, "double": 2, "triple": 3}
+_TOP_SET_RE = re.compile(r"^\s*(?:[A-Z]\.\s*)?top\s*set\b\s*[-:]?\s*$", re.IGNORECASE)
+_BACK_OFF_RE = re.compile(r"^\s*(?:[A-Z]\.\s*)?back\s*off\b\s*[-:]?\s*$", re.IGNORECASE)
+# "1x4 RPE 9 (Target - 284.5 lb-303 lb)", "2x4 #90% of your today Top set"
+_SETS_BY_REPS_RE = re.compile(r"^\s*(\d+)\s*x\s*(\d+)\b", re.IGNORECASE)
+# "Build a set of 3 Reps RPE 6", "Build a set of 1Reps RPE 7"
+_BUILD_A_SET_RE = re.compile(r"^\s*build\s+a\s+set\s+of\s+(\d+)\s*reps?\b", re.IGNORECASE)
+# "2 Sets of 4 Reps @90% of your today 3 reps"
+_SETS_OF_REPS_RE = re.compile(r"^\s*(\d+)\s*sets?\s+of\s+(\d+)\s*reps?\b", re.IGNORECASE)
+# "- Rest 2min between sets -", "- Rest 1min30 between sets -"; a range ("1min30 -
+# 2min") keeps its first bound, the note carries the rest.
+_REST_LEAD_RE = re.compile(
+    r"^\s*-?\s*rest\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])\s*(\d+)?", re.IGNORECASE
+)
+_TEMPO_RE = re.compile(r"\btempo\b", re.IGNORECASE)
 _EMOM_RE = re.compile(r"^\s*EMOM\s*x?\s*(\d+)\s*(?:min(?:ute)?s?)?\s*:?\s*$", re.IGNORECASE)
 _EMOM_REPS_RE = re.compile(r"^\s*(\d+)\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
 # "2-pause Squat clean", "Squat clean with pause": BTWB names it "Pause Squat Clean".
@@ -163,6 +177,44 @@ def _emom(lines: list[str]) -> ClassicSets | None:
     )
 
 
+def _set_reps(line: str, pattern: re.Pattern[str]) -> list[int] | None:
+    m = pattern.match(line)
+    return [int(m.group(2))] * int(m.group(1)) if m else None
+
+
+def _top_set_back_off(lines: list[str], block: ProgrammingBlock) -> ClassicSets | None:
+    """A top set then back-off sets, as BTWB Sets at heaviest weight.
+
+    The back-off load is a % of the day's top set, which BTWB cannot express, and
+    the RPE has no field; both stay in the note. What is left is the rep scheme,
+    which BTWB's AI got wrong: a 1x4 top set and one 1x4 back-off stored as 4x4.
+    Lines above the top set are headers — a "Tempo" among them names the movement.
+    """
+    tops = [i for i, line in enumerate(lines) if _TOP_SET_RE.match(line)]
+    backs = [i for i, line in enumerate(lines) if _BACK_OFF_RE.match(line)]
+    if len(tops) != 1 or len(backs) != 1 or backs[0] != tops[0] + 2:
+        return None
+    top, back = tops[0], backs[0]
+    top_reps = _set_reps(lines[top + 1], _SETS_BY_REPS_RE)
+    if top_reps is None and (m := _BUILD_A_SET_RE.match(lines[top + 1])):
+        top_reps = [int(m.group(1))]
+    backoff: list[int] = []
+    rest = None
+    for line in lines[back + 1 :]:
+        found = _set_reps(line, _SETS_BY_REPS_RE) or _set_reps(line, _SETS_OF_REPS_RE)
+        if found is None:
+            if m := _REST_LEAD_RE.match(line):
+                rest = _seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
+            break
+        backoff.extend(found)
+    if not top_reps or not backoff:
+        return None
+    movement = btwb_movement_name(_title_movement(block))
+    if any(_TEMPO_RE.search(line) for line in lines[:top]) and not _TEMPO_RE.search(movement):
+        movement = f"Tempo {movement}"
+    return ClassicSets(movement=movement, reps=tuple(top_reps + backoff), rest_seconds=rest)
+
+
 def _rep_max(lines: list[str]) -> ClassicSets | None:
     """ "[In a N min window :] / 10RM <movement>" or "Build a heavy double - <movement>".
 
@@ -194,7 +246,13 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     if len(lines) > 1 and (m := _REPS_LINE_RE.match(lines[1])):
         if not btwb_movement_name(m.group(2)):
             lines[1] = f"{m.group(1)} Reps {_title_movement(block)}"
-    plan = _max_rep_sets(lines) or _weighted_sets(lines) or _emom(lines) or _rep_max(lines)
+    plan = (
+        _max_rep_sets(lines)
+        or _weighted_sets(lines)
+        or _emom(lines)
+        or _top_set_back_off(lines, block)
+        or _rep_max(lines)
+    )
     if plan is None or not _agrees_with_title(plan.movement, block):
         return None
     return plan
