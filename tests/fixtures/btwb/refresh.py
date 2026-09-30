@@ -13,14 +13,14 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-from strivee_btwb.btwb.client import (
+from strivee_btwb.btwb.common import (
     _BASE,
-    _SCAN_EVENT_LINKS_JS,
     _calendar_week_url,
     _ensure_track_selected,
     _login,
     _settle_calendar,
 )
+from strivee_btwb.btwb.readback import _SCAN_EVENT_LINKS_JS
 from strivee_btwb.core import config
 
 OUT = Path(__file__).parent

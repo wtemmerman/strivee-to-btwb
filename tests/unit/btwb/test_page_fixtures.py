@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from strivee_btwb.btwb.client import (
+from strivee_btwb.btwb.classic import (
     _CLOCK_MINUTES,
     _INTERVAL_SECONDS,
     _REST_SECONDS,
     _SAVE_BUTTON,
     _SET_REPS,
-    _STORED_BODY_JS,
 )
+from strivee_btwb.btwb.readback import _STORED_BODY_JS
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "btwb"
 

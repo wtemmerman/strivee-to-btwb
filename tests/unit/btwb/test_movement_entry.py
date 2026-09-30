@@ -2,7 +2,8 @@
 
 import pytest
 
-from strivee_btwb.btwb.client import BTWBError, _parse_movement_lines
+from strivee_btwb.btwb.client import _parse_movement_lines
+from strivee_btwb.btwb.common import BTWBError
 from strivee_btwb.core.models import ProgrammingBlock
 
 

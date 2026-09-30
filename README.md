@@ -862,23 +862,32 @@ tests on every push to `main` and on pull requests.
 ### Project Structure
 
 ```
-data/             hand-maintained accessory tables (exercise pool, movement→muscle credits)
+data/             hand-maintained accessory tables (exercise pool, movement→muscle credits),
+                  movement names BTWB is known to hold (btwb_movements.json)
 
 src/strivee_btwb/
-  core/           config, logging, data models, Ollama wrapper (llm.py)
+  core/           config, logging, data models, Ollama wrapper (llm.py),
+                  confirmed BTWB movement names (btwb_names.py)
   prompts/        LLM prompt templates as .txt files
   capture/        ADB UI accessibility text dump (adb.py)
   garmin/         Garmin Connect — token auth, fetch, rate-limit backoff (client.py),
                   raw per-week activity cache (cache.py)
   vision/         Ollama text parsing — block extraction (parser.py)
   processing/     LLM-based BTWB formatting — Rx extraction, coaching strip (llm_format.py)
+                  one workout per joined part (plus_split.py), classic-builder plans for
+                  ergs (erg_intervals.py) and single-movement lifts (lift_sets.py),
+                  durations and warm-up patterns (timing.py)
                   posted-vs-stored check (movement_check.py), logged loads (loads.py)
                   accessory audit — set extraction (set_extract.py), counting rules (volume.py),
                   gap → postable block (accessory.py)
                   Garmin activity → BTWB entry, incl. interval detection (garmin_map.py)
-  btwb/           BTWB Playwright automation — post + delete (client.py),
-                  cardio result logging + sync dedupe (cardio.py)
-  pipeline.py     step orchestration and cache I/O
+  btwb/           BTWB Playwright automation — post + delete (client.py), classic-builder
+                  forms (classic.py), read-back of what BTWB holds (readback.py), the
+                  shared session (common.py), cardio result logging + sync dedupe (cardio.py)
+  pipeline.py     step orchestration: capture → analyse → format → preview → post → verify
+  cache.py        the on-disk caches between steps, each versioned
+  audit.py        accessory audit — weekly per-muscle volume and the work that fills it
+  garmin_sync.py  Garmin runs and rides → BTWB
   cli.py          argparse wiring
   __main__.py     entry point
 

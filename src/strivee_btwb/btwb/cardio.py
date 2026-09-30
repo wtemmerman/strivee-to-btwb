@@ -29,7 +29,12 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from ..core import config
 from ..core.models import INTERVALS, SINGLE_DISTANCE, CardioSession
 from ..processing.garmin_map import same_each_interval
-from .client import _BASE, _TIMEOUT, BTWBError, _login
+from .common import (
+    _BASE,
+    _TIMEOUT,
+    BTWBError,
+    _login,
+)
 
 logger = logging.getLogger("btwb")
 
