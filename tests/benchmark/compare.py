@@ -13,7 +13,7 @@ import logging
 
 from strivee_btwb.core import config
 from strivee_btwb.core.log import setup
-from strivee_btwb.pipeline import clean_week, load_days
+from strivee_btwb.pipeline import clean_week
 
 from .harness import (
     RESULTS_DIR,
@@ -47,7 +47,6 @@ def _warm() -> None:
 def main() -> None:
     setup(debug=False)
     start_llm_cache()
-    from datetime import date
 
     weeks = [w for w in text_era_weeks() if baseline_exists("analyse", w)]
     if not weeks:
@@ -68,7 +67,9 @@ def main() -> None:
         if not a_report["passed"]:
             failures.append(f"{ws} analyse: {a_report['per_day']}")
 
-        parsed_week = load_days(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], date.fromisoformat(ws))
+        # Format this run's analysis, not the saved parsed/ files: those only catch
+        # up with a parser change once a baseline run rewrites them.
+        parsed_week = cur_week
         block_count = sum(len(d.blocks) for d in parsed_week.days)
         fweek, t_format = time_stage(
             format_week, parsed_week, units=block_count, week=ws, stage="format"

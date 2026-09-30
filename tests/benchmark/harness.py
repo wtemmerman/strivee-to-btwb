@@ -20,9 +20,13 @@ from strivee_btwb.core import config
 from strivee_btwb.core.llm import response_cache_stats, use_response_cache
 from strivee_btwb.core.models import (
     LEVEL_LABELS,
+    ClassicSets,
     DayProgramming,
+    ErgIntervals,
     ProgrammingBlock,
     WeeklyProgramming,
+    plan_from_json,
+    plan_to_json,
 )
 from strivee_btwb.pipeline import (
     analyse_days,
@@ -140,6 +144,8 @@ def _week_to_dict(week: WeeklyProgramming) -> dict:
                         "instruction": b.instruction,
                         "inter_plus": b.inter_plus,
                         "inter": b.inter,
+                        "erg": plan_to_json(b.erg),
+                        "sets": plan_to_json(b.sets),
                     }
                     for b in d.blocks
                 ],
@@ -177,6 +183,8 @@ def load_baseline(kind: str, ws_iso: str) -> WeeklyProgramming:
                     instruction=b.get("instruction", ""),
                     inter_plus=b.get("inter_plus", ""),
                     inter=b.get("inter", ""),
+                    erg=plan_from_json(ErgIntervals, b.get("erg")),
+                    sets=plan_from_json(ClassicSets, b.get("sets")),
                 )
                 for b in d["blocks"]
             ],
@@ -436,6 +444,12 @@ def compare_format(baseline: WeeklyProgramming, current: WeeklyProgramming) -> d
                 continue
             ratio = _ratio(bidx[name].content, cidx[name].content)
             violations = format_invariants(cidx[name])
+            # A classic plan is compared exactly: "3 sets: 4, 4, 4" and "2 sets: 4, 4"
+            # read as near-identical text and are different workouts.
+            base_plan = bidx[name].erg or bidx[name].sets
+            cur_plan = cidx[name].erg or cidx[name].sets
+            if base_plan != cur_plan:
+                violations = [*violations, f"plan changed: {base_plan} -> {cur_plan}"]
             block_ok = ratio >= CONTENT_RATIO_THRESHOLD and not violations
             ok = ok and block_ok
             per_block.append(
