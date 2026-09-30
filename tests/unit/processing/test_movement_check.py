@@ -92,3 +92,62 @@ def test_units_are_not_vocabulary():
 
 def test_a_clean_block_reports_nothing():
     assert check_stored("T", "For time :\n50 Strict Pull-up", "50 Strict Pull-ups") == []
+
+
+# ── The "Movement : scheme" line ──────────────────────────────────────────────
+
+
+def test_a_substituted_rep_max_is_flagged():
+    """Real Mon 09-28: a 10RM seal row stored under a movement nobody programmed."""
+    assert _flagged(
+        "In a 8min window\n\n10RM Barbell Seal Row",
+        "Burpee Alternating Dumbbell Clean&Jerk : 10 Rep Max",
+    ) == ["Burpee Alternating Dumbbell Clean&Jerk : 10 Rep Max"]
+
+
+def test_a_faithful_headline_is_not_flagged():
+    assert _flagged("Seal Row - X Rep Max\n10 rep max", "Seal Row : 10 Rep Max") == []
+    assert (
+        _flagged(
+            "Tempo Back Squat - Sets\n3 sets: 5, 5, 5 reps @ 70% 1RM, rest 2:00",
+            "Tempo Back Squat : 3x5 at 70% 1RM, rest 2 mins",
+        )
+        == []
+    )
+
+
+def test_scoring_and_timing_headlines_are_not_movements():
+    assert _flagged("For time :\n40 Calories Ski erg", "FT: Ski Erg Calories, Wall Balls") == []
+    assert (
+        _flagged(
+            "Every 75 sec x 6 sets of :\n1 Slow Pull Squat Snatch",
+            "Every 1:15 for 7:30: Squat Snatch",
+        )
+        == []
+    )
+
+
+def test_an_editor_row_written_out_by_the_reader_is_checked():
+    """Lift workouts render as the editor; the reader writes each row as "<reps> <movement>"."""
+    assert _flagged("Strict Press\nBuild a new heavy rep strict press", "1 Strict Press") == []
+    assert _flagged("10RM Barbell Seal Row", "10 Burpee Alternating Dumbbell Clean&Jerk") != []
+
+
+def test_counts_and_extended_short_words_are_not_substitutions():
+    """Real Mon DARK ZONE: flagged on every run though BTWB stored it faithfully."""
+    source = "2 sets, for time of :\n54/42 Calories Row\n32 Burpees Over The Row (Facing)"
+    assert _flagged(source, "32 Burpee Over Rowers") == []
+    assert _flagged(source, "2x RFT: Row Calories, Burpee Over Rowers, and Row Calories") == []
+
+
+def test_a_drill_part_filled_with_snatches_is_flagged():
+    """Real Mon 09-28 C2B: BTWB's AI answered butterfly drills with snatches."""
+    source = (
+        "Accumulated 8 Reps /movement\nButterfly Chest + Drop\nButterfly + Beat swing\n"
+        "Butterfly + Kipping Chest"
+    )
+    # The plain pull-ups are a substitution too: the drills were never C2B pull-ups.
+    assert _flagged(source, "8 Chest-to-bar Pull-ups\n6 Split Snatch + Power Snatches") == [
+        "8 Chest-to-bar Pull-ups",
+        "6 Split Snatch + Power Snatches",
+    ]

@@ -14,8 +14,9 @@ one-directional — it catches substitution, not omission, because a dropped
 movement leaves nothing behind to compare.
 
 It is also deliberately narrow: only lines BTWB renders with a leading rep count
-are checked. A movement stored without one ("Echo Bike Calorie", "Power Snatch :
-5 Rep Max") goes unexamined. That is the cost of a report worth reading — the
+are checked, plus the movement before the colon of a "Movement : scheme" line
+("Power Snatch : 5 Rep Max"). A movement stored any other way ("Echo Bike
+Calorie") goes unexamined. That is the cost of a report worth reading — the
 alternative flagged every form label on the page and buried the two real
 substitutions in thirty-five false ones.
 """
@@ -31,6 +32,13 @@ _WORD = re.compile(r"[a-z0-9]+")
 # those kept up with BTWB's two different event renderings — where a rep count
 # separates prescription from chrome cleanly in both.
 _PRESCRIPTION_LINE = re.compile(r"^\s*\d")
+
+# The other shape BTWB names a movement in: "Seal Row : 10 Rep Max", "Tempo Back
+# Squat : 3x5 at 70% 1RM". A 10RM seal row was stored as "Burpee Alternating
+# Dumbbell Clean&Jerk : 10 Rep Max" and, with no leading count, went unchecked.
+# Only the part before the colon is the movement, and it holds no digit — which
+# keeps "Every 1:15 for 7:30: Squat Snatch" out.
+_MOVEMENT_HEADLINE = re.compile(r"^\s*([A-Za-z][A-Za-z &'+/\-]*?)\s*:\s*\S")
 
 # Wording the source uses that BTWB legitimately expands, so the expansion is not
 # mistaken for a substitution. Applied to the source side only.
@@ -55,7 +63,7 @@ _IGNORED = frozenset(
     m km cm mi ft in sec secs second seconds min mins minute minutes hr
     lb lbs kg kgs bw max min amrap amreps amrep emom rft fq tt more
     x of and the a to at on
-    rest cap complete possible many pick load
+    rest cap complete possible many pick load ft
     pour le la les de du temps limite avec sur
     """.split()
 )
@@ -103,8 +111,12 @@ def _canonical(word: str) -> str:
 
 
 def _words(text: str) -> list[str]:
+    # A token opening with a digit is a count or scheme ("32", "2x", "3x5"), never
+    # a movement.
     return [
-        _canonical(w) for w in _WORD.findall(text.lower()) if w not in _IGNORED and not w.isdigit()
+        _canonical(w)
+        for w in _WORD.findall(text.lower())
+        if w not in _IGNORED and not w[0].isdigit()
     ]
 
 
@@ -128,8 +140,10 @@ def _traces_back(word: str, vocabulary: set[str]) -> bool:
         return True
     if len(word) < 4:
         return False
+    # A stored word may extend a short source word ("Rowers" from "Row"); the
+    # other direction needs four letters, or "bar" would ground "barbell".
     return any(
-        len(known) >= 4 and (word.startswith(known) or known.startswith(word))
+        (len(known) >= 3 and word.startswith(known)) or (len(known) >= 4 and known.startswith(word))
         for known in vocabulary
     )
 
@@ -144,9 +158,12 @@ def check_stored(title: str, source: str, stored: str) -> list[Mismatch]:
         # source's double space on one side and not the other.
         if not line.strip() or " ".join(line.split()) == " ".join(title.split()):
             continue
-        if not _PRESCRIPTION_LINE.match(line):
+        if _PRESCRIPTION_LINE.match(line):
+            words = _words(line)
+        elif headline := _MOVEMENT_HEADLINE.match(line):
+            words = _words(headline.group(1))
+        else:
             continue
-        words = _words(line)
         if not words:
             continue
         grounded = sum(1 for w in words if _traces_back(w, vocabulary)) / len(words)
