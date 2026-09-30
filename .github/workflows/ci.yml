@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      - name: Install Chromium (offline BTWB page tests)
+        run: uv run playwright install --with-deps chromium
+
       - name: Lint (ruff)
         run: uv run ruff check src tests
 

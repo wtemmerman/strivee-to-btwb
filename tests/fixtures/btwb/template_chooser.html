@@ -1,0 +1,1031 @@
+<!DOCTYPE html><html lang="en"><head><style type="text/css">.turbo-progress-bar {
+  position: fixed;
+  display: block;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: #0076ff;
+  z-index: 2147483647;
+  transition:
+    width 300ms ease-out,
+    opacity 150ms 150ms ease-in;
+  transform: translate3d(0, 0, 0);
+}
+</style>
+    <meta charset="utf-8">
+    <title>
+      btwb : Nouvel entraînement d'événement de suivi
+    </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-param" content="authenticity_token">
+<meta name="csrf-token" content="TOKEN">
+    
+    <!-- Google tag (gtag.js) -->
+
+
+
+    <!-- Google Tag Manager -->
+
+<!-- End Google Tag Manager -->
+
+      <meta name="turbo-root" content="/plan">
+  <meta name="turbo-prefetch" content="false">
+
+    <link rel="icon" type="image/x-icon" href="/assets/favicon-7036f390d2384ee40f6b84a0adb7944261108f9083a6c1212b90ba5fe8267f0d.ico">
+      <link rel="stylesheet" href="/assets/plan/calendars-ebda23e81d29a262d191f7a46a494b23bec53cfe736f475ee4359f454adc507e.css" data-turbo-track="reload">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.2.96/css/materialdesignicons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css">
+
+      
+  
+<link rel="modulepreload" href="/assets/app-8c25d8b188f00a803cf5c979c9031976b3d1b88237ca80656cfc01f7c3715817.js">
+<link rel="modulepreload" href="/assets/turbo_app-723482ed736fd0316035e09b4a0a32e32be30df2e4bb4b49d435439f46624e7f.js">
+<link rel="modulepreload" href="/assets/stimulus.min-2d97b4c7cf589d06f9e8d32c5e7ec41fdcc1752cf21798e2cd2f081d02a403a0.js">
+<link rel="modulepreload" href="/assets/stimulus-loading-5b5a62e00d4fdff28f0ea9ec8240cfcbf8e8f7f100420885d1488658282fca1f.js">
+<link rel="modulepreload" href="/assets/turbo.min-ebaccdc18fc000fd5ab88133b554540c30142018e24028abb231af652212039e.js">
+<link rel="modulepreload" href="https://ga.jspm.io/npm:flatpickr@4.6.9/dist/flatpickr.js">
+<link rel="modulepreload" href="https://ga.jspm.io/npm:flatpickr@4.6.9/dist/l10n/index.js">
+<link rel="modulepreload" href="https://ga.jspm.io/npm:sortablejs@1.15.0/modular/sortable.esm.js">
+<link rel="modulepreload" href="/assets/highcharts-a376d26e6021244a30646bdc46ca5bacae97339ca9308d005b58398a61f3c7c8.js">
+<link rel="modulepreload" href="/assets/highcharts--highcharts-more-82f26a16342cfc34f55bf75952cab460cbc764c12f665f2209e001ca4c6ece6f.js">
+<link rel="modulepreload" href="/assets/controllers/analytics_event_controller-9bc40051c1c385c280a2ac02d0c25af607e7a6e6ea1894f4aa8f8fcf86e3b90b.js">
+<link rel="modulepreload" href="/assets/controllers/application-bc75b1cf53e83b5e11357be2714f1b0adb7040f68e6b5cba587c7cba4b031654.js">
+<link rel="modulepreload" href="/assets/controllers/auto_search_controller-d17660036ed3f01ab6a74860011bcb5febdf3eabe9689c3d77ad4931e4c0b3fd.js">
+<link rel="modulepreload" href="/assets/controllers/benchmarks_lifts_chart_controller-794050ebd8686ab596a3a955441ae62339f2e971c72d3e6d4bf078af323ba8b8.js">
+<link rel="modulepreload" href="/assets/controllers/benchmarks_result_chart_controller-b07ebafd46a7c59aa2f77d9ac25a8dd843f88060ef131b25d59cc515a407dc85.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_dropdown_controller-b164aff0586b827ecc4900d244c862276cdb7aa992aa54f09ea81c4f384db14f.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_modal_controller-6f966f1668c4b4e987ceffe564e1e0ab834f339b6fbea7e41233a64a8eb93b8e.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_modal_frame_controller-21077811b1215e603b3118865775e3fe0f7ebffdb3213093aad014a53ce13655.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_modal_onload_controller-c0e06d7c50ff7f78cb63023541fdd318465e0f780ecfe78e81cba35b37736801.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_popover_controller-da21fd215b6e479eed5fdbc159cb4ef9ec64d4e02bdec5ffffca32778b8d6696.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_toast_controller-eed3c37745e63ce464fce50e04ad42ad7f881c5cfbebb68b4235b589cdd7f431.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_toast_onload_controller-22d743f159cf03b08a7e28adb29b968849d5604671ec6d3b7731efaef1cb4985.js">
+<link rel="modulepreload" href="/assets/controllers/bridges/bootstrap_tooltip_controller-ffe9c9cc60b195239dbff2af63aeef7f80b924eab4d75301bec6b551c5474aa4.js">
+<link rel="modulepreload" href="/assets/controllers/button_group_controller-290eb470e90639ebf5a4e76c42c71ccb88ddb4df7cbf5485842cb086dc8e89fe.js">
+<link rel="modulepreload" href="/assets/controllers/clicker_controller-2839c161efed66061fe1eef12e50974adf4f094ceca01463434380377fef4105.js">
+<link rel="modulepreload" href="/assets/controllers/clipboard_controller-c7880bd2805dc4b2664fd9e3ad029faff2e0dd113d7c1d69e7e992f8d4017a49.js">
+<link rel="modulepreload" href="/assets/controllers/cloner_controller-aa375b29808d6fdf61d2310b517a48f7b03a6fc77abac553b9a57ff2ecb85348.js">
+<link rel="modulepreload" href="/assets/controllers/earned/tabbed_disabler_controller-c2a55af893038f31ef36c63ee39f0e308156c56749ae342ee3db18ec92555146.js">
+<link rel="modulepreload" href="/assets/controllers/emoji_picker_controller-04a59be4bcb97d9f165dd0befcff4841dc1f08470d597a6e4f793854338a755d.js">
+<link rel="modulepreload" href="/assets/controllers/flatpickr_controller-89319059a9b19d1a1e9791f9da888ce50925cda20a1e3d3f5ca858bb405997c8.js">
+<link rel="modulepreload" href="/assets/controllers/forms/action_controller-33787f31ee516b4a03de4e4cc163c1f217df116ada7f17328c98a8c0a30a39fd.js">
+<link rel="modulepreload" href="/assets/controllers/forms/child_index_controller-eb8d557a0a933d6a3ed1f7f53dc11df09089f2fe4be074ad7723e68d0e695ac8.js">
+<link rel="modulepreload" href="/assets/controllers/forms/destroy_toggler_controller-b55ce03ce98a83c453b7e65f24eadc8e21779b24664e59c686f9bca8611edd6b.js">
+<link rel="modulepreload" href="/assets/controllers/forms/disabled_toggler_controller-29273c00e5628c767b8714e2b8aa9c4deed9ccfac3f2d53d886f0d6fabb9ac3e.js">
+<link rel="modulepreload" href="/assets/controllers/forms/field_blanker_controller-4a39583491c17ebe9db8eb2c2b6e318465f0c57d7284176b5fff94cd0a248efb.js">
+<link rel="modulepreload" href="/assets/controllers/forms/nested_remover_controller-60ae0da06f6b5dbed85d86c6c19397e882cef7bdb28c1e154d6629e20aba38db.js">
+<link rel="modulepreload" href="/assets/controllers/forms/reseter_controller-83da636539582ecc513a7e30019eebd626dae42a01a1a37b4a0a2fc5b9b8c67e.js">
+<link rel="modulepreload" href="/assets/controllers/forms/submit_disabler_controller-eb6aea35fa6d6a96924486f3b2423305d6ae9156cf7d78482e80ba0eef1c9d4d.js">
+<link rel="modulepreload" href="/assets/controllers/gyms/search_controller-d439118bf15300160fd3936d3756a3dbfa787a003d77585d71a6751cffd2c140.js">
+<link rel="modulepreload" href="/assets/controllers/home/price_update_controller-eab653a9349d7d38f004fa3df38b67696de037a84f316a2a1bfc321e34b2c711.js">
+<link rel="modulepreload" href="/assets/controllers/home/tabs_controller-3510b79c04e5b62ccddd163f29b6a4bc99cb351e341c8c71acefcdcccb1fe6f1.js">
+<link rel="modulepreload" href="/assets/controllers/imbalances_chart_controller-d770d4569d81b75488f2f57826e5164260ac8b75e1549bf13dd18aae76771631.js">
+<link rel="modulepreload" href="/assets/controllers/index-7b15027243eb51853a2f5649cef7b4ea5a6c15dbb61abd95d2ade9837bfcdfb7.js">
+<link rel="modulepreload" href="/assets/controllers/indicator_controller-ce9188849d8142d61f73354dc1387e3b89e2aa795553ca9792829ece21eaf1e4.js">
+<link rel="modulepreload" href="/assets/controllers/line_overlay_controller-f7d155bd6ec374702eaa4995d09192ecd9c300b70e8e92e5be7a6a468d7981da.js">
+<link rel="modulepreload" href="/assets/controllers/log/contents_dnd_controller-9442bd325dd0ae88b70debb354d9cbbdf037067a9c215327b38c71a3feebec65.js">
+<link rel="modulepreload" href="/assets/controllers/log/input_units_controller-900a8f55fcac4783105a0e2aadbf2b76fc8ce5439b67ede3a749b6e5da5b7c40.js">
+<link rel="modulepreload" href="/assets/controllers/log/movement_inputs_controller-d0855e0d1d161e0f172e88413f8ebaefaf13de4c9b5f6a325fffff6f4234183f.js">
+<link rel="modulepreload" href="/assets/controllers/log/movement_modal_controller-a85fb7055b0de212a661ed13cbe7e6754e4adf5ee4e25f1eee8e310173b025fd.js">
+<link rel="modulepreload" href="/assets/controllers/log/sets_control_controller-6f128c9c914d61cf37a3b3ae476c21442d357ecc3f4cbab8aa8153197c2e711f.js">
+<link rel="modulepreload" href="/assets/controllers/log/total_copy_controller-5b028b70ece8b51b68fe99d3506f71921b6302f0139238586b76d2a70ba77586.js">
+<link rel="modulepreload" href="/assets/controllers/log/total_seconds_controller-0490db1d69fc125bec84dfba094f357f294710592b59a3255934460762084646.js">
+<link rel="modulepreload" href="/assets/controllers/log/track_events_finder_controller-2dab8adad89a7f288ec6df770960ebe6746f673c779f7702351a1c8521e566f5.js">
+<link rel="modulepreload" href="/assets/controllers/macros_photo_controller-b281a98990f862fed4980e68c295ba18640c3b1ee6b33f7a4893850b1f41a9cc.js">
+<link rel="modulepreload" href="/assets/controllers/macros_target_controller-7885c1c3b62624e028308107723027f46aec623369cc81e0b8d4509e107b9c3b.js">
+<link rel="modulepreload" href="/assets/controllers/member_codes/search_controller-e82707092f58896e2cae174ed5492fc656cfff4b066a73408733b3a7ee15528d.js">
+<link rel="modulepreload" href="/assets/controllers/members/search_controller-092322e6461bb77e7d9dc9a5463c19ebd00edafda587b1384434b39ee08bb7eb.js">
+<link rel="modulepreload" href="/assets/controllers/modalities_card_controller-cb1bdd629709dc209c2cccfd7790124a699dc43d9e25eb8061fd5ebe590d83b9.js">
+<link rel="modulepreload" href="/assets/controllers/modalities_range_controller-58f61bbd14d5882fcbc27b314c608a20bfc4df1e83245597c79380d22b45c293.js">
+<link rel="modulepreload" href="/assets/controllers/modalities_trend_controller-a5f5da518de50e7f458295841ab55ca48d68d62c16701a503682d0e3778f8791.js">
+<link rel="modulepreload" href="/assets/controllers/organizations/price_table_controller-eac6c6cbad5781d8c7d67a58c3cbd15b839127304a3a8d57ea15c699c54ab1fe.js">
+<link rel="modulepreload" href="/assets/controllers/picker_toggle_controller-3da57c92872e255d7603d27c703c688ea79c25c0018f36c233284208072b1dc8.js">
+<link rel="modulepreload" href="/assets/controllers/plan/analyze_bar_controller-c4fd7da2e9662ad12017a5ee6af9407d3be741ab8823c07efcafae2cbf335fd3.js">
+<link rel="modulepreload" href="/assets/controllers/plan/analyze_highlighter_controller-1d4c53aa06f1abad899783485795feffae97ba172c6d756127e835c670930c53.js">
+<link rel="modulepreload" href="/assets/controllers/plan/analyze_scroll_controller-63db4a092a366118843a9627030c0e6a39df779f15677d6865b869d35d59af57.js">
+<link rel="modulepreload" href="/assets/controllers/plan/app_launcher_controller-b81c1fab9cbb1b99d78cfdea9b837da4aeaf752ff35b0efa116e6e45d418a1af.js">
+<link rel="modulepreload" href="/assets/controllers/plan/attribute_focus_controller-05d6b26cea6cfc9ac94de109473eb60f056756ea1ae83b0eaae92d61a2fc4d3e.js">
+<link rel="modulepreload" href="/assets/controllers/plan/checkbox_group_controller-5ca8316ee3d8e6e404bb8e425da72b66d3f08dd697020bdec0585998ef88b8f2.js">
+<link rel="modulepreload" href="/assets/controllers/plan/checkbox_select_all_controller-c1a91d4629ae730ea072fa17d1d9ae1c2f99b8ea9cb7b9da264ad36c526309a5.js">
+<link rel="modulepreload" href="/assets/controllers/plan/child_index_controller-eb8d557a0a933d6a3ed1f7f53dc11df09089f2fe4be074ad7723e68d0e695ac8.js">
+<link rel="modulepreload" href="/assets/controllers/plan/cloner_controller-2a360f82ee156de5f5c35279889a3d802f4fd5b2e9248e66ca870b12314e9f27.js">
+<link rel="modulepreload" href="/assets/controllers/plan/committed_club_carousel_controller-23b9db7d79bfc6269a3b6543b627173cf382ce15691dd2a755f584ee7288174c.js">
+<link rel="modulepreload" href="/assets/controllers/plan/complex_sets_controller-e4a26e4ce908932931114029658638a0dd3d37374e0d875895ad67b8f3f831d1.js">
+<link rel="modulepreload" href="/assets/controllers/plan/contents_dnd_controller-f8963e70a389aea33e2e6a145d1b23b04b75ebadf5cccbba9bae1ba8040fabca.js">
+<link rel="modulepreload" href="/assets/controllers/plan/cycle_days_controller-22be1fc704b2e874a348aff14c76b90f2c191ae7b4e7133f411dafafda0b13a9.js">
+<link rel="modulepreload" href="/assets/controllers/plan/cycle_plan_form_controller-ff971278859ded47046f70d6142028502c69e74f6e21cef24f4dbd4c3702a2cd.js">
+<link rel="modulepreload" href="/assets/controllers/plan/distance_copy_controller-a1c83293d6ef36cd979ebda2a3395ebc0bec85ebbd8f97f2510c542de55f426d.js">
+<link rel="modulepreload" href="/assets/controllers/plan/events_dnd_controller-7f66219563b6251389ac257ab0d760b92a8a35b903717ae73e396acad23679ef.js">
+<link rel="modulepreload" href="/assets/controllers/plan/examples_controller-2b4054c2257d3efe9f7349bf5722ccf18540a673a217fcfa1a86ac3dfb154a06.js">
+<link rel="modulepreload" href="/assets/controllers/plan/filter_sheet_controller-e77682005b307d154c37e956be3c7296a808a334b20715bd550a6129a1bbc0fb.js">
+<link rel="modulepreload" href="/assets/controllers/plan/focus_input_controller-22a1a838b448a40e73dda02a789bc7567455fe227d0c127664b3be054a938964.js">
+<link rel="modulepreload" href="/assets/controllers/plan/generated_workout_controller-2e4843eef4d729ed5eb6f3230c2086b629bfac0c55cb591242abcd906952a904.js">
+<link rel="modulepreload" href="/assets/controllers/plan/gym_modal_controller-d5812f7b1dbdfb32f12cd5a2a7d0f476cd6fba109bc86a31911aab11d88a6023.js">
+<link rel="modulepreload" href="/assets/controllers/plan/height_set_input_controller-4c676df76be66872971b3926fab34d4f89e4ef809dd69c694aae3367788e9bf4.js">
+<link rel="modulepreload" href="/assets/controllers/plan/height_sets_controller-aab3299aabb05557b55bbaa953ee32da880161e1c4cf7eaf97906cc865ec72bd.js">
+<link rel="modulepreload" href="/assets/controllers/plan/input_units_controller-2739f61ea12ec71efeb5a423c01bfd2b3bc595c429a7755bd259ff2669bbe7ce.js">
+<link rel="modulepreload" href="/assets/controllers/plan/instruction_controller-b86e5a777a1a0fe3084b64c5ca70021eead43a2e317b3f0ded7fb3c69fc63d5b.js">
+<link rel="modulepreload" href="/assets/controllers/plan/instructions_dnd_controller-e03b4333fa15d9f645b008b8ab05c178c2e29b23c91ed00e312b791ed6a60371.js">
+<link rel="modulepreload" href="/assets/controllers/plan/link_controller-77d7c426bdcc2375cd455f469414512d4adc43d6c9deebc4f61c75e775bbcb83.js">
+<link rel="modulepreload" href="/assets/controllers/plan/macros_calendar_controller-bada561351608dae1b855f292b5f309358f8edd7622934ca9a33992f59ba4dab.js">
+<link rel="modulepreload" href="/assets/controllers/plan/member_code_controller-7ede5c5115511c6fc0261a55e4b65b9e6eda723a1d648ab82048356cae8ea9d3.js">
+<link rel="modulepreload" href="/assets/controllers/plan/new_feature_callout_controller-32517c87ca5e6ac289038cb9c7b3c9d447756503cd4e9f950d8e8c1dfaca5de9.js">
+<link rel="modulepreload" href="/assets/controllers/plan/notes_counter_controller-635d379e6d051d75ba44e1b5f335cc910eaccffa7bccadd570f0923b95f45c69.js">
+<link rel="modulepreload" href="/assets/controllers/plan/plan_again_controller-3aede221b8dbd8cb92ebde096a9dcad61433433baacb29df261f152fef821327.js">
+<link rel="modulepreload" href="/assets/controllers/plan/popup_menu_controller-613b3c4170613ee4ce79c41d7ac222af2e1652696e1abfb5a65b50f52269ab58.js">
+<link rel="modulepreload" href="/assets/controllers/plan/preview_event_controller-bc260d40f749f9838febb2521e850edad99c3aff3bd19882edfa907fd20782eb.js">
+<link rel="modulepreload" href="/assets/controllers/plan/preview_events_controller-e491eda95b412d77e63ddc5bd7036b7d08d886d33f52a1775865206a3de7aec3.js">
+<link rel="modulepreload" href="/assets/controllers/plan/reps_set_input_controller-234e996306a547e36f88ed83e3be4a8dda6f60d5e6cb8c259fb78b925d3c42e2.js">
+<link rel="modulepreload" href="/assets/controllers/plan/reps_sets_controller-3f8aefa8499cce626783961968be20d0ae74d7999cb88f764cd3ef3121c18362.js">
+<link rel="modulepreload" href="/assets/controllers/plan/repscheme_rounds_controller-cbdc459768adca7cb9a6e0c1ec5fdc95050ecc5a727ac551a55d8847d58eaf33.js">
+<link rel="modulepreload" href="/assets/controllers/plan/scroll_arrows_controller-b11c23e0d660b8b077c27e7afd4ec8e6f7bfd6414a1e633cc447857a0e76fd58.js">
+<link rel="modulepreload" href="/assets/controllers/plan/scroll_into_view_controller-c29cecb3f168218a546a7c7c63c27e46c540e24c885da7737a5e4cf6fcbccc5d.js">
+<link rel="modulepreload" href="/assets/controllers/plan/scroll_to_top_controller-1613fe8d9ee11a21fea172ecdb17396e4fdd91e5a7b9074b24ab9de7aad1e1e8.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sets_control_controller-2944210d5a716fdab3986a20501eb3b845f18c0393a2284d20fb3c4c5c795415.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sets_until_controller-4853e6c7d81967710d786bd450ddf75a017bb6b528360f22e1bc9abd90c178a2.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sidebar_categories_controller-1bce8f7f975c3cc75a81709b402fc926b0b6d35e9794ea67f3042d7f4ed63c98.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sidebar_collapse_controller-9dbb9f29a4a9911204280b7f2742dbc24dba90bac68ac91f6865d20b61a72804.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sidebar_controller-86416f7a33577ae18d9f5341c4e164b1e415d47c6261d81f5648cbcdda5a4464.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sidebar_dual_range_controller-24d9c348d4f8043785326b52a99ab0c65ee749b8a3ebbb5c75ae91d8da511419.js">
+<link rel="modulepreload" href="/assets/controllers/plan/sidebar_movement_search_controller-f5b6c2d4120da9b64ea02c78fcf264c2e0fbb72b667aa86c2c6402d0fb156231.js">
+<link rel="modulepreload" href="/assets/controllers/plan/start_add_reps_controller-84abdfd70321cd4d08807b39db16e05cedd864a34fcbc5e331f9d5e8790c1ada.js">
+<link rel="modulepreload" href="/assets/controllers/plan/styletip_controller-97d0ec21259179ba5a5d0a40d514b2f9004f0657db8a3e0aa6d96ef0bfacb276.js">
+<link rel="modulepreload" href="/assets/controllers/plan/tag_select_controller-22786b4b8572d51ca8ff21365370ba6acd4bc6ec2d7036ae911eb297f9b627c7.js">
+<link rel="modulepreload" href="/assets/controllers/plan/time_set_input_controller-e462e49d78cc71859b79e1ff1da42d0649d7be569d41cb4b58ac6d451ea79849.js">
+<link rel="modulepreload" href="/assets/controllers/plan/time_sets_controller-fd3782798598fce4dffd490e32000ea9207791047cecb9011fb1486ea3d973d6.js">
+<link rel="modulepreload" href="/assets/controllers/plan/total_seconds_controller-4f703b944315fd76fa6b83e02f87dd04e5e1d3a3d0c3df00acf20e674dc44c25.js">
+<link rel="modulepreload" href="/assets/controllers/plan/track_event_controller-99bb73d5fec7285d2b4996b1a2e1038ece7361f426b7906f0e305f68b5d14a5a.js">
+<link rel="modulepreload" href="/assets/controllers/plan/track_select_controller-338cf509d8947798ec45d09a30d8f4caab609178a1c5145237501bb4a7fa8cbb.js">
+<link rel="modulepreload" href="/assets/controllers/plan/varying_control_controller-985241a55d935e760f314fcb7f4ba6ba7aac591b4ff4d046038eccd69db9ad14.js">
+<link rel="modulepreload" href="/assets/controllers/plan/varying_inputs_controller-2fa0c9cbaf4c9cec7727f500a1a8b2b028cbef750c7a6087eb695952ade62c99.js">
+<link rel="modulepreload" href="/assets/controllers/plan/week_scroll_controller-d4488b0d7382936aa636ac1af512c2f08379c9c4cd1df3f85bcdfbc981327359.js">
+<link rel="modulepreload" href="/assets/controllers/plan/weight_set_input_controller-c6a8cea7b0ed4481bb212892b4d5a9a0df0858c89cfaa714895f773346524715.js">
+<link rel="modulepreload" href="/assets/controllers/plan/weight_sets_controller-4c9c6368626d7b4720e66574989a5047e55b0b8fb7fe7c128ba4ad1cb1d6f6c7.js">
+<link rel="modulepreload" href="/assets/controllers/plan/weight_sets_scoring_controller-8e55a29f50abb45ffc51e48ce1c41b1398b426fb37a3eda4813365cc7b6bc58d.js">
+<link rel="modulepreload" href="/assets/controllers/remover_controller-c2e8bb0318632246ebc951750468f728bcb44ac47418830414c55268b97769ad.js">
+<link rel="modulepreload" href="/assets/controllers/site/search_controller-1dde15db27622d68b72b55d8a20e4365bb0b66eff64dbb56b6a0d3fa2fd52c7f.js">
+<link rel="modulepreload" href="/assets/controllers/site_search_controller-409cebd934ded6d73c3d803e85bbd53cb6fe433b812d306103ff21338e2fc718.js">
+<link rel="modulepreload" href="/assets/controllers/switch_controller-e076e2d8a9b6be5e2964cca85e1e371e2024c11e416ea6d57fc6e0dd716e86c7.js">
+<link rel="modulepreload" href="/assets/controllers/tabber_controller-a3f0ac5e74fde056fc6c27cc8c36a669e27c342d063128bcf25b9406e86f1900.js">
+<link rel="modulepreload" href="/assets/controllers/toggler_controller-5e4379f2e264bc6db578bff22f845dce7d69312938837166e21a1eb0137e1c3f.js">
+<link rel="modulepreload" href="/assets/controllers/token_list_controller-511b07555a16a92c0e330aa9a4567de5b0f550cb1b80fe04c681af0ac9b9fa2d.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/date_select_controller-b4685290e6f595db2b25c2568ef98fa7c79c75f0669e58d008329939399ec837.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/event_links_controller-731504635ef26b48c8f9c8c7dd4589209c1c74b31dcb7ca129e49f4c2082b2b2.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/preview_controller-b3f4959b9b70b7048412ca515f7ddac6254b9501bea552a022857fe4a3cc1443.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/tab_selector_controller-b6e481f73bcecd01df8e57a8d99b80dcc48d47a4e557b2a2cddd15616f0fdd48.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/toggle_disabled_controller-561f234e53a6a9e0a3fbf9bd6cc7e33b1116426b19c54a3452113bd731791d6d.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/track_toggle_controller-7ed42b0080cc27f785c8813ce5fe98900446b40013bd12c586a1f3bf6ee9c58e.js">
+<link rel="modulepreload" href="/assets/controllers/tracks/unfollow_confirm_controller-ee7112811c31bf59fe5f4d729b953871ed26d8ac1e8bab1b8015affb8daa52d5.js">
+<link rel="modulepreload" href="/assets/controllers/training_view_sync_controller-ef7ea0de2320c2784ac2c23eb9cceda07fe667ddb4b1a848bd4d24626f2e1f8f.js">
+<link rel="modulepreload" href="/assets/controllers/trigger_controller-79a811ed7cda332e44550822f39423602ff90aad66599d8769fb82af680a547e.js">
+<link rel="modulepreload" href="/assets/controllers/watcher_controller-6b11f05a911899ed78ba840d089088f74d1fa9aea060e39f85a1d0b5757ef805.js">
+<link rel="modulepreload" href="/assets/controllers/weigh_ins/body_fat_controller-5c686f2f4c16821f35a2f3c07a31c2c162b2a4768989ee5706177bba24826eb8.js">
+<link rel="modulepreload" href="/assets/controllers/weigh_ins/measurement_controller-a10e866aacb947568c563df23ca19ec6b53158953882d293a1ad7a9abba070b5.js">
+<link rel="modulepreload" href="/assets/controllers/weigh_ins/track_events_controller-14e8477feb1b9dc27d9d8891dcc2de2823a3bf36159a619625a40c8a1ac39f35.js">
+<link rel="modulepreload" href="/assets/controllers/weigh_ins_chart_controller-a95b2bc041e755b48ab08a7ae743d1db8a657b97f2f3795bc71d3a28e5bb320a.js">
+<link rel="modulepreload" href="/assets/controllers/weigh_ins_target_controller-eebc8ef9122c2d39cefd88eac9f48cc0510526d5df11142bab9837494dbe888d.js">
+<link rel="modulepreload" href="/assets/controllers/work_formula_contexts/edit_controller-dc05ba9eeed4262dfdbb58ee764826264d03b3542613f302f4dffc56a3d1e29d.js">
+
+
+    <!-- Start VWO Async SmartCode -->
+<link rel="preconnect" href="https://dev.visualwebsiteoptimizer.com">
+
+<!-- End VWO Async SmartCode -->
+
+  </head>
+  <body class="plan-track_events-workouts plan-track_events-workouts-new">
+    <!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-K7GWDHX"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+    
+      <div data-controller="plan--sidebar" data-plan--sidebar-show-class="show" data-plan--sidebar-hide-class="d-none" class="d-flex min-vh-100 position-relative">
+    <div class="p-2 border-end">
+      <span class="pt-2 sticky-top">
+        <a class="btn btn-close opacity-100" href="/plan/calendar"></a>
+      </span>
+    </div>
+    <div class="flex-fill border-end vh-100 overflow-x-hidden overflow-y-auto">
+      
+<div class="d-flex flex-column vh-100 overflow-y-auto">
+  <ul class="nav nav-justified nav-pills-underline pt-5 bg-white">
+  <li class="nav-item text-truncate">
+    <button type="button" class="nav-link active text-uppercase text-truncate">
+      <span class="mx-1">Entraînement</span>
+    </button>
+  </li>
+  <li class="nav-item text-truncate">
+    <button type="button" disabled="" class="nav-link text-uppercase text-truncate">
+      <span class="mx-1">Instructions</span>
+    </button>
+  </li>
+  <li class="nav-item text-truncate">
+    <button type="button" disabled="" class="nav-link text-uppercase text-truncate">
+      <span class="mx-1">Notes des entraîneurs</span>
+    </button>
+  </li>
+  <li class="nav-item text-truncate">
+    <button type="button" disabled="" class="nav-link text-uppercase text-truncate">
+      <span class="mx-1">Modules complémentaires</span>
+    </button>
+  </li>
+  <li class="nav-item text-truncate">
+    <button type="button" disabled="" class="nav-link text-uppercase text-truncate">
+      <span class="mx-1">Flux</span>
+    </button>
+  </li>
+  <li class="nav-item text-truncate">
+    <button type="button" disabled="" class="nav-link text-uppercase text-truncate">
+      <span class="mx-1">Classement</span>
+    </button>
+  </li>
+</ul>
+
+  <div class="tab-content overflow-y-auto h-100 d-flex flex-column">
+    <div id="workout" class="tab-pane flex-fill show active">
+      <div data-controller="plan--preview-event" data-plan--preview-event-remover-outlet=".content-item, .interval, .height-set, .reps-set, .time-sets-input, .weight-set, .complex-set" class="h-100 d-flex flex-column">
+        <div data-controller="plan--preview-events" class="pt-4 px-4">
+          
+            <div class="row mb-3">
+  
+    <input value="fr-FR" form="new_track_event" type="hidden" name="track_event[translations][content_locale]" id="track_event_translations_content_locale">
+  <input form="new_track_event" type="hidden" value="Workout" name="track_event[task_type]" id="track_event_task_type">
+  <div class="col-4">
+    <label class="form-label fw-bold" for="track_event_track_id">Piste</label>
+    <select required="required" form="new_track_event" data-plan--preview-events-target="source" data-action="plan--preview-events#loadPreview plan--preview-event#generatePreview" class="form-select bg-light" name="track_event[track_id]" id="track_event_track_id"><option value="">Sélectionner une piste</option>
+<optgroup label="---------------------"><option value="156552">Athlete Personal Track</option></optgroup></select>
+  </div>
+  <div class="col-auto">
+    <label class="form-label fw-bold" for="track_event_event_date">Date</label>
+    <input required="required" form="new_track_event" data-plan--preview-events-target="source" data-action="plan--preview-events#loadPreview plan--preview-event#generatePreview" class="form-control bg-light" value="2026-10-04" type="date" name="track_event[event_date]" id="track_event_event_date">
+  </div>
+  <div class="col">
+    <label class="form-label fw-bold" for="track_event_title">Titre personnalisé</label>
+    <span data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip shadow rounded-3" data-bs-placement="bottom" data-bs-title="Ajoutez un titre personnalisé que vos membres verront dans l'application btwb. Si vous laissez cela vide, l'application affichera le titre d'entraînement par défaut à la place." class="mdi mdi-information-slab-circle text-primary"></span>
+    <input placeholder="Titre personnalisé" maxlength="255" form="new_track_event" class="form-control bg-light" size="255" type="text" name="track_event[title]" id="track_event_title">
+  </div>
+</div>
+<div data-controller="plan--tag-select" class="row mb-3">
+  <div class="col-4">
+    <label class="form-label fw-bold" for="track_event_group_name">Nom du groupe</label>
+    <span data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip shadow rounded-3" data-bs-placement="bottom" data-bs-title="Non affiché aux membres. Lorsqu'il est disponible, utilisé par l'application pour regrouper horizontalement les événements de suivi pour la même piste le même jour avec la même valeur de nom de groupe." class="mdi mdi-information-slab-circle text-primary ms-1"></span>
+    <input maxlength="12" pattern="[a-zA-Z0-9]+" form="new_track_event" class="form-control bg-light" size="12" type="text" value="HreCZVzpJgEO" name="track_event[group_name]" id="track_event_group_name">
+  </div>
+</div>
+<button type="submit" form="new_track_event" formnovalidate="formnovalidate" formaction="/plan/previews/track_events" data-plan--preview-event-target="submit" data-turbo-stream="" data-turbo-frame="plan-session-track-events" class="btn visually-hidden">
+  Aperçu
+</button>
+
+          <form data-turbo-frame="plan-session-track-events" action="/plan/previews/track_events" accept-charset="UTF-8" method="get">
+  
+  <input data-plan--preview-events-target="destination" type="hidden" name="track_event[track_id]" id="track_event_track_id" value="">
+  <input data-plan--preview-events-target="destination" type="hidden" value="Workout" name="track_event[task_type]" id="track_event_task_type">
+  <input data-plan--preview-events-target="destination" type="hidden" value="2026-10-04" name="track_event[event_date]" id="track_event_event_date">
+  <input type="submit" name="commit" value="Créer un(e) Track event" data-plan--preview-events-target="submit" data-disable-with="Créer un(e) Track event" class="visually-hidden">
+</form>
+        </div>
+        <turbo-frame data-action="turbo:frame-load-&gt;plan--preview-event#generatePreview" data-plan--preview-event-frame-param="track_event_new_workout" class="new_workout flex-fill d-flex flex-column position-relative" id="track_event_new_workout" src="https://beyondthewhiteboard.com/plan/workouts/single/distance/18076" complete="">
+  <div class="px-4">
+  <nav style="--bs-breadcrumb-divider: '&gt;'; --bs-link-color: var(--bs-grey-700); --bs-link-hover-color: var(--bs-blue);">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item">
+        <a class="text-decoration-none" href="/plan/workouts">Nouvel Entraînement</a>
+      </li>
+      <li class="breadcrumb-item">
+        <a class="text-decoration-none" href="/plan/workouts/single">Sélectionner le mouvement</a>
+      </li>
+      <li class="breadcrumb-item active fw-bold">
+        Choisir Modèle
+      </li>
+    </ol>
+  </nav>
+  <h5 class="fs-5 mb-3">
+    3. Choisir Modèle
+  </h5>
+  <a class="btn btn-outline-grey-100 border-grey-300 text-primary me-2 mb-4 d-flex flex-row align-items-center position-relative" style="width: 190px;" href="/plan/workouts/single">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/18076.gif" width="40" height="40">
+    <span class="ms-2">
+      Bike Erg
+    </span>
+    <span class="position-absolute top-0 start-100 translate-middle text-dark">
+      <span class="mdi mdi-close-circle mdi-18px"></span>
+    </span>
+</a>  <div class="border rounded-1 p-3 bg-light" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+    <div class="workout-type-single-distance grid" style="--bs-columns: 4; --bs-gap: 1rem; column-gap: 0.5rem;">
+      
+    <a class="btn p-1 d-flex flex-row" href="/plan/workouts/single/distance/18076-bike-erg/single_distance/new">
+  <div class="me-2">
+    <div class="rounded-circle bg-workout-type" style="width: 20px; height: 20px;"></div>
+  </div>
+  <div class="text-start">
+    <div>
+      <span class="fw-semibold">
+        Distance Unique
+      </span>
+      <span data-bs-toggle="modal" data-bs-target="#distance_single_distance-modal" data-controller="plan--styletip" data-action="click-&gt;plan--styletip#showModal" class="mdi mdi-information-outline"></span>
+    </div>
+    <div class="fs-sm">
+      Une distance unique pour le temps.
+    </div>
+  </div>
+</a><div id="distance_single_distance-modal" class="modal fade" style="--bs-modal-width: 550px;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 px-4 pt-4 pb-1">
+        <div class="modal-title fw-semibold" style="font-size: 1.375rem;">
+          Distance Unique
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-grey-800 px-4 pt-1 pb-4">
+        <p>
+          Une distance unique pour le temps.
+        </p>
+        <h5>
+          Exemples d'Entrainements:
+        </h5>
+        <div class="d-flex flew-row">
+          <div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run 5 km TT
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Run 5 km</p>
+
+<p>This is an all out effort for time.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+<div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run 1 mi TT
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Run 1 mi</p>
+
+<p>This is an all out effort for time.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <a class="btn p-1 d-flex flex-row" href="/plan/workouts/single/distance/18076-bike-erg/monostructural_sets/new">
+  <div class="me-2">
+    <div class="rounded-circle bg-workout-type" style="width: 20px; height: 20px;"></div>
+  </div>
+  <div class="text-start">
+    <div>
+      <span class="fw-semibold">
+        Intervalles / Répétitions
+      </span>
+      <span data-bs-toggle="modal" data-bs-target="#distance_monostructural_sets-modal" data-controller="plan--styletip" data-action="click-&gt;plan--styletip#showModal" class="mdi mdi-information-outline"></span>
+    </div>
+    <div class="fs-sm">
+      Plusieurs efforts chacun effectués pour le temps.
+    </div>
+  </div>
+</a><div id="distance_monostructural_sets-modal" class="modal fade" style="--bs-modal-width: 550px;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 px-4 pt-4 pb-1">
+        <div class="modal-title fw-semibold" style="font-size: 1.375rem;">
+          Intervalles / Répétitions
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-grey-800 px-4 pt-1 pb-4">
+        <p>
+          Plusieurs efforts chacun effectués pour le temps.
+        </p>
+        <h5>
+          Exemples d'Entrainements:
+        </h5>
+        <div class="d-flex flew-row">
+          <div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run : 4x 400 m, rest 2 mins
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Each for time:
+<br>Run: 4x 400 m</p>
+
+<p>Rest 2 mins between efforts.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+<div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run : 4x 800 m
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Each for time:
+<br>Run: 4x 800 m</p>
+
+<p>Rest as needed between efforts.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <a class="btn p-1 d-flex flex-row" href="/plan/workouts/single/distance/18076-bike-erg/deathby_distance/new">
+  <div class="me-2">
+    <div class="rounded-circle bg-workout-type" style="width: 20px; height: 20px;"></div>
+  </div>
+  <div class="text-start">
+    <div>
+      <span class="fw-semibold">
+        Death By Distance
+      </span>
+      <span data-bs-toggle="modal" data-bs-target="#distance_deathby_distance-modal" data-controller="plan--styletip" data-action="click-&gt;plan--styletip#showModal" class="mdi mdi-information-outline"></span>
+    </div>
+    <div class="fs-sm">
+      Le nombre de trajets augmente à chaque intervalle.
+    </div>
+  </div>
+</a><div id="distance_deathby_distance-modal" class="modal fade" style="--bs-modal-width: 550px;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 px-4 pt-4 pb-1">
+        <div class="modal-title fw-semibold" style="font-size: 1.375rem;">
+          Death By Distance
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-grey-800 px-4 pt-1 pb-4">
+        <p>
+          Le nombre de trajets augmente à chaque intervalle.
+        </p>
+        <h5>
+          Exemples d'Entrainements:
+        </h5>
+        <div class="d-flex flew-row">
+          <div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    "Death By" - Run : 10 m + 10 m / 1 min
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Death By Run</p>
+
+<p>With a continuously running clock perform:
+<br>Run 10 m in the first 1 min
+<br>Run 10 m + 10 m in the second 1 min
+<br>Run 10 m + 20 m in the third 1 min
+<br>...
+<br>Continuing this for as long as you are able.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <a class="btn p-1 d-flex flex-row" href="/plan/workouts/single/distance/18076-bike-erg/on_the_minute/new">
+  <div class="me-2">
+    <div class="rounded-circle bg-workout-type" style="width: 20px; height: 20px;"></div>
+  </div>
+  <div class="text-start">
+    <div>
+      <span class="fw-semibold">
+        Sur La Minute
+      </span>
+      <span data-bs-toggle="modal" data-bs-target="#distance_on_the_minute-modal" data-controller="plan--styletip" data-action="click-&gt;plan--styletip#showModal" class="mdi mdi-information-outline"></span>
+    </div>
+    <div class="fs-sm">
+      Démarrez chaque série au début d'une nouvelle minute.
+    </div>
+  </div>
+</a><div id="distance_on_the_minute-modal" class="modal fade" style="--bs-modal-width: 550px;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 px-4 pt-4 pb-1">
+        <div class="modal-title fw-semibold" style="font-size: 1.375rem;">
+          Sur La Minute
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-grey-800 px-4 pt-1 pb-4">
+        <p>
+          Démarrez chaque série au début d'une nouvelle minute.
+        </p>
+        <h5>
+          Exemples d'Entrainements:
+        </h5>
+        <div class="d-flex flew-row">
+          <div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run : 4x 400 m, every 4 mins
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Go every 4 mins:
+<br>Run: 4x 400 m</p>
+
+<p>Each for time.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+<div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run : 10x 100 m, every 1 min
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Go every 1 min:
+<br>Run: 10x 100 m</p>
+
+<p>Each for time.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <a class="btn p-1 d-flex flex-row" href="/plan/workouts/single/distance/18076-bike-erg/distance_tabata/new">
+  <div class="me-2">
+    <div class="rounded-circle bg-workout-type" style="width: 20px; height: 20px;"></div>
+  </div>
+  <div class="text-start">
+    <div>
+      <span class="fw-semibold">
+        Tabata
+      </span>
+      <span data-bs-toggle="modal" data-bs-target="#distance_distance_tabata-modal" data-controller="plan--styletip" data-action="click-&gt;plan--styletip#showModal" class="mdi mdi-information-outline"></span>
+    </div>
+    <div class="fs-sm">
+      Alterne entre des périodes de travail et de repos.
+    </div>
+  </div>
+</a><div id="distance_distance_tabata-modal" class="modal fade" style="--bs-modal-width: 550px;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 px-4 pt-4 pb-1">
+        <div class="modal-title fw-semibold" style="font-size: 1.375rem;">
+          Tabata
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-grey-800 px-4 pt-1 pb-4">
+        <p>
+          Alterne entre des périodes de travail et de repos.
+        </p>
+        <h5>
+          Exemples d'Entrainements:
+        </h5>
+        <div class="d-flex flew-row">
+          <div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    "Tabata" - Row : 8 x 20 secs / 10 secs
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Tabata Row</p>
+
+<p>The Tabata interval is 20 secs of work followed by 10 secs of rest for 8 intervals.
+<br>Tabata score is the total distance performed in all of the intervals.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/6.gif" width="40" height="40">
+  </div>
+</div>
+<div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    "Tabata" - Run : 8 x 20 secs / 10 secs
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Tabata Run</p>
+
+<p>The Tabata interval is 20 secs of work followed by 10 secs of rest for 8 intervals.
+<br>Tabata score is the shortest distance performed in any of the intervals.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <a class="btn p-1 d-flex flex-row" href="/plan/workouts/single/distance/18076-bike-erg/for_distance/new">
+  <div class="me-2">
+    <div class="rounded-circle bg-workout-type" style="width: 20px; height: 20px;"></div>
+  </div>
+  <div class="text-start">
+    <div>
+      <span class="fw-semibold">
+        Pour la Distance
+      </span>
+      <span data-bs-toggle="modal" data-bs-target="#distance_for_distance-modal" data-controller="plan--styletip" data-action="click-&gt;plan--styletip#showModal" class="mdi mdi-information-outline"></span>
+    </div>
+    <div class="fs-sm">
+      Plusieurs efforts chaque pour la distance.
+    </div>
+  </div>
+</a><div id="distance_for_distance-modal" class="modal fade" style="--bs-modal-width: 550px;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 px-4 pt-4 pb-1">
+        <div class="modal-title fw-semibold" style="font-size: 1.375rem;">
+          Pour la Distance
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-grey-800 px-4 pt-1 pb-4">
+        <p>
+          Plusieurs efforts chaque pour la distance.
+        </p>
+        <h5>
+          Exemples d'Entrainements:
+        </h5>
+        <div class="d-flex flew-row">
+          <div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Row : 1x 5 mins
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>For distance:
+<br>Row: 1x 5 mins</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/6.gif" width="40" height="40">
+  </div>
+</div>
+<div class="d-flex flex-column bg-light p-2 border rounded-1 me-2 w-100" style="--bs-light-rgb: var(--btwb-alt-light-rgb);">
+  <div class="fs-5 h6">
+    Run : 15x 20 secs, rest 40 secs
+  </div>
+  <div class="flex-fill text-grey-800" style="margin-bottom: -0.5rem;">
+    <p>Each for distance:
+<br>Run, 15x 20 secs</p>
+
+<p>Rest 40 secs between efforts.</p>
+  </div>
+  <div class="d-flex flex-row flex-wrap">
+      <img class="rounded-circle" src="https://s3.amazonaws.com/media.btwb.co/movement_gifs/100x100/5.gif" width="40" height="40">
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>  </div>
+</div>
+</turbo-frame>
+      </div>
+    </div>
+  </div>
+</div>
+
+    </div>
+    <div class="flex-shrink-0 mx-4 pt-5 pb-3 w-25 vh-100 overflow-hidden">
+      <ul class="nav nav-justified nav-pills-underline mb-2" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button type="button" data-bs-toggle="tab" data-bs-target="#session" class="nav-link text-uppercase w-100 active" aria-selected="true" role="tab">
+            Séance
+</button>        </li>
+      </ul>
+      <div class="tab-content h-100 pb-5 overflow-auto">
+        <div id="session" class="tab-pane show active pb-3" role="tabpanel">
+          <turbo-frame id="plan-session-track-events" src="https://beyondthewhiteboard.com/plan/previews/track_events?track_event%5Btrack_id%5D=&amp;track_event%5Btask_type%5D=Workout&amp;track_event%5Bevent_date%5D=2026-10-04&amp;commit=Cr%C3%A9er+un%28e%29+Track+event" complete="">
+  <div id="session-preview-event-date" class="fs-6 text-center pb-2">
+    4 octobre 2026
+  </div>
+  
+    <div id="preview_track_event" class="rounded-1 mb-2 active preview_track_event track-orange">
+  <div class="dropdown d-flex flex-row align-items-center fs-5 ps-2">
+        <span class="badge rounded-pill me-1 badge-track-orange" style="--bs-badge-padding-y: 0.125rem; --bs-badge-padding-x: 0.3125rem; --bs-badge-font-size: 0.6875rem; --bs-badge-font-weight: 400; padding-top: 0.1875rem; min-width: 30px;">
+    0
+</span>
+    <div class="flex-fill fw-bold text-truncate py-2">
+      Entraînement
+    </div>
+      <span class="fw-bold fs-6 rounded-end-1 p-2 text-uppercase" style="border-bottom-right-radius: 0 !important; background-color: var(--btwb-sidebar-yellow);">
+        Brouillon
+      </span>
+</div>  <div class="body_track_event d-flex flex-column p-2 overflow-y-auto rounded-bottom-1" style="max-height: 208px;">
+      <div class="description_workout_track_event flex-fill h-100">
+        <p></p>
+</div></div></div>
+  <div class="dropdown">
+    <button type="button" disabled="disabled" data-bs-toggle="dropdown" class="btn btn-outline-grey-200 rounded-1 w-100" style="--bs-btn-font-size: 1.25rem; --bs-btn-color: var(--bs-grey-600); --bs-btn-disabled-color: var(--bs-grey-600); --bs-btn-hover-color: var(--bs-grey-700); --bs-btn-active-color: var(--bs-grey-700); --bs-btn-active-bg: var(--bs-grey-100); --bs-btn-hover-bg: var(--bs-grey-100);">
+      +
+</button>    <ul class="dropdown-menu w-100">
+      <li>
+        <a data-turbo-frame="_top" class="dropdown-item" href="/plan/track_events/workouts/new?d=2026-10-04&amp;t=">Nouvel entraînement</a>
+      </li>
+      <li>
+        <a data-turbo-frame="_top" class="dropdown-item" href="/plan/track_events/notes/new?d=2026-10-04&amp;t=">Nouvelle note</a>
+      </li>
+      <li>
+        <a data-turbo-frame="_top" class="dropdown-item" href="/plan/track_events/weigh_ins/new?d=2026-10-04&amp;t=">Nouvelle pesée</a>
+      </li>
+    </ul>
+  </div>
+  
+</turbo-frame>
+        </div>
+      </div>
+    </div>
+    <div class="plan-right-button-panel">
+      <div class="btn-toolbar flex-column h-100 position-relative">
+  <div class="btn-group-vertical w-100">
+    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-myfeed" data-bs-title="Mon fil d'actualités" class="btn btn-sidebar-menu sidebar-my-feed">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <img class="rounded-circle sidebar-icon sidebar-icon-hover sidebar-icon-active" src="https://beyondthewhiteboard.com/avatars/0" width="24" height="24">
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#CC1000"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    
+    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-track-events" data-bs-title="Entraînements Prévus Précédemment" class="btn btn-sidebar-menu sidebar-track-events">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M11.5 9C10.12 9 9 10.12 9 11.5C9 12.88 10.12 14 11.5 14C12.88 14 14 12.88 14 11.5C14 10.12 12.88 9 11.5 9ZM20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM16.79 18.21L13.88 15.3C13.19 15.74 12.37 16 11.49 16C9.01 16 7 13.99 7 11.5C7 9.01 9.01 7 11.5 7C13.99 7 16 9.01 16 11.5C16 12.38 15.74 13.19 15.3 13.89L18.21 16.79L16.79 18.21Z" fill="#FBBC05"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M12 9C10.62 9 9.5 10.12 9.5 11.5C9.5 12.88 10.62 14 12 14C13.38 14 14.5 12.88 14.5 11.5C14.5 10.12 13.38 9 12 9ZM20.5 4H4.5C3.4 4 2.5 4.9 2.5 6V18C2.5 19.1 3.4 20 4.5 20H20.5C21.6 20 22.5 19.1 22.5 18V6C22.5 4.9 21.6 4 20.5 4ZM17.29 18.21L14.38 15.3C13.69 15.74 12.87 16 11.99 16C9.51 16 7.5 13.99 7.5 11.5C7.5 9.01 9.51 7 12 7C14.49 7 16.5 9.01 16.5 11.5C16.5 12.38 16.24 13.19 15.8 13.89L18.71 16.79L17.29 18.21Z" fill="#C99604"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M11.75 9C10.37 9 9.25 10.12 9.25 11.5C9.25 12.88 10.37 14 11.75 14C13.13 14 14.25 12.88 14.25 11.5C14.25 10.12 13.13 9 11.75 9ZM20.25 4H4.25C3.15 4 2.25 4.9 2.25 6V18C2.25 19.1 3.15 20 4.25 20H20.25C21.35 20 22.25 19.1 22.25 18V6C22.25 4.9 21.35 4 20.25 4ZM17.04 18.21L14.13 15.3C13.44 15.74 12.62 16 11.74 16C9.26 16 7.25 13.99 7.25 11.5C7.25 9.01 9.26 7 11.75 7C14.24 7 16.25 9.01 16.25 11.5C16.25 12.38 15.99 13.19 15.55 13.89L18.46 16.79L17.04 18.21Z" fill="#977103"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M12.5 2C6.97 2 2.5 6.47 2.5 12C2.5 17.53 6.97 22 12.5 22C18.03 22 22.5 17.53 22.5 12C22.5 6.47 18.03 2 12.5 2ZM17.5 15.59L16.09 17L12.5 13.41L8.91 17L7.5 15.59L11.09 12L7.5 8.41L8.91 7L12.5 10.59L16.09 7L17.5 8.41L13.91 12L17.5 15.59Z" fill="#C99604"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-workouts" data-bs-title="Entraînements Populaires &amp; En Vedette" class="btn btn-sidebar-menu sidebar-popular-workouts">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M9.68 13.19L12 11.43L14.31 13.19L13.43 10.34L15.75 8.5H12.91L12 5.69L11.09 8.5H8.25L10.56 10.34L9.68 13.19ZM20 9.5C20 5.08 16.42 1.5 12 1.5C7.58 1.5 4 5.08 4 9.5C4 11.53 4.76 13.37 6 14.78V22.5L12 20.5L18 22.5V14.78C19.24 13.37 20 11.53 20 9.5ZM12 3.5C15.31 3.5 18 6.19 18 9.5C18 12.81 15.31 15.5 12 15.5C8.69 15.5 6 12.81 6 9.5C6 6.19 8.69 3.5 12 3.5Z" fill="#A91AEE"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M9.68 13.19L12 11.43L14.31 13.19L13.43 10.34L15.75 8.5H12.91L12 5.69L11.09 8.5H8.25L10.56 10.34L9.68 13.19ZM20 9.5C20 5.08 16.42 1.5 12 1.5C7.58 1.5 4 5.08 4 9.5C4 11.53 4.76 13.37 6 14.78V22.5L12 20.5L18 22.5V14.78C19.24 13.37 20 11.53 20 9.5ZM12 3.5C15.31 3.5 18 6.19 18 9.5C18 12.81 15.31 15.5 12 15.5C8.69 15.5 6 12.81 6 9.5C6 6.19 8.69 3.5 12 3.5Z" fill="#6F129D"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M10.4925 13.19L12.8125 11.43L15.1225 13.19L14.2425 10.34L16.5625 8.5H13.7225L12.8125 5.69L11.9025 8.5H9.0625L11.3725 10.34L10.4925 13.19ZM20.8125 9.5C20.8125 5.08 17.2325 1.5 12.8125 1.5C8.3925 1.5 4.8125 5.08 4.8125 9.5C4.8125 11.53 5.5725 13.37 6.8125 14.78V22.5L12.8125 20.5L18.8125 22.5V14.78C20.0525 13.37 20.8125 11.53 20.8125 9.5ZM12.8125 3.5C16.1225 3.5 18.8125 6.19 18.8125 9.5C18.8125 12.81 16.1225 15.5 12.8125 15.5C9.5025 15.5 6.8125 12.81 6.8125 9.5C6.8125 6.19 9.5025 3.5 12.8125 3.5Z" fill="#531174"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#6F129D"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-favorites" data-bs-title="Signets" class="btn btn-sidebar-menu sidebar-bookmarks">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M19 18L21 19V3C21 1.9 20.1 1 19 1H8.99C7.89 1 7 1.9 7 3H17C18.1 3 19 3.9 19 5V18ZM15 5H5C3.9 5 3 5.9 3 7V23L10 20L17 23V7C17 5.9 16.1 5 15 5Z" fill="#E8178A"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M19 18L21 19V3C21 1.9 20.1 1 19 1H8.99C7.89 1 7 1.9 7 3H17C18.1 3 19 3.9 19 5V18ZM15 5H5C3.9 5 3 5.9 3 7V23L10 20L17 23V7C17 5.9 16.1 5 15 5Z" fill="#AE1168"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M19.75 18L21.75 19V3C21.75 1.9 20.85 1 19.75 1H9.74C8.64 1 7.75 1.9 7.75 3H17.75C18.85 3 19.75 3.9 19.75 5V18ZM15.75 5H5.75C4.65 5 3.75 5.9 3.75 7V23L10.75 20L17.75 23V7C17.75 5.9 16.85 5 15.75 5Z" fill="#740C45"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#AE1168"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-todos" data-bs-title="Liste de tâches" class="btn btn-sidebar-menu sidebar-hit-list">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M14 9H3V11H14V9ZM14 5H3V7H14V5ZM18 13V9H16V13H12V15H16V19H18V15H22V13H18ZM3 15H10V13H3V15Z" fill="#EA8C00"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M13.5 9H2.5V11H13.5V9ZM13.5 5H2.5V7H13.5V5ZM17.5 13V9H15.5V13H11.5V15H15.5V19H17.5V15H21.5V13H17.5ZM2.5 15H9.5V13H2.5V15Z" fill="#BB7000"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M14.25 9H3.25V11H14.25V9ZM14.25 5H3.25V7H14.25V5ZM18.25 13V9H16.25V13H12.25V15H16.25V19H18.25V15H22.25V13H18.25ZM3.25 15H10.25V13H3.25V15Z" fill="#8C5400"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#BB7000"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-activities" data-bs-title="Activité" class="btn btn-sidebar-menu sidebar-activity">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M16.5 3H5.5C4.4 3 3.5 3.9 3.5 5V19C3.5 20.1 4.4 21 5.5 21H19.5C20.6 21 21.5 20.1 21.5 19V8L16.5 3ZM7.5 7H12.5V9H7.5V7ZM17.5 17H7.5V15H17.5V17ZM17.5 13H7.5V11H17.5V13ZM15.5 9V5L19.5 9H15.5Z" fill="#34A853"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M16 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V8L16 3ZM7 7H12V9H7V7ZM17 17H7V15H17V17ZM17 13H7V11H17V13ZM15 9V5L19 9H15Z" fill="#2A8642"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M16.75 3H5.75C4.65 3 3.75 3.9 3.75 5V19C3.75 20.1 4.65 21 5.75 21H19.75C20.85 21 21.75 20.1 21.75 19V8L16.75 3ZM7.75 7H12.75V9H7.75V7ZM17.75 17H7.75V15H17.75V17ZM17.75 13H7.75V11H17.75V13ZM15.75 9V5L19.75 9H15.75Z" fill="#1F6532"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#2A8642"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-members" data-bs-title="Trouver des athlètes" class="btn btn-sidebar-menu sidebar-find-athletes">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M17 12C18.38 12 19.49 10.88 19.49 9.5C19.49 8.12 18.38 7 17 7C15.62 7 14.5 8.12 14.5 9.5C14.5 10.88 15.62 12 17 12ZM9.5 11C11.16 11 12.49 9.66 12.49 8C12.49 6.34 11.16 5 9.5 5C7.84 5 6.5 6.34 6.5 8C6.5 9.66 7.84 11 9.5 11ZM17 14C15.17 14 11.5 14.92 11.5 16.75V19H22.5V16.75C22.5 14.92 18.83 14 17 14ZM9.5 13C7.17 13 2.5 14.17 2.5 16.5V19H9.5V16.75C9.5 15.9 9.83 14.41 11.87 13.28C11 13.1 10.16 13 9.5 13Z" fill="#7B61FF"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M16.5 12C17.88 12 18.99 10.88 18.99 9.5C18.99 8.12 17.88 7 16.5 7C15.12 7 14 8.12 14 9.5C14 10.88 15.12 12 16.5 12ZM9 11C10.66 11 11.99 9.66 11.99 8C11.99 6.34 10.66 5 9 5C7.34 5 6 6.34 6 8C6 9.66 7.34 11 9 11ZM16.5 14C14.67 14 11 14.92 11 16.75V19H22V16.75C22 14.92 18.33 14 16.5 14ZM9 13C6.67 13 2 14.17 2 16.5V19H9V16.75C9 15.9 9.33 14.41 11.37 13.28C10.5 13.1 9.66 13 9 13Z" fill="#624ECC"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M17.25 12C18.63 12 19.74 10.88 19.74 9.5C19.74 8.12 18.63 7 17.25 7C15.87 7 14.75 8.12 14.75 9.5C14.75 10.88 15.87 12 17.25 12ZM9.75 11C11.41 11 12.74 9.66 12.74 8C12.74 6.34 11.41 5 9.75 5C8.09 5 6.75 6.34 6.75 8C6.75 9.66 8.09 11 9.75 11ZM17.25 14C15.42 14 11.75 14.92 11.75 16.75V19H22.75V16.75C22.75 14.92 19.08 14 17.25 14ZM9.75 13C7.42 13 2.75 14.17 2.75 16.5V19H9.75V16.75C9.75 15.9 10.08 14.41 12.12 13.28C11.25 13.1 10.41 13 9.75 13Z" fill="#4A3A99"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#624ECC"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" disabled="disabled" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-committed-clubs" data-bs-title="Club Committed" class="btn btn-sidebar-menu sidebar-committed-club">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" width="43" height="42" viewBox="0 0 43 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M18 25.75L21 22.81C20.61 22.77 20.32 22.75 20 22.75C17.33 22.75 12 24.09 12 26.75V28.75H21L18 25.75ZM20 20.75C22.21 20.75 24 18.96 24 16.75C24 14.54 22.21 12.75 20 12.75C17.79 12.75 16 14.54 16 16.75C16 18.96 17.79 20.75 20 20.75Z" fill="#FF1400"></path>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M24.47 29.25L21 25.75L22.4 24.34L24.47 26.42L29.6 21.25L31 22.66L24.47 29.25Z" fill="#FF1400"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M8.625 16.75L11.625 13.81C11.235 13.77 10.945 13.75 10.625 13.75C7.955 13.75 2.625 15.09 2.625 17.75V19.75H11.625L8.625 16.75ZM10.625 11.75C12.835 11.75 14.625 9.96 14.625 7.75C14.625 5.54 12.835 3.75 10.625 3.75C8.415 3.75 6.625 5.54 6.625 7.75C6.625 9.96 8.415 11.75 10.625 11.75Z" fill="#CC1000"></path>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M15.095 20.25L11.625 16.75L13.025 15.34L15.095 17.42L20.225 12.25L21.625 13.66L15.095 20.25Z" fill="#CC1000"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M9.3125 16.75L12.3125 13.81C11.9225 13.77 11.6325 13.75 11.3125 13.75C8.6425 13.75 3.3125 15.09 3.3125 17.75V19.75H12.3125L9.3125 16.75ZM11.3125 11.75C13.5225 11.75 15.3125 9.96 15.3125 7.75C15.3125 5.54 13.5225 3.75 11.3125 3.75C9.1025 3.75 7.3125 5.54 7.3125 7.75C7.3125 9.96 9.1025 11.75 11.3125 11.75Z" fill="#990C00"></path>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M15.7825 20.25L12.3125 16.75L13.7125 15.34L15.7825 17.42L20.9125 12.25L22.3125 13.66L15.7825 20.25Z" fill="#990C00"></path>
+        </svg>
+        <svg class="sidebar-close d-none" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#990C00"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" disabled="disabled" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-free-programs" data-bs-title="Cycles" class="btn btn-sidebar-menu sidebar-free-programs">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.0001 12C12.0001 9 14.5001 6.5 17.5001 6.5C20.0701 6.5 22.2701 8.33 22.8501 10.74C23.0001 11.38 22.5301 12 21.8801 12H12.0001ZM12.0001 12C12.0001 15 9.50012 17.5 6.50012 17.5C3.93012 17.5 1.73012 15.67 1.15012 13.26C1.00012 12.62 1.47012 12 2.12012 12H12.0001ZM12.0001 12C9.00012 12 6.50012 9.5 6.50012 6.5C6.50012 3.93 8.33012 1.73 10.7401 1.15C11.3801 1 12.0001 1.47 12.0001 2.12V12ZM12.0001 12C15.0001 12 17.5001 14.5 17.5001 17.5C17.5001 20.07 15.6701 22.27 13.2601 22.85C12.6201 23 12.0001 22.53 12.0001 21.88V12Z" fill="#3D3F65"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.0001 12C12.0001 9 14.5001 6.5 17.5001 6.5C20.0701 6.5 22.2701 8.33 22.8501 10.74C23.0001 11.38 22.5301 12 21.8801 12H12.0001ZM12.0001 12C12.0001 15 9.50012 17.5 6.50012 17.5C3.93012 17.5 1.73012 15.67 1.15012 13.26C1.00012 12.62 1.47012 12 2.12012 12H12.0001ZM12.0001 12C9.00012 12 6.50012 9.5 6.50012 6.5C6.50012 3.93 8.33012 1.73 10.7401 1.15C11.3801 1 12.0001 1.47 12.0001 2.12V12ZM12.0001 12C15.0001 12 17.5001 14.5 17.5001 17.5C17.5001 20.07 15.6701 22.27 13.2601 22.85C12.6201 23 12.0001 22.53 12.0001 21.88V12Z" fill="#3D3F65"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.0001 12.0001C12.0001 9.00012 14.5001 6.50012 17.5001 6.50012C20.0701 6.50012 22.2701 8.33012 22.8501 10.7401C23.0001 11.3801 22.5301 12.0001 21.8801 12.0001H12.0001ZM12.0001 12.0001C12.0001 15.0001 9.50012 17.5001 6.50012 17.5001C3.93012 17.5001 1.73012 15.6701 1.15012 13.2601C1.00012 12.6201 1.47012 12.0001 2.12012 12.0001H12.0001ZM12.0001 12.0001C9.00012 12.0001 6.50012 9.50012 6.50012 6.50012C6.50012 3.93012 8.33012 1.73012 10.7401 1.15012C11.3801 1.00012 12.0001 1.47012 12.0001 2.12012V12.0001ZM12.0001 12.0001C15.0001 12.0001 17.5001 14.5001 17.5001 17.5001C17.5001 20.0701 15.6701 22.2701 13.2601 22.8501C12.6201 23.0001 12.0001 22.5301 12.0001 21.8801V12.0001Z" fill="#3D3F65"></path>
+        </svg>
+        <svg class="sidebar-close d-none" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#3D3F65"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>  </div>
+  <div class="flex-fill"></div>
+  <div class="btn-group-vertical w-100">
+    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-blog-articles" data-bs-title="Quoi de neuf" class="btn btn-sidebar-menu sidebar-whats-new">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M23.5 11.9952L21.06 9.21516L21.4 5.53516L17.79 4.71516L15.9 1.53516L12.5 2.99516L9.1 1.53516L7.21 4.71516L3.6 5.52516L3.94 9.20516L1.5 11.9952L3.94 14.7752L3.6 18.4652L7.21 19.2852L9.1 22.4652L12.5 20.9952L15.9 22.4552L17.79 19.2752L21.4 18.4552L21.06 14.7752L23.5 11.9952ZM13.5 16.9952H11.5V14.9952H13.5V16.9952ZM13.5 12.9952H11.5V6.99516H13.5V12.9952Z" fill="#34A853"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M23 11.9952L20.56 9.21516L20.9 5.53516L17.29 4.71516L15.4 1.53516L12 2.99516L8.6 1.53516L6.71 4.71516L3.1 5.52516L3.44 9.20516L1 11.9952L3.44 14.7752L3.1 18.4652L6.71 19.2852L8.6 22.4652L12 20.9952L15.4 22.4552L17.29 19.2752L20.9 18.4552L20.56 14.7752L23 11.9952ZM13 16.9952H11V14.9952H13V16.9952ZM13 12.9952H11V6.99516H13V12.9952Z" fill="#2A8642"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M23.75 11.9952L21.31 9.21516L21.65 5.53516L18.04 4.71516L16.15 1.53516L12.75 2.99516L9.35 1.53516L7.46 4.71516L3.85 5.52516L4.19 9.20516L1.75 11.9952L4.19 14.7752L3.85 18.4652L7.46 19.2852L9.35 22.4652L12.75 20.9952L16.15 22.4552L18.04 19.2752L21.65 18.4552L21.31 14.7752L23.75 11.9952ZM13.75 16.9952H11.75V14.9952H13.75V16.9952ZM13.75 12.9952H11.75V6.99516H13.75V12.9952Z" fill="#1F6532"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#2A8642"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>    <button type="button" data-plan--sidebar-target="button" data-action="click-&gt;bridges--bootstrap-tooltip#hide click-&gt;plan--sidebar#onToggle" data-controller="bridges--bootstrap-tooltip" data-bs-toggle="tooltip" data-bs-custom-class="plan-tooltip sidebar-tooltip shadow rounded-3" data-bs-placement="left" data-plan--sidebar-panel-param="sidebar-articles" data-bs-title="FAQ" class="btn btn-sidebar-menu sidebar-faqs">
+      <span class="sidebar-icon-container d-inline-block rounded-circle">
+        <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 19H11V17H13V19ZM15.07 11.25L14.17 12.17C13.45 12.9 13 13.5 13 15H11V14.5C11 13.4 11.45 12.4 12.17 11.67L13.41 10.41C13.78 10.05 14 9.55 14 9C14 7.9 13.1 7 12 7C10.9 7 10 7.9 10 9H8C8 6.79 9.79 5 12 5C14.21 5 16 6.79 16 9C16 9.88 15.64 10.68 15.07 11.25Z" fill="#4554D6"></path>
+        </svg>
+        <svg class="sidebar-icon-hover d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 19H11V17H13V19ZM15.07 11.25L14.17 12.17C13.45 12.9 13 13.5 13 15H11V14.5C11 13.4 11.45 12.4 12.17 11.67L13.41 10.41C13.78 10.05 14 9.55 14 9C14 7.9 13.1 7 12 7C10.9 7 10 7.9 10 9H8C8 6.79 9.79 5 12 5C14.21 5 16 6.79 16 9C16 9.88 15.64 10.68 15.07 11.25Z" fill="#3743AB"></path>
+        </svg>
+        <svg class="sidebar-icon-active d-none" xmlns="http://www.w3.org/2000/svg" width="25" height="24" viewBox="0 0 25 24" fill="none">
+          <path d="M12.75 2C7.23 2 2.75 6.48 2.75 12C2.75 17.52 7.23 22 12.75 22C18.27 22 22.75 17.52 22.75 12C22.75 6.48 18.27 2 12.75 2ZM13.75 19H11.75V17H13.75V19ZM15.82 11.25L14.92 12.17C14.2 12.9 13.75 13.5 13.75 15H11.75V14.5C11.75 13.4 12.2 12.4 12.92 11.67L14.16 10.41C14.53 10.05 14.75 9.55 14.75 9C14.75 7.9 13.85 7 12.75 7C11.65 7 10.75 7.9 10.75 9H8.75C8.75 6.79 10.54 5 12.75 5C14.96 5 16.75 6.79 16.75 9C16.75 9.88 16.39 10.68 15.82 11.25Z" fill="#293280"></path>
+        </svg>
+        <svg class="sidebar-close d-none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.47 2 2 6.47 2 12C2 17.53 6.47 22 12 22C17.53 22 22 17.53 22 12C22 6.47 17.53 2 12 2ZM17 15.59L15.59 17L12 13.41L8.41 17L7 15.59L10.59 12L7 8.41L8.41 7L12 10.59L15.59 7L17 8.41L13.41 12L17 15.59Z" fill="#3743AB"></path>
+        </svg>
+      </span>
+      <span class="sidebar-outline"></span>
+</button>  </div>
+</div>
+
+    </div>
+    <div data-plan--sidebar-target="sidebar" class="plan-right-panel shadow px-3 vh-100 overflow-scroll position-relative d-none">
+      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-myfeed" src="/plan/sidebar/members/0?variant=myfeed">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-open-workouts" src="/plan/sidebar/open_workouts">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-track-events" src="/plan/sidebar/track_events">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none h-100" id="sidebar-workouts" src="/plan/sidebar/workouts/new">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-favorites" src="/plan/sidebar/favorites">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-todos" src="/plan/sidebar/todos">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-activities" src="/plan/sidebar/activities">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="h-100 d-none" id="sidebar-members" src="/plan/sidebar/members">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="h-100 d-none" id="sidebar-committed-clubs" src="/plan/sidebar/committed_clubs">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="h-100 d-none" id="sidebar-free-programs" src="/plan/sidebar/free_programs">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-blog-articles" src="/plan/sidebar/blog_articles">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>      <turbo-frame loading="lazy" data-plan--sidebar-target="panel" data-autoscroll-block="start" data-autoscroll-behavior="smooth" class="d-none" id="sidebar-articles" src="/plan/sidebar/articles">
+        <div class="position-relative mt-3">
+          <div class="spinner-border text-primary bg-white position-absolute top-0 end-0 d-none" role="status">
+  <span class="visually-hidden">Chargement ...</span>
+</div>
+
+        </div>
+</turbo-frame>    </div>
+  </div>
+
+    
+
+
+</body></html>
