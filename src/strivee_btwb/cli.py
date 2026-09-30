@@ -169,7 +169,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_garmin_commands(sub)
 
-    p = sub.add_parser("run", help="Run all steps: capture → analyse → preview → post")
+    p = sub.add_parser("run", help="Run the week: capture → analyse → preview → post → verify")
     p.add_argument("--days", metavar="Mon,Tue,...", help=_DAYS_HELP)
     p.add_argument("--week", metavar="YYYY-MM-DD", help=_WEEK_HELP)
     p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation before posting")
@@ -178,6 +178,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--relevel", action="store_true", help=_RELEVEL_HELP)
 
     return parser
+
+
+def _confirm_unconfirmed(names: list[str]) -> bool:
+    """Ask before posting blocks whose movement BTWB may not have — post would skip them."""
+    listed = ", ".join(sorted(set(names)))
+    try:
+        answer = input(f"BTWB has not confirmed: {listed}. Post anyway? [y/N] ")
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 
 def main() -> None:
@@ -244,5 +254,9 @@ def main() -> None:
         do_capture(days, getattr(args, "no_scrcpy", False), ws)
         do_analyse(days, ws)
         # preview collects the level choices; post reuses them from the formatted cache.
-        do_preview(days, ws, relevel)
+        unconfirmed = do_preview(days, ws, relevel)
+        if unconfirmed and not _confirm_unconfirmed(unconfirmed):
+            return
         do_post(days, getattr(args, "yes", False), getattr(args, "headless", False), ws)
+        # BTWB can store something other than what was posted; the week ends on the check.
+        do_verify(days, ws)

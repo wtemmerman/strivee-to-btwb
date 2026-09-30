@@ -713,6 +713,8 @@ Run the full pipeline for the current week:
 uv run strivee-btwb run --yes
 ```
 
+It captures, analyses, previews (asking the level for every block that offers more than one), posts, and ends on `verify`. It asks before posting when preview found a movement name BTWB has not confirmed, since post would skip that block. Run it in a terminal: with nobody to answer a level question, it stops rather than posting RX.
+
 Or step by step:
 
 ```bash

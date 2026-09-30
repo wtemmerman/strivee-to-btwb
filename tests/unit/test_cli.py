@@ -137,14 +137,31 @@ def test_main_run_calls_all_steps(monkeypatch):
     with (
         patch("strivee_btwb.cli.do_capture") as mc,
         patch("strivee_btwb.cli.do_analyse") as ma,
-        patch("strivee_btwb.cli.do_preview") as mp,
+        patch("strivee_btwb.cli.do_preview", return_value=[]) as mp,
         patch("strivee_btwb.cli.do_post") as mpost,
+        patch("strivee_btwb.cli.do_verify") as mv,
     ):
         _run_main(["run", "--yes"])
         mc.assert_called_once()
         ma.assert_called_once()
         mp.assert_called_once()
         mpost.assert_called_once()
+        mv.assert_called_once()  # the week ends on the posted-vs-stored check
+
+
+def test_main_run_stops_before_posting_an_unconfirmed_movement(monkeypatch):
+    """Unless told otherwise: post would skip the block BTWB has no movement for."""
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+    with (
+        patch("strivee_btwb.cli.do_capture"),
+        patch("strivee_btwb.cli.do_analyse"),
+        patch("strivee_btwb.cli.do_preview", return_value=["Hang Pause Clean"]),
+        patch("strivee_btwb.cli.do_post") as mpost,
+        patch("strivee_btwb.cli.do_verify") as mv,
+    ):
+        _run_main(["run", "--yes"])
+        mpost.assert_not_called()
+        mv.assert_not_called()
 
 
 def test_main_capture_no_scrcpy_flag(monkeypatch):

@@ -336,7 +336,9 @@ def _unconfirmed_movement(block: ProgrammingBlock) -> str | None:
     return plan.movement
 
 
-def log_preview(week: WeeklyProgramming) -> None:
+def log_preview(week: WeeklyProgramming) -> list[str]:
+    """Print what will be posted; return the movement names BTWB has not confirmed."""
+    unconfirmed: list[str] = []
     logger.info("=" * 60)
     logger.info("  BTWB Preview — Week starting %s", week.week_start)
     logger.info("=" * 60)
@@ -352,11 +354,13 @@ def log_preview(week: WeeklyProgramming) -> None:
                 for line in block.instruction.splitlines():
                     logger.info("      %s", line)
             if movement := _unconfirmed_movement(block):
+                unconfirmed.append(movement)
                 logger.warning(
                     "    BTWB has not been seen to hold a movement named '%s' — if it has "
                     "none, post skips this block",
                     movement,
                 )
+    return unconfirmed
 
 
 # ── Steps ─────────────────────────────────────────────────────────────────────
@@ -527,11 +531,12 @@ def _prepared_week_or_exit(days: list[str], ws: date, relevel: bool = False) -> 
     return week
 
 
-def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> None:
+def do_preview(days: list[str], ws: date | None = None, relevel: bool = False) -> list[str]:
+    """Show the week as it will be posted; return the movement names BTWB has not confirmed."""
     ws = ws or week_start()
     week = _prepared_week_or_exit(days, ws, relevel)
     log_summary(week)
-    log_preview(week)
+    return log_preview(week)
 
 
 def _log_post_outcome(results: list[dict], ws: date) -> None:
