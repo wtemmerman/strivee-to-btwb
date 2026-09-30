@@ -4,22 +4,26 @@ from datetime import date
 
 import pytest
 
-from strivee_btwb.core import config as cfg
-from strivee_btwb.core.models import INTER, DayProgramming, ProgrammingBlock, WeeklyProgramming
-from strivee_btwb.pipeline import (
-    SETS_SCHEMA_VERSION,
+from strivee_btwb.audit import (
     _audit_weeks,
     _crossfit_only,
-    _log_post_outcome,
-    _parsed_source_mtime_ns,
-    _sets_fingerprint,
     do_audit,
+    week_for_audit,
+    week_work_sets,
+)
+from strivee_btwb.cache import (
+    SETS_SCHEMA_VERSION,
     load_sets_day,
+    parsed_source_mtime_ns,
     save_day,
     save_formatted_day,
     save_sets_day,
-    week_for_audit,
-    week_work_sets,
+    sets_fingerprint,
+)
+from strivee_btwb.core import config as cfg
+from strivee_btwb.core.models import INTER, DayProgramming, ProgrammingBlock, WeeklyProgramming
+from strivee_btwb.pipeline import (
+    _log_post_outcome,
 )
 from strivee_btwb.processing.accessory import ACCESSORY_BLOCK_NAME
 from strivee_btwb.processing.volume import METCON, STRENGTH, WorkSet
@@ -47,7 +51,7 @@ def _isolate(tmp_path, monkeypatch):
 def test_cached_sets_round_trip():
     day = _day()
     sets = [WorkSet("Barbell Bench Press", 1, "5", STRENGTH, source="EMF 60 : Bench press")]
-    fingerprint = _sets_fingerprint(day)
+    fingerprint = sets_fingerprint(day)
     save_sets_day(day, WEEK, fingerprint, sets)
     assert load_sets_day(day, WEEK, fingerprint) == sets
 
@@ -55,7 +59,7 @@ def test_cached_sets_round_trip():
 def test_an_empty_extraction_is_cached_rather_than_re_run():
     """A block that genuinely prescribes nothing must not cost an LLM call each time."""
     day = _day()
-    fingerprint = _sets_fingerprint(day)
+    fingerprint = sets_fingerprint(day)
     save_sets_day(day, WEEK, fingerprint, [])
     assert load_sets_day(day, WEEK, fingerprint) == []
 
@@ -66,22 +70,22 @@ def test_a_missing_cache_is_not_an_error():
 
 def test_edited_block_text_invalidates_the_cache():
     day = _day()
-    save_sets_day(day, WEEK, _sets_fingerprint(day), [WorkSet("Bench Press", 1, "5", STRENGTH)])
+    save_sets_day(day, WEEK, sets_fingerprint(day), [WorkSet("Bench Press", 1, "5", STRENGTH)])
     relevelled = _day("Accumulated 8-10 Reps Banded Bar Muscle-up")
-    assert load_sets_day(relevelled, WEEK, _sets_fingerprint(relevelled)) is None
+    assert load_sets_day(relevelled, WEEK, sets_fingerprint(relevelled)) is None
 
 
 def test_the_fingerprint_covers_the_block_name_as_well_as_its_content():
     """Names carry movements the content never repeats, e.g. 'EMF 60 : Back Squat'."""
     a = DayProgramming(date(2026, 8, 29), "Sat", [ProgrammingBlock("Back Squat", "3 Reps RPE 8")])
     b = DayProgramming(date(2026, 8, 29), "Sat", [ProgrammingBlock("Deadlift", "3 Reps RPE 8")])
-    assert _sets_fingerprint(a) != _sets_fingerprint(b)
+    assert sets_fingerprint(a) != sets_fingerprint(b)
 
 
 def test_a_stale_schema_version_invalidates_the_cache():
     """A changed prompt must re-extract, not silently reuse the old reading."""
     day = _day()
-    fingerprint = _sets_fingerprint(day)
+    fingerprint = sets_fingerprint(day)
     path = save_sets_day(day, WEEK, fingerprint, [WorkSet("Bench Press", 1, "5", STRENGTH)])
     stale = path.read_text().replace(
         f'"schema_version": {SETS_SCHEMA_VERSION}', '"schema_version": 0'
@@ -93,7 +97,7 @@ def test_a_stale_schema_version_invalidates_the_cache():
 def test_every_field_survives_the_round_trip():
     day = _day()
     sets = [WorkSet("Bar Muscle-up", 6, "2", METCON, source="EMF 60 : Energy System Training")]
-    fingerprint = _sets_fingerprint(day)
+    fingerprint = sets_fingerprint(day)
     save_sets_day(day, WEEK, fingerprint, sets)
     (restored,) = load_sets_day(day, WEEK, fingerprint)
     assert restored.reps == "2"
@@ -113,7 +117,7 @@ def test_a_previewed_day_is_counted_at_the_level_that_was_chosen():
         day_label="Sat",
         blocks=[ProgrammingBlock("EMF 60 : Bench press", "INTER prescription", level=INTER)],
     )
-    save_formatted_day(chosen, WEEK, _parsed_source_mtime_ns(WEEK, "Sat"))
+    save_formatted_day(chosen, WEEK, parsed_source_mtime_ns(WEEK, "Sat"))
     week, fell_back = week_for_audit(["Sat"], WEEK)
     assert week.days[0].blocks[0].content == "INTER prescription"
     assert fell_back == []
@@ -172,7 +176,7 @@ def _cache_sets(day: DayProgramming) -> None:
     save_sets_day(
         day,
         WEEK,
-        _sets_fingerprint(day),
+        sets_fingerprint(day),
         [
             WorkSet("Barbell Bench Press", 1, "5", STRENGTH, source="EMF 60 : Bench press"),
             WorkSet("Handstand Walk", 1, "60m", METCON, source="EMF 60 :  Handstand Walk"),
@@ -217,7 +221,7 @@ def test_filtering_does_not_invalidate_the_extraction_cache():
     _cache_sets(day)
     week = WeeklyProgramming(week_start=WEEK, days=[day])
     week_work_sets(week, {"2026-08-29": {"EMF 60 : Bench press"}})
-    assert load_sets_day(day, WEEK, _sets_fingerprint(day)) is not None
+    assert load_sets_day(day, WEEK, sets_fingerprint(day)) is not None
     assert len(week_work_sets(week)) == 2
 
 

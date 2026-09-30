@@ -3,15 +3,13 @@
 import argparse
 from datetime import date
 
+from .audit import do_audit
 from .core import log
+from .garmin_sync import GARMIN_DEFAULT_DAYS_BACK, do_garmin, do_garmin_login
 from .pipeline import (
-    GARMIN_DEFAULT_DAYS_BACK,
     do_analyse,
-    do_audit,
     do_capture,
     do_delete,
-    do_garmin,
-    do_garmin_login,
     do_post,
     do_preview,
     do_verify,

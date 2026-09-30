@@ -8,6 +8,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from strivee_btwb.cache import (
+    CACHE_SCHEMA_VERSION,
+    load_days,
+    load_formatted_day,
+    load_text_captures,
+    save_day,
+    save_formatted_day,
+    save_text_capture,
+)
 from strivee_btwb.core.models import (
     INTER,
     INTER_PLUS,
@@ -19,7 +28,6 @@ from strivee_btwb.core.models import (
     WeeklyProgramming,
 )
 from strivee_btwb.pipeline import (
-    CACHE_SCHEMA_VERSION,
     LevelChoiceNeededError,
     clean_week,
     do_analyse,
@@ -28,15 +36,9 @@ from strivee_btwb.pipeline import (
     do_post,
     do_preview,
     llm_format_week,
-    load_days,
-    load_formatted_day,
-    load_text_captures,
     log_preview,
     log_summary,
     prepare_week_for_btwb,
-    save_day,
-    save_formatted_day,
-    save_text_capture,
     select_levels,
     short_to_date,
     week_start,

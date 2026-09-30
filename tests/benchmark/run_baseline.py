@@ -15,9 +15,10 @@ import csv
 import logging
 from datetime import date
 
+from strivee_btwb.cache import save_day
 from strivee_btwb.core import config
 from strivee_btwb.core.log import setup
-from strivee_btwb.pipeline import clean_week, save_day
+from strivee_btwb.pipeline import clean_week
 
 from .harness import (
     RESULTS_DIR,

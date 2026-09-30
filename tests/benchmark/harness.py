@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from strivee_btwb.cache import (
+    load_text_captures,
+)
 from strivee_btwb.core import config
 from strivee_btwb.core.llm import response_cache_stats, use_response_cache
 from strivee_btwb.core.models import (
@@ -32,7 +35,6 @@ from strivee_btwb.pipeline import (
     analyse_days,
     clean_week,
     llm_format_week,
-    load_text_captures,
     split_week,
 )
 from strivee_btwb.processing import extract_sets
