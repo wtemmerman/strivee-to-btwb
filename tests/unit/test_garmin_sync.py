@@ -73,10 +73,9 @@ def test_a_finished_week_is_read_from_cache(monkeypatch, _garmin_calls):
     assert _garmin_calls["fetched"] == []
 
 
-def test_the_current_week_is_always_asked_for_again(monkeypatch, _garmin_calls):
-    """A file written on Wednesday cannot know about Friday's run."""
+def test_a_week_with_no_usable_cache_is_asked_for(monkeypatch, _garmin_calls):
     this_week = garmin_sync.week_start(date.today())
-    monkeypatch.setattr(garmin_sync, "load_garmin_week", lambda ws: [_activity(9, str(this_week))])
+    monkeypatch.setattr(garmin_sync, "load_garmin_week", lambda ws: None)
     garmin_sync._garmin_activities(this_week, date.today(), refetch=False)
     assert _garmin_calls["fetched"] == [this_week]
 

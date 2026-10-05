@@ -1,6 +1,6 @@
 """Unit tests for the raw Garmin activity cache."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -16,9 +16,28 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "GARMIN_DIR", tmp_path / "garmin")
 
 
-def test_a_fetched_week_round_trips():
+def _fetched_on(monkeypatch, day: date) -> None:
+    class _Date(date):
+        @classmethod
+        def today(cls):
+            return day
+
+    monkeypatch.setattr(cache, "date", _Date)
+
+
+def test_a_week_fetched_after_it_ended_round_trips(monkeypatch):
+    _fetched_on(monkeypatch, WEEK + timedelta(days=7))
     cache.save_week(WEEK, ACTIVITIES)
     assert cache.load_week(WEEK) == ACTIVITIES
+
+
+def test_a_week_fetched_before_it_ended_is_never_served(monkeypatch):
+    """A file written on the week's Monday cannot know about Saturday's run, however
+    long after the week it is read."""
+    _fetched_on(monkeypatch, WEEK + timedelta(days=6))
+    cache.save_week(WEEK, ACTIVITIES)
+    _fetched_on(monkeypatch, WEEK + timedelta(weeks=4))
+    assert cache.load_week(WEEK) is None
 
 
 def test_a_week_that_was_never_fetched_reads_as_absent():
