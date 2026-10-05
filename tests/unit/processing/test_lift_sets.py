@@ -66,6 +66,17 @@ def test_weighted_sets_with_tempo_and_percent_of_1rm():
     assert classic_sets(block) == ClassicSets("Tempo Back Squat", (5, 5, 5), 120, percent_1rm=70)
 
 
+def test_a_rest_range_posts_its_lower_bound():
+    """Real Sat 10-10: "Rest 2-3 min" sent the block to the AI path, which has dropped
+    the tempo and the % before."""
+    block = _titled(
+        "EMF 60 - Back Squat",
+        "2 sets of :\n3 Reps Back Squat Tempo 22X1\n- Rest 2-3 min between sets -\n\n"
+        "Target weight : #75% 1RM 273.5 lb",
+    )
+    assert classic_sets(block) == ClassicSets("Tempo Back Squat", (3, 3), 120, percent_1rm=75)
+
+
 def test_a_reps_line_without_a_movement_takes_the_title_and_drops_the_rpe():
     block = _titled(
         "EMF 60 : Bench press", "3 Sets of :\n\n6 Reps RPE 7\n\n- Rest 2min between sets -"
