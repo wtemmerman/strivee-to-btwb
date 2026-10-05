@@ -2,7 +2,8 @@
 
     uv run python -m tests.fixtures.btwb.refresh
 
-Logs in, opens each classic template on an empty date without saving, and reads
+Logs in, opens each classic template on an empty date without saving (the
+alternating EMOM with two movements entered, so its rows exist), and reads
 three planned workouts of the week of 09-28 without changing them. Scripts,
 tokens and the athlete's name are stripped before anything is written. Re-run it
 when BTWB changes its markup and the offline tests start failing.
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
+from strivee_btwb.btwb.classic import _ALTERNATING_EMOM, _add_movement
 from strivee_btwb.btwb.common import (
     _BASE,
     _calendar_week_url,
@@ -32,6 +34,7 @@ TEMPLATES = {
     "rep_max": ("Pause Squat Clean", "rep_max"),
     "single_emom": ("Butterfly Chest-to-bar Pull-up", "single_emom"),
 }
+ALTERNATING = (("Pause Squat Clean", "1"), ("Squat Clean", "1"))
 EVENTS = {  # a lift in editor view, an erg with its RPE dropdown, a metcon summary
     "event_editor_lift": ("2026-09-28", "EMF 60 - Barbell Seal Row"),
     "event_editor_erg": ("2026-09-29", "EMF 60 - Bike erg"),
@@ -53,6 +56,17 @@ def _save(page: Page, name: str) -> None:
     print("wrote", name)
 
 
+def capture_alternating_emom(page: Page) -> None:
+    page.goto(f"{_BASE}/plan/track_events/workouts/new?d={EMPTY_DATE}")
+    page.locator(_ALTERNATING_EMOM).first.wait_for(state="visible")
+    _save(page, "new_workout")
+    page.locator(_ALTERNATING_EMOM).first.click()
+    for name, reps in ALTERNATING:
+        _add_movement(page, name, reps, percent_1rm=70)
+    page.wait_for_timeout(1500)
+    _save(page, "form_alternating_emom")
+
+
 def main() -> None:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -72,6 +86,7 @@ def main() -> None:
             page.locator("button[type='submit'][form='new_track_event']").first.wait_for()
             page.wait_for_timeout(1500)
             _save(page, f"form_{name}")
+        capture_alternating_emom(page)
         for name, (day, title) in EVENTS.items():
             page.goto(_calendar_week_url(day), wait_until="domcontentloaded")
             _ensure_track_selected(page)

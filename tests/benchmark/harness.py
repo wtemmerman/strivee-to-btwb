@@ -23,6 +23,7 @@ from strivee_btwb.core import config
 from strivee_btwb.core.llm import response_cache_stats, use_response_cache
 from strivee_btwb.core.models import (
     LEVEL_LABELS,
+    AlternatingEmom,
     ClassicSets,
     DayProgramming,
     ErgIntervals,
@@ -156,6 +157,7 @@ def _week_to_dict(week: WeeklyProgramming) -> dict:
                         "inter": b.inter,
                         "erg": plan_to_json(b.erg),
                         "sets": plan_to_json(b.sets),
+                        "alternating": plan_to_json(b.alternating),
                     }
                     for b in d.blocks
                 ],
@@ -195,6 +197,7 @@ def load_baseline(kind: str, ws_iso: str) -> WeeklyProgramming:
                     inter=b.get("inter", ""),
                     erg=plan_from_json(ErgIntervals, b.get("erg")),
                     sets=plan_from_json(ClassicSets, b.get("sets")),
+                    alternating=plan_from_json(AlternatingEmom, b.get("alternating")),
                 )
                 for b in d["blocks"]
             ],

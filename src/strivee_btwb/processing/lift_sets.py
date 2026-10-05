@@ -8,7 +8,7 @@ but the scheme is read; anything more stays on the AI path.
 
 import re
 
-from ..core.models import ClassicSets, ProgrammingBlock
+from ..core.models import AlternatingEmom, ClassicSets, ProgrammingBlock
 from .plus_split import unsplit_name
 from .timing import clock, seconds
 
@@ -69,6 +69,7 @@ _EMOM_STRUCTURE_RE = re.compile(r"^\s*(?:x\s*\d+|sets?\s*\d+|-?\s*rest\b)", re.I
 _EMOM_REPS_RE = re.compile(r"^\s*(\d+)\s*(?:reps?\s+)?([A-Za-z].*?)\s*$", re.IGNORECASE)
 # "2-pause Squat clean", "Squat clean with pause": BTWB names it "Pause Squat Clean".
 _COUNTED_PAUSE_RE = re.compile(r"^\s*\d+\s*-\s*pause\s+", re.IGNORECASE)
+_WITH_PAUSE_RE = re.compile(r"\s+with\s+(?:a\s+)?pause\b.*$", re.IGNORECASE)
 # A trailing cue — "#Bellow and above the knee", "@eyes level", "(5 sec floor to
 # hip)" — is coaching.
 _CUE_RE = re.compile(r"\s+[#@].*$|\s*\([^)]*\)")
@@ -108,7 +109,11 @@ def btwb_movement_name(text: str) -> str:
     adding by hand, when BTWB has no such movement: a wrong guess never posts the
     wrong movement.
     """
-    text = _QUALIFIER_RE.sub("", _AID_RE.sub("", _CUE_RE.sub("", text)))
+    text = _CUE_RE.sub("", text)
+    # Unlike an aid, a pause names a different BTWB movement.
+    if _WITH_PAUSE_RE.search(text):
+        text = "Pause " + _WITH_PAUSE_RE.sub("", text)
+    text = _QUALIFIER_RE.sub("", _AID_RE.sub("", text))
     text = _COUNTED_PAUSE_RE.sub("Pause ", text)
     for pattern, name in _PHRASES:
         text = pattern.sub(name, text)
@@ -308,6 +313,106 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     if plan is None or not _agrees_with_title(plan.movement, block):
         return None
     return plan
+
+
+# "min 1 - 1 Squat Clean", "Min 2 : 12 Box Jump Over", "Odd minutes (1-3-5-7): 8 Bar
+# Muscle-up", "Even: 6 Chest to bar pull-up".
+_TURN_RE = re.compile(
+    r"^\s*(?:min(?:ute)?\s*(?P<minute>\d+)|(?P<parity>odd|even)(?:\s+min(?:ute)?s?)?"
+    r"(?:\s*\([^)]*\))?)\s*[-:]\s*(?P<work>.+?)\s*$",
+    re.IGNORECASE,
+)
+# "#70% of your 1RM", "@75% 1RM": the load of every movement in the EMOM.
+_PERCENT_LINE_RE = re.compile(
+    r"^\s*[#@]?\s*(\d+)\s*%\s*(?:of\s+(?:your\s+)?)?1\s*RM\s*$", re.IGNORECASE
+)
+# Work measured in something other than reps — "45 sec Ski Erg", "15 Cal Ski Erg",
+# "200m Run" — is not a rep count BTWB's reps field can hold.
+_NOT_REPS_RE = re.compile(r"^(?:sec(?:ond)?s?|s|cal(?:orie)?s?|m|meters?|min(?:ute)?s?)\b", re.I)
+
+
+def _turn(work: str) -> tuple[int, str] | None:
+    """(reps, BTWB movement name) for one interval's work, or None if it is not that."""
+    m = _EMOM_REPS_RE.match(work)
+    if not m or _NOT_REPS_RE.match(m.group(2)) or _is_complex(m.group(2)) or "%" in work:
+        return None
+    name = btwb_movement_name(m.group(2))
+    return (int(m.group(1)), name) if name else None
+
+
+def _turns(lines: list[str]) -> list[tuple[int, str]] | None:
+    """(reps, movement) for each interval of the cycle *lines* open with, in order.
+
+    The cycle is "min 1 … min N" numbered from 1, or exactly "Odd … / Even …".
+    """
+    turns: list[re.Match[str]] = []
+    for line in lines:
+        if not (m := _TURN_RE.match(line)):
+            break
+        turns.append(m)
+    minutes = [m.group("minute") for m in turns]
+    parities = [(m.group("parity") or "").lower() for m in turns]
+    if len(turns) < 2 or (
+        minutes != [str(n) for n in range(1, len(turns) + 1)] and parities != ["odd", "even"]
+    ):
+        return None
+    read = [_turn(m.group("work")) for m in turns]
+    return None if any(r is None for r in read) else [r for r in read if r is not None]
+
+
+def alternating_emom(block: ProgrammingBlock) -> AlternatingEmom | None:
+    """Movements taking turns minute by minute: BTWB's alternating EMOM.
+
+    "EMOMx8 / min 1 - 1 Squat Clean with pause @knee level / min 2 - 1 Squat clean /
+    #70% of your 1RM", or the same as "Odd: … / Even: …". Every turn must be a whole
+    rep count of one movement and the minutes must divide into full cycles; a rest
+    minute, a time or calorie target, a rep range or a per-movement % load leaves the
+    block on the AI path. Cues and coaching around it go to the note, as for _emom.
+    """
+    lines = [line for line in block.content.splitlines() if line.strip()]
+    headers = [i for i, line in enumerate(lines) if _EMOM_RE.match(line)]
+    header = _EMOM_RE.match(lines[headers[0]]) if len(headers) == 1 else None
+    # "EMOMx6-8" has no one length to divide into cycles.
+    if header is None or header.group(2).strip():
+        return None
+    at = headers[0]
+    turns = _turns(lines[at + 1 :])
+    total = int(header.group(1))
+    if (
+        turns is None
+        or total % len(turns)
+        or any(line.lstrip()[:1].isdigit() for line in lines[:at])
+    ):
+        return None
+
+    after = lines[at + 1 + len(turns) :]
+    percent = None
+    if after and (m := _PERCENT_LINE_RE.match(after[0])):
+        percent, after = int(m.group(1)), after[1:]
+    # Any other % — "#65 to 75% 120.5 lb" — is a load BTWB's one % per movement cannot hold.
+    if any(
+        line.lstrip()[:1].isdigit() or _EMOM_STRUCTURE_RE.match(line) or "%" in line
+        for line in after
+    ):
+        return None
+    return AlternatingEmom(
+        movements=tuple(name for _reps, name in turns),
+        reps=tuple(reps for reps, _name in turns),
+        every_seconds=60,
+        sets_per_movement=total // len(turns),
+        percent_1rm=percent,
+    )
+
+
+def describe_alternating(plan: AlternatingEmom) -> str:
+    """What preview shows for an alternating EMOM block."""
+    total = plan.every_seconds * plan.sets_per_movement * len(plan.movements)
+    load = f" @ {plan.percent_1rm}% 1RM" if plan.percent_1rm is not None else ""
+    turns = "\n".join(f"{reps} {name}{load}" for reps, name in zip(plan.reps, plan.movements))
+    return (
+        f"Alternating EMOM\nevery {clock(plan.every_seconds)} for {clock(total)}, "
+        f"{plan.sets_per_movement} sets per movement:\n{turns}"
+    )
 
 
 def describe_sets(plan: ClassicSets) -> str:

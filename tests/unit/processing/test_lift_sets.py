@@ -1,7 +1,13 @@
 """Unit tests for reading a single-movement set scheme for BTWB's classic Sets template."""
 
-from strivee_btwb.core.models import ClassicSets, ProgrammingBlock
-from strivee_btwb.processing.lift_sets import btwb_movement_name, classic_sets, describe_sets
+from strivee_btwb.core.models import AlternatingEmom, ClassicSets, ProgrammingBlock
+from strivee_btwb.processing.lift_sets import (
+    alternating_emom,
+    btwb_movement_name,
+    classic_sets,
+    describe_alternating,
+    describe_sets,
+)
 
 
 def _block(content: str) -> ProgrammingBlock:
@@ -267,3 +273,74 @@ def test_an_emom_loaded_off_an_rm_stays_on_the_ai_path():
         )
         is None
     )
+
+
+# ── Alternating EMOM ──────────────────────────────────────────────────────────
+
+
+def test_alternating_emom_with_a_shared_percent_of_1rm():
+    """Real Sat 10-10: BTWB's AI stored the paused clean as "Kettlebell Double Presses",
+    under two wordings."""
+    block = _titled(
+        "EMF 60 - Clean",
+        "EMOMx8\nmin 1 - 1 Squat Clean with pause @knee level\nmin 2 - 1 Squat clean\n\n"
+        "#70% of your 1RM",
+    )
+    plan = AlternatingEmom(("Pause Squat Clean", "Squat Clean"), (1, 1), 60, 4, percent_1rm=70)
+    assert alternating_emom(block) == plan
+    assert describe_alternating(plan) == (
+        "Alternating EMOM\nevery 1:00 for 8:00, 4 sets per movement:\n"
+        "1 Pause Squat Clean @ 70% 1RM\n1 Squat Clean @ 70% 1RM"
+    )
+
+
+def test_alternating_emom_rep_ladder_on_one_movement():
+    """Real Tue 04-14: the movement repeats, the reps climb each minute."""
+    block = _titled(
+        "EMF 60 : Strict Dip",
+        "Strict Dip :\n\nEMOM x6 :\nMin 1 - 2 Weighted Strict Dip\nMin 2 - 3 Weighted Strict Dip\n"
+        "Min 3 - 4 Weighted Strict Dip\nAs Heavy as possible",
+    )
+    assert alternating_emom(block) == AlternatingEmom(
+        ("Weighted Strict Dip",) * 3, (2, 3, 4), 60, 2
+    )
+
+
+def test_alternating_emom_written_as_odd_and_even():
+    block = _titled(
+        "EMF 60 : Gym", "EMOMx10 :\nOdd minutes (1-3-5-7-9): 3 Ring Muscle-up\nEven: 6 C2B"
+    )
+    assert alternating_emom(block) == AlternatingEmom(
+        ("Ring Muscle-up", "Chest-to-bar Pull-up"), (3, 6), 60, 5
+    )
+
+
+def test_alternating_emom_leaves_anything_else_to_the_ai_path():
+    for content in (
+        # Real 04-21: work held for a time, not counted in reps.
+        "EMOMx12 :\nMin 1 - 45 sec Ski Erg\nMin 2 - 30 sec Toes to Bar",
+        # Real 05-01: calories.
+        "EMOMx8:\nOdd: 12 Cal Ski Erg\nEven: 6 Bar Muscle-up",
+        # Real 05-23: a rep range.
+        "EMOMx6 :\nmin 1 - 3-5 Ring Muscle-up\nmin 2 - 3-5 Bar Muscle-up",
+        # Real 07-06: a rest minute.
+        "EMOMx15 :\nMin 1 : 12 Box Jump Over\nMin 2 : 10 Power Snatch\nMin 3 : REST",
+        # Real 09-16: a % range BTWB's one % per movement cannot hold.
+        "EMOMx6\nMin 1 - 1 Pause Power snatch\nMin 2 -1 Pause Squat snatch\n#65 to 75% 120.5 lb",
+        # Real 08-07: minutes in runs, not taking turns.
+        "EMOMx8 :\nmin 1 to 4 - 1 Weighted strict Ring muscle-up\n"
+        "min 5 to 8 - 2 Strict Ring muscle-up",
+        # A length with no one value, and one that is not whole cycles.
+        "EMOMx6-8 :\nmin 1 - 3 Ring Muscle-up\nmin 2 - 4 Bar Muscle-up",
+        "EMOMx7 :\nmin 1 - 3 Ring Muscle-up\nmin 2 - 4 Bar Muscle-up",
+        # Minutes out of order, and a single movement (that is _emom's).
+        "EMOMx6 :\nmin 2 - 3 Ring Muscle-up\nmin 1 - 4 Bar Muscle-up",
+        "EMOMx6 :\nmin 1 - 3 Ring Muscle-up",
+    ):
+        assert alternating_emom(_titled("EMF 60 - Gym", content)) is None, content
+
+
+def test_with_pause_names_the_pause_variant():
+    """A pause is a different BTWB movement, unlike an aid such as "with Abmat"."""
+    assert btwb_movement_name("Squat Clean with pause @knee level") == "Pause Squat Clean"
+    assert btwb_movement_name("Strict HSPU with Abmat") == "Strict Handstand Push-up"
