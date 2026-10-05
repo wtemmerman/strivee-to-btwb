@@ -13,6 +13,7 @@ from pathlib import Path
 from .core import config
 from .core.models import (
     RX,
+    AlternatingEmom,
     ClassicSets,
     DayProgramming,
     ErgIntervals,
@@ -160,6 +161,7 @@ def save_formatted_day(day: DayProgramming, ws: date, source_mtime_ns: int | Non
                         "level": b.level,
                         "erg": plan_to_json(b.erg),
                         "sets": plan_to_json(b.sets),
+                        "alternating": plan_to_json(b.alternating),
                     }
                     for b in day.blocks
                 ],
@@ -204,6 +206,7 @@ def load_formatted_day(
                 level=b.get("level", RX),
                 erg=plan_from_json(ErgIntervals, b.get("erg")),
                 sets=plan_from_json(ClassicSets, b.get("sets")),
+                alternating=plan_from_json(AlternatingEmom, b.get("alternating")),
             )
             for b in data["blocks"]
         ],

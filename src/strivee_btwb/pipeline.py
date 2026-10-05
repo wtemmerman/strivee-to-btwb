@@ -49,7 +49,12 @@ from .core.models import (
 )
 from .processing import format_for_btwb
 from .processing.erg_intervals import describe, erg_intervals
-from .processing.lift_sets import classic_sets, describe_sets
+from .processing.lift_sets import (
+    alternating_emom,
+    classic_sets,
+    describe_alternating,
+    describe_sets,
+)
 from .processing.movement_check import check_stored
 from .processing.plus_split import is_lead_in, split_plus_joins
 from .vision import count_block_titles, extract_day_programming_from_text
@@ -147,6 +152,10 @@ def _format_block(block: ProgrammingBlock) -> ProgrammingBlock:
         return block.replace(content=describe(plan), instruction=note, erg=plan)
     if (sets := classic_sets(block)) is not None:
         return block.replace(content=describe_sets(sets), instruction=note, sets=sets)
+    if (turns := alternating_emom(block)) is not None:
+        return block.replace(
+            content=describe_alternating(turns), instruction=note, alternating=turns
+        )
     return format_for_btwb(block).replace(instruction=note)
 
 
@@ -328,12 +337,12 @@ def log_summary(week: WeeklyProgramming) -> None:
             logger.info("    [%s] %s", block.name, first_line)
 
 
-def _unconfirmed_movement(block: ProgrammingBlock) -> str | None:
-    """The movement a classic block needs that BTWB has not been seen to hold."""
-    plan = block.erg or block.sets
-    if plan is None or plan.movement in confirmed_movements():
-        return None
-    return plan.movement
+def _unconfirmed_movements(block: ProgrammingBlock) -> list[str]:
+    """The movements a classic block needs that BTWB has not been seen to hold."""
+    needed = [plan.movement for plan in (block.erg, block.sets) if plan is not None]
+    if block.alternating is not None:
+        needed += block.alternating.movements
+    return [m for m in dict.fromkeys(needed) if m not in confirmed_movements()]
 
 
 def log_preview(week: WeeklyProgramming) -> list[str]:
@@ -353,7 +362,7 @@ def log_preview(week: WeeklyProgramming) -> list[str]:
                 logger.info("    ── coaching note ──")
                 for line in block.instruction.splitlines():
                     logger.info("      %s", line)
-            if movement := _unconfirmed_movement(block):
+            for movement in _unconfirmed_movements(block):
                 unconfirmed.append(movement)
                 logger.warning(
                     "    BTWB has not been seen to hold a movement named '%s' — if it has "

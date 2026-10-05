@@ -114,3 +114,19 @@ def test_a_classic_plan_gives_its_sets_without_the_model(monkeypatch):
     assert first(ClassicSets("Butterfly C2B", (6,) * 12, None, emom_seconds=60)).block_type == (
         METCON
     )
+
+
+def test_an_alternating_emom_credits_each_turn_without_the_model(monkeypatch):
+    from strivee_btwb.core.models import AlternatingEmom
+    from strivee_btwb.processing.volume import METCON
+
+    def no_model(*_a, **_k):
+        raise AssertionError("a classic plan must not be sent to the model")
+
+    monkeypatch.setattr("strivee_btwb.processing.set_extract.chat_json", no_model)
+    plan = AlternatingEmom(("Pause Squat Clean", "Squat Clean"), (1, 1), 60, 4, percent_1rm=70)
+    sets = extract_sets(ProgrammingBlock(name="Clean", content="plan", alternating=plan))
+    assert [(s.movement, s.sets, s.reps, s.block_type) for s in sets] == [
+        ("Pause Squat Clean", 4, "1", METCON),
+        ("Squat Clean", 4, "1", METCON),
+    ]

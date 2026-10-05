@@ -15,7 +15,7 @@ from json_repair import repair_json
 
 from ..core import config
 from ..core.llm import chat_json
-from ..core.models import ClassicSets, ProgrammingBlock
+from ..core.models import AlternatingEmom, ClassicSets, ProgrammingBlock
 from ..prompts import load
 from .volume import (
     BLOCK_TYPES,
@@ -123,6 +123,20 @@ def _plan_sets(plan: ClassicSets, source: str) -> list[WorkSet]:
     ]
 
 
+def _alternating_sets(plan: AlternatingEmom, source: str) -> list[WorkSet]:
+    """One work set per turn, read off the plan: each turn comes round sets_per_movement times."""
+    return [
+        WorkSet(
+            movement=movement,
+            sets=plan.sets_per_movement,
+            reps=str(reps),
+            block_type=METCON,
+            source=source,
+        )
+        for movement, reps in zip(plan.movements, plan.reps)
+    ]
+
+
 def extract_sets(block: ProgrammingBlock, model: str | None = None) -> list[WorkSet]:
     """Return the sets *block* prescribes.
 
@@ -133,6 +147,8 @@ def extract_sets(block: ProgrammingBlock, model: str | None = None) -> list[Work
     """
     if block.sets is not None:
         return _plan_sets(block.sets, block.name)
+    if block.alternating is not None:
+        return _alternating_sets(block.alternating, block.name)
     m = model or config.OLLAMA_FORMAT_MODEL
     prompt = _PROMPT.format(name=block.name, content=block.content)
     logger.debug("[%s] extracting sets with '%s'", block.name, m)

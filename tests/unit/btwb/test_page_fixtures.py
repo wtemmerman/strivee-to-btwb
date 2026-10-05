@@ -12,11 +12,18 @@ from pathlib import Path
 import pytest
 
 from strivee_btwb.btwb.classic import (
+    _ALTERNATING_EMOM,
     _CLOCK_MINUTES,
     _INTERVAL_SECONDS,
     _REST_SECONDS,
     _SAVE_BUTTON,
     _SET_REPS,
+    _SETS_PER_MOVEMENT,
+    _TURN_NAMES,
+    _TURN_REPS,
+    _TURN_WEIGHT_UNITS,
+    _TURN_WEIGHTS,
+    _values,
 )
 from strivee_btwb.btwb.readback import _STORED_BODY_JS
 
@@ -60,6 +67,7 @@ def test_the_save_button_is_exactly_one_button_on_every_template(page_of):
         "gymnastics_sets",
         "rep_max",
         "single_emom",
+        "alternating_emom",
     ):
         assert page_of(f"form_{template}").locator(_SAVE_BUTTON).count() == 1, template
 
@@ -117,3 +125,20 @@ def test_read_back_skips_the_erg_editors_rpe_dropdown(page_of):
 def test_read_back_keeps_a_metcon_summary(page_of):
     body = page_of("event_summary_metcon").evaluate(_STORED_BODY_JS)
     assert "40 Ski Erg Calories" in body.splitlines()
+
+
+def test_the_new_workout_page_links_the_alternating_emom_template(page_of):
+    assert page_of("new_workout").locator(_ALTERNATING_EMOM).count() == 1
+
+
+def test_alternating_emom_holds_what_posting_fills_and_reads_back(page_of):
+    """Captured with Pause Squat Clean and Squat Clean entered, 1 rep @ 70% 1RM each."""
+    page = page_of("form_alternating_emom")
+    assert page.locator(_SETS_PER_MOVEMENT).count() == 1
+    assert page.locator(_CLOCK_MINUTES).count() >= 1
+    for field in ("every", "until"):
+        assert page.locator(f"input[name='definition[prescription][{field}][value]']").count() == 1
+    assert _values(page, _TURN_NAMES) == ["Pause Squat Clean", "Squat Clean"]
+    assert _values(page, _TURN_REPS) == ["1", "1"]
+    assert _values(page, _TURN_WEIGHTS) == ["70", "70"]
+    assert _values(page, _TURN_WEIGHT_UNITS) == ["onerepmax", "onerepmax"]

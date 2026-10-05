@@ -115,13 +115,20 @@ def test_every_plan_field_survives_a_json_round_trip():
     """A hand-written cache once dropped percent_1rm and rep_max; asdict cannot."""
     import json
 
-    from strivee_btwb.core.models import ClassicSets, ErgIntervals, plan_from_json, plan_to_json
+    from strivee_btwb.core.models import (
+        AlternatingEmom,
+        ClassicSets,
+        ErgIntervals,
+        plan_from_json,
+        plan_to_json,
+    )
 
     sets = ClassicSets(
         "Tempo Back Squat", (5, 5, None), 120, percent_1rm=70, rep_max=True, emom_seconds=75
     )
     erg = ErgIntervals("Bike Erg", (120, 60), 40)
-    for cls, plan in ((ClassicSets, sets), (ErgIntervals, erg)):
+    turns = AlternatingEmom(("Pause Squat Clean", "Squat Clean"), (1, 1), 60, 4, percent_1rm=70)
+    for cls, plan in ((ClassicSets, sets), (ErgIntervals, erg), (AlternatingEmom, turns)):
         assert plan_from_json(cls, json.loads(json.dumps(plan_to_json(plan)))) == plan
     assert plan_to_json(None) is None
     assert plan_from_json(ClassicSets, None) is None

@@ -21,6 +21,7 @@ from strivee_btwb.core.models import (
     INTER,
     INTER_PLUS,
     RX,
+    AlternatingEmom,
     ClassicSets,
     DayProgramming,
     ErgIntervals,
@@ -670,6 +671,60 @@ def test_formatted_cache_keeps_the_set_plan(tmp_path, monkeypatch):
     reloaded = load_formatted_day(date(2026, 9, 28), "Wed", expected_mtime_ns=8)
     assert reloaded is not None
     assert reloaded.blocks[0].sets == rep_max
+
+
+def test_formatted_cache_keeps_the_alternating_plan(tmp_path, monkeypatch):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "FORMATTED_DIR", tmp_path)
+    plan = AlternatingEmom(("Pause Squat Clean", "Squat Clean"), (1, 1), 60, 4, percent_1rm=70)
+    day = DayProgramming(
+        date=date(2026, 10, 10),
+        day_label="Sat",
+        blocks=[ProgrammingBlock(name="Clean", content="Alternating EMOM", alternating=plan)],
+    )
+    save_formatted_day(day, date(2026, 10, 5), source_mtime_ns=7)
+    loaded = load_formatted_day(date(2026, 10, 5), "Sat", expected_mtime_ns=7)
+    assert loaded is not None
+    assert loaded.blocks[0].alternating == plan
+
+
+def test_an_alternating_emom_skips_the_format_model(monkeypatch):
+    """Real Sat 10-10: the plan is posted, the prescription as written goes to the note."""
+    from strivee_btwb import pipeline
+
+    monkeypatch.setattr(pipeline, "format_for_btwb", MagicMock(side_effect=AssertionError))
+    source = "EMOMx8\nmin 1 - 1 Squat Clean with pause @knee level\nmin 2 - 1 Squat clean"
+    block = pipeline._format_block(ProgrammingBlock(name="EMF 60 - Clean", content=source))
+    assert block.alternating == AlternatingEmom(("Pause Squat Clean", "Squat Clean"), (1, 1), 60, 4)
+    assert block.content.startswith("Alternating EMOM\n")
+    assert block.instruction == source
+
+
+def test_preview_warns_about_each_unconfirmed_alternating_movement(tmp_path, monkeypatch, caplog):
+    import strivee_btwb.core.config as cfg
+    from strivee_btwb.core import btwb_names
+
+    monkeypatch.setattr(cfg, "DATA_DIR", tmp_path)
+    btwb_names._read.cache_clear()
+    btwb_names.confirm_movement("Squat Clean")
+    plan = AlternatingEmom(
+        ("Hang Pause Clean", "Squat Clean", "Hang Pause Clean"), (1, 1, 1), 60, 2
+    )
+    week = WeeklyProgramming(
+        week_start=date(2026, 10, 5),
+        days=[
+            DayProgramming(
+                date=date(2026, 10, 10),
+                day_label="Sat",
+                blocks=[ProgrammingBlock(name="Clean", content="X", alternating=plan)],
+            )
+        ],
+    )
+    with caplog.at_level(logging.WARNING):
+        unconfirmed = log_preview(week)
+    btwb_names._read.cache_clear()
+    assert unconfirmed == ["Hang Pause Clean"]
 
 
 def test_prepare_week_reuses_cache_on_second_call(monkeypatch):

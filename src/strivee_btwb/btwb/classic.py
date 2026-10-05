@@ -217,3 +217,144 @@ def _fill_classic_sets(page: Page, block: ProgrammingBlock) -> Locator:
         _fill_counted_sets(page, block, plan)
     logger.info("Entered %s for '%s'", block.content.splitlines()[-1], block.name)
     return page.locator(_SAVE_BUTTON).first
+
+
+# ── Movements entered through BTWB's search ───────────────────────────────────
+
+_ASSIGN_REPS_LABEL = "ATTRIBUER DES RÉPÉTITIONS"
+_ASSIGN_WEIGHT_LABEL = "ATTRIBUER DU POIDS"
+_ROW_COUNT_JS = (
+    "n => [...document.querySelectorAll('button')]"
+    ".filter(b => b.innerText.trim() === 'SUPPRIMER').length"
+)
+
+
+def _movement_row_count(page: Page) -> int:
+    """How many movements the open workout currently holds.
+
+    Counted the same way the waits below count, so a comparison between them can
+    never be measuring two different things.
+    """
+    return int(page.evaluate(f"({_ROW_COUNT_JS})(0)"))
+
+
+def _add_movement(page: Page, name: str, reps: str, percent_1rm: int | None = None) -> None:
+    """Add one movement to the open workout, retrying once if the save is lost.
+
+    Safe to retry because the row count says whether the first attempt landed:
+    the wait inside only times out when no row appeared, so a second attempt adds
+    the movement rather than duplicating it. The count is re-read first anyway,
+    in case the save arrived just after the wait gave up.
+    """
+    for attempt in (1, 2):
+        before = _movement_row_count(page)
+        try:
+            _add_movement_once(page, name, reps, before, percent_1rm)
+            return
+        except PlaywrightTimeoutError:
+            if _movement_row_count(page) > before:
+                logger.info("  added %s x%s (save landed late)", name, reps)
+                return
+            if attempt == 2:
+                raise
+            logger.warning("  %s did not save — retrying", name)
+
+
+def _add_movement_once(
+    page: Page, name: str, reps: str, before: int, percent_1rm: int | None = None
+) -> None:
+    """Add one movement to the open workout via BTWB's own movement search."""
+    page.locator("a[href*='/movements/new']").first.click()
+    search = page.locator("#name")
+    search.wait_for(state="visible", timeout=_TIMEOUT)
+    search.fill(name)
+
+    # Each result is a link to /movements/<id>. Match the link by its exact
+    # accessible name: the search returns near-misses ("Single Arm Cable Lateral
+    # Raise" for "Cable Lateral Raise") and picking one would reintroduce the
+    # wrong-movement bug by another route. It has to be the link and not the span
+    # inside it — clicking the span does not drive the turbo-frame, and the save
+    # then silently no-ops.
+    option = page.get_by_role("link", name=name, exact=True).first
+    option.wait_for(state="visible", timeout=_TIMEOUT)
+    option.click()
+
+    assign = page.get_by_text(_ASSIGN_REPS_LABEL, exact=False).first
+    assign.wait_for(state="visible", timeout=_TIMEOUT)
+    assign.click()
+    # The id is on both a hidden mirror and the visible input; fill the visible one.
+    field = page.locator("#movement_reps_value:visible").first
+    field.wait_for(state="visible", timeout=_TIMEOUT)
+    field.fill(reps)
+    # Blur so the units controller commits the value into the hidden input the
+    # form actually submits. Saving straight after fill stores nothing, silently:
+    # the row simply never appears, which is why the count check below is the
+    # real guard rather than a formality.
+    field.press("Tab")
+    if percent_1rm is not None:
+        page.get_by_text(_ASSIGN_WEIGHT_LABEL, exact=False).first.click()
+        page.locator("select#movement_weight_unit:visible").first.select_option("onerepmax")
+        weight = page.locator("#movement_weight_value:visible").first
+        weight.fill(str(percent_1rm))
+        weight.press("Tab")
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+
+    page.locator("input[value='Save Movement']").first.click()
+    page.wait_for_function(f"n => ({_ROW_COUNT_JS})(n) > n", arg=before, timeout=_TIMEOUT)
+    logger.info("  added %s x%s", name, reps)
+
+
+# ── Alternating EMOM ──────────────────────────────────────────────────────────
+
+_ALTERNATING_EMOM = "a[href='/plan/workouts/multiple/alternating_emom/new']"
+_SETS_PER_MOVEMENT = "input[name='definition[prescription][setsCount]']"
+_TURN_NAMES = "input[name='definition[contents][][movementName]']"
+_TURN_REPS = "input[name='definition[contents][][reps][value]']"
+_TURN_WEIGHTS = "input[name='definition[contents][][weight][value]']"
+_TURN_WEIGHT_UNITS = "input[name='definition[contents][][weight][unit]']"
+
+
+def _fill_alternating_emom(page: Page, block: ProgrammingBlock) -> Locator:
+    """Build *block*'s alternating EMOM and return its plan button.
+
+    BTWB derives the EMOM's length from the interval, the sets per movement and the
+    movement count, so that "until" is read back along with everything entered.
+    """
+    plan = block.alternating
+    if plan is None:  # invariant: only called for blocks with an alternating plan
+        raise BTWBError(f"internal error: '{block.name}' has no alternating EMOM plan")
+    page.locator(_ALTERNATING_EMOM).first.click()
+    sets = page.locator(_SETS_PER_MOVEMENT)
+    sets.wait_for(state="visible", timeout=_TIMEOUT)
+    for name, reps in zip(plan.movements, plan.reps):
+        _add_movement(page, name, str(reps), plan.percent_1rm)
+        confirm_movement(name)
+    _fill_clock(page.locator(_CLOCK_MINUTES).first, plan.every_seconds)
+    sets.fill(str(plan.sets_per_movement))
+    sets.press("Tab")
+    page.wait_for_timeout(_FIELD_COMMIT_MS)
+
+    turns = len(plan.movements)
+    load = [] if plan.percent_1rm is None else [str(plan.percent_1rm)] * turns
+    expected = {
+        "every": str(plan.every_seconds),
+        "until": str(plan.every_seconds * plan.sets_per_movement * turns),
+        "sets": str(plan.sets_per_movement),
+        "movements": list(plan.movements),
+        "reps": [str(r) for r in plan.reps],
+        "weights": load,
+        "units": ["onerepmax"] * len(load),
+    }
+    entered = {
+        "every": page.locator("input[name='definition[prescription][every][value]']").input_value(),
+        "until": page.locator("input[name='definition[prescription][until][value]']").input_value(),
+        "sets": sets.input_value(),
+        "movements": _values(page, _TURN_NAMES),
+        "reps": _values(page, _TURN_REPS),
+        "weights": _values(page, _TURN_WEIGHTS),
+        "units": _values(page, _TURN_WEIGHT_UNITS),
+    }
+    if entered != expected:
+        raise BTWBError(f"'{block.name}': BTWB holds {entered}, not {expected}")
+    logger.info("Entered alternating EMOM for '%s'", block.name)
+    return page.locator(_SAVE_BUTTON).first

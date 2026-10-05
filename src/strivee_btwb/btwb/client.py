@@ -25,11 +25,17 @@ from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from ..core.models import DayProgramming, ProgrammingBlock, WeeklyProgramming
-from .classic import _fill_classic_sets, _fill_erg_intervals
+from .classic import (
+    _ROW_COUNT_JS,
+    _add_movement,
+    _fill_alternating_emom,
+    _fill_classic_sets,
+    _fill_erg_intervals,
+    _movement_row_count,
+)
 from .common import (
     _BASE,
     _CALENDAR_IDLE_TIMEOUT,
-    _FIELD_COMMIT_MS,
     _TIMEOUT,
     BTWBError,
     _calendar_week_url,
@@ -115,11 +121,6 @@ _SEED_DESCRIPTION = "12 Dumbbell Curl"
 
 _DELETE_LABEL = "SUPPRIMER"
 _COPY_LABEL = "COPIER"
-_ASSIGN_REPS_LABEL = "ATTRIBUER DES RÉPÉTITIONS"
-_ROW_COUNT_JS = (
-    "n => [...document.querySelectorAll('button')]"
-    ".filter(b => b.innerText.trim() === 'SUPPRIMER').length"
-)
 
 
 def _parse_movement_lines(block: ProgrammingBlock) -> list[tuple[str, str]]:
@@ -147,73 +148,6 @@ def _parse_movement_lines(block: ProgrammingBlock) -> list[tuple[str, str]]:
     if not parsed:
         raise BTWBError(f"Block '{block.name}' has no movement lines to post")
     return parsed
-
-
-def _movement_row_count(page: Page) -> int:
-    """How many movements the open workout currently holds.
-
-    Counted the same way the waits below count, so a comparison between them can
-    never be measuring two different things.
-    """
-    return int(page.evaluate(f"({_ROW_COUNT_JS})(0)"))
-
-
-def _add_movement(page: Page, name: str, reps: str) -> None:
-    """Add one movement to the open workout, retrying once if the save is lost.
-
-    Safe to retry because the row count says whether the first attempt landed:
-    the wait inside only times out when no row appeared, so a second attempt adds
-    the movement rather than duplicating it. The count is re-read first anyway,
-    in case the save arrived just after the wait gave up.
-    """
-    for attempt in (1, 2):
-        before = _movement_row_count(page)
-        try:
-            _add_movement_once(page, name, reps, before)
-            return
-        except PlaywrightTimeoutError:
-            if _movement_row_count(page) > before:
-                logger.info("  added %s x%s (save landed late)", name, reps)
-                return
-            if attempt == 2:
-                raise
-            logger.warning("  %s did not save — retrying", name)
-
-
-def _add_movement_once(page: Page, name: str, reps: str, before: int) -> None:
-    """Add one movement to the open workout via BTWB's own movement search."""
-    page.locator("a[href*='/movements/new']").first.click()
-    search = page.locator("#name")
-    search.wait_for(state="visible", timeout=_TIMEOUT)
-    search.fill(name)
-
-    # Each result is a link to /movements/<id>. Match the link by its exact
-    # accessible name: the search returns near-misses ("Single Arm Cable Lateral
-    # Raise" for "Cable Lateral Raise") and picking one would reintroduce the
-    # wrong-movement bug by another route. It has to be the link and not the span
-    # inside it — clicking the span does not drive the turbo-frame, and the save
-    # then silently no-ops.
-    option = page.get_by_role("link", name=name, exact=True).first
-    option.wait_for(state="visible", timeout=_TIMEOUT)
-    option.click()
-
-    assign = page.get_by_text(_ASSIGN_REPS_LABEL, exact=False).first
-    assign.wait_for(state="visible", timeout=_TIMEOUT)
-    assign.click()
-    # The id is on both a hidden mirror and the visible input; fill the visible one.
-    field = page.locator("#movement_reps_value:visible").first
-    field.wait_for(state="visible", timeout=_TIMEOUT)
-    field.fill(reps)
-    # Blur so the units controller commits the value into the hidden input the
-    # form actually submits. Saving straight after fill stores nothing, silently:
-    # the row simply never appears, which is why the count check below is the
-    # real guard rather than a formality.
-    field.press("Tab")
-    page.wait_for_timeout(_FIELD_COMMIT_MS)
-
-    page.locator("input[value='Save Movement']").first.click()
-    page.wait_for_function(f"n => ({_ROW_COUNT_JS})(n) > n", arg=before, timeout=_TIMEOUT)
-    logger.info("  added %s x%s", name, reps)
 
 
 def _remove_seed_movement(page: Page) -> None:
@@ -337,6 +271,8 @@ def _fill_and_plan(
         plan_button = _fill_erg_intervals(page, block)
     elif block.sets is not None:
         plan_button = _fill_classic_sets(page, block)
+    elif block.alternating is not None:
+        plan_button = _fill_alternating_emom(page, block)
     else:
         _generate_preview(page, _SEED_DESCRIPTION if exact_movements else block.content, block.name)
         plan_button = page.locator("button:has-text('Planifier'):not([disabled])")

@@ -49,10 +49,26 @@ class ClassicSets:
     emom_seconds: int | None = None  # one set every this many seconds: BTWB's EMOM
 
 
-_Plan = TypeVar("_Plan", "ErgIntervals", "ClassicSets")
+@dataclass(frozen=True)
+class AlternatingEmom:
+    """Movements taking turns, one per interval: BTWB's "EMOM: Alterner Les Mouvements".
+
+    BTWB runs the whole cycle *sets_per_movement* times, so the EMOM lasts
+    ``every_seconds * sets_per_movement * len(movements)``. The movements are
+    parallel to *reps*; a movement may repeat (a rep ladder on one lift).
+    """
+
+    movements: tuple[str, ...]  # BTWB's exact movement names, in turn order
+    reps: tuple[int, ...]
+    every_seconds: int
+    sets_per_movement: int
+    percent_1rm: int | None = None  # every movement's load, when prescribed as a % of 1RM
 
 
-def plan_to_json(plan: "ErgIntervals | ClassicSets | None") -> dict | None:
+_Plan = TypeVar("_Plan", "ErgIntervals", "ClassicSets", "AlternatingEmom")
+
+
+def plan_to_json(plan: "ErgIntervals | ClassicSets | AlternatingEmom | None") -> dict | None:
     """A plan as JSON-ready data, every field included — none can be forgotten."""
     return None if plan is None else asdict(plan)
 
@@ -88,6 +104,7 @@ class ProgrammingBlock:
     level: str = RX  # which level `content` currently holds
     erg: ErgIntervals | None = None  # set when posted through BTWB's classic builder
     sets: ClassicSets | None = None  # likewise, for a single-movement set scheme
+    alternating: AlternatingEmom | None = None  # likewise, for movements taking turns
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
