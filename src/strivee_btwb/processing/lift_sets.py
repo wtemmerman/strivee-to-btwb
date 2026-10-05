@@ -14,8 +14,10 @@ from .timing import clock, seconds
 
 _SETS_HEADER_RE = re.compile(r"^\s*(\d+)\s*sets?\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
 _MAX_REP_RE = re.compile(r"^\s*max\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
+# A rest range ("Rest 2-3 min") posts its lower bound: BTWB holds one rest, and the
+# note opens with the range as written.
 _REST_RE = re.compile(
-    r"^\s*-?\s*rest\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])"
+    r"^\s*-?\s*rest\s+(\d+)(?:\s*-\s*\d+)?\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])"
     r"(?:\s+between\s+sets?)?\s*-?\s*$",
     re.IGNORECASE,
 )
@@ -26,7 +28,7 @@ _TARGET_1RM_RE = re.compile(
 _WINDOW_RE = re.compile(r"^\s*in\s+an?\s+\d+\s*min(?:ute)?s?\s+window\s*:?\s*$", re.IGNORECASE)
 _RM_LINE_RE = re.compile(r"^\s*(\d+)\s*RM\s+(.+?)\s*$", re.IGNORECASE)
 _BUILD_HEAVY_RE = re.compile(
-    r"^\s*build\s+(?:a|an)?\s*(?:new\s+)?heavy\s+(single|double|triple)\s*-?\s*(.+?)\s*$",
+    r"^\s*build\s+(?:up\s+to\s+)?(?:a|an)?\s*(?:new\s+)?heavy\s+(single|double|triple)\s*-?\s*(.+?)\s*$",
     re.IGNORECASE,
 )
 _HEAVY_REPS = {"single": 1, "double": 2, "triple": 3}

@@ -705,6 +705,32 @@ def _rejoin_continuation(fields: dict[str, str], instruction: str) -> str:
     return "\n\n".join(paragraphs[1:])
 
 
+def _restore_dropped_advice(blocks: list[ProgrammingBlock], text: str) -> list[ProgrammingBlock]:
+    """Put back level targets and criteria the model left out of a block entirely.
+
+    _extract_levels can only keep a header's advice when the header reaches it, and
+    the model drops some outright: "🔱 RX 🔱 - 120m Sub 8:00" never made it into the
+    Handstand walk block while its INTER+ twin did. The source slice still has it.
+    """
+    slices = _source_slices(text)
+    restored: list[ProgrammingBlock] = []
+    for block in blocks:
+        own = slices.get(_norm_title(block.name))
+        if own is None:
+            restored.append(block)
+            continue
+        _preamble, sections = _split_level_sections(_clean_block_text(own))
+        parsed = _norm_for_match(
+            "\n".join((block.content, block.instruction, block.inter_plus, block.inter))
+        )
+        instruction = block.instruction
+        for _levels, header, body in sections:
+            if body and _header_is_advice(header) and _norm_for_match(header) not in parsed:
+                instruction = f"{instruction}\n\n{header}".strip()
+        restored.append(block.replace(instruction=instruction))
+    return restored
+
+
 def _extract_levels(block: ProgrammingBlock) -> ProgrammingBlock:
     """Move per-level prescriptions out of content/instruction into their fields.
 
@@ -995,7 +1021,7 @@ def extract_day_programming_from_text(
         # level, and splitting at the first "Objectif" line would cut the block
         # mid-way and sweep the levels below it into instruction.
         cleaned.append(_extract_levels(b.replace(content=content, instruction=instruction)))
-    blocks = cleaned
+    blocks = _restore_dropped_advice(cleaned, text)
 
     if len(blocks) < len(expected_titles):
         logger.warning(

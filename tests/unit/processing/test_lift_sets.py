@@ -66,6 +66,17 @@ def test_weighted_sets_with_tempo_and_percent_of_1rm():
     assert classic_sets(block) == ClassicSets("Tempo Back Squat", (5, 5, 5), 120, percent_1rm=70)
 
 
+def test_a_rest_range_posts_its_lower_bound():
+    """Real Sat 10-10: "Rest 2-3 min" sent the block to the AI path, which has dropped
+    the tempo and the % before."""
+    block = _titled(
+        "EMF 60 - Back Squat",
+        "2 sets of :\n3 Reps Back Squat Tempo 22X1\n- Rest 2-3 min between sets -\n\n"
+        "Target weight : #75% 1RM 273.5 lb",
+    )
+    assert classic_sets(block) == ClassicSets("Tempo Back Squat", (3, 3), 120, percent_1rm=75)
+
+
 def test_a_reps_line_without_a_movement_takes_the_title_and_drops_the_rpe():
     block = _titled(
         "EMF 60 : Bench press", "3 Sets of :\n\n6 Reps RPE 7\n\n- Rest 2min between sets -"
@@ -90,6 +101,16 @@ def test_build_a_heavy_double_of_a_paused_lift():
         "the knee\n\n1 Temps de pause pour chacune des pauses !",
     )
     assert classic_sets(block) == ClassicSets("Pause Squat Clean", (2,), None, rep_max=True)
+
+
+def test_build_up_to_a_heavy_single():
+    """Real Wed 10-07: BTWB's AI stored "High Hang Snatch High Pull + High Hang Power Snatch"."""
+    block = _titled(
+        "EMF 60 - Snatch",
+        "In a 8min window\n\nBuild up to a heavy single Slow Pull Squat Snatch (5 sec floor to "
+        "hip)\n\nFROM THE GROUND",
+    )
+    assert classic_sets(block) == ClassicSets("Slow Pull Squat Snatch", (1,), None, rep_max=True)
 
 
 def test_touch_and_go_is_a_cue_not_part_of_the_name():

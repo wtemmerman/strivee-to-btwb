@@ -637,10 +637,11 @@ duplicate is worse than a merged entry one leg short.
 
 ### The cache
 
-Each fetched week is cached raw under `garmin/<week>/`. A week that has not ended is never
-served from it — that file was written mid-week and cannot know about Friday's run. Weeks that
-are over come off disk, because Garmin rate-limits by IP (hard enough that a login burst answers
-429 before anything else) while the mapping is free to re-run.
+Each fetched week is cached raw under `garmin/<week>/`, stamped with the day it was fetched.
+Only a fetch made after the week's Sunday is ever served from it: one written mid-week cannot
+know about Friday's run, and the week ending later does not make it complete. Weeks fetched
+once they were over come off disk, because Garmin rate-limits by IP (hard enough that a login
+burst answers 429 before anything else) while the mapping is free to re-run.
 
 ---
 

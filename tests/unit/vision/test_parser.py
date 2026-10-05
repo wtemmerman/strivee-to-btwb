@@ -794,6 +794,33 @@ def test_extract_splits_an_option_block_out_of_the_block_above(monkeypatch):
     assert vaccin.instruction == ""
 
 
+def test_extract_restores_a_level_target_the_model_dropped(monkeypatch):
+    """Real Sat 2026-10-10 case: the model kept INTER+'s "80m sub 8min" header and
+    dropped RX's "120m Sub 8:00" line outright, so no later pass could see it."""
+    import strivee_btwb.core.config as cfg
+
+    source = (
+        "EMF 60 - Handstand walk\n🔱 RX 🔱 - 120m Sub 8:00\n\nFor time : \n10 Wall walk \n"
+        "45m Handstand walk \n10 Wall walk \n\n🪖 INTER + 🪖 80m sub 8min \n\n"
+        "Accumulated 6 Reps / Movement \n1/2 Pirouette from wall facing \n\n"
+        "🎖️ INTER 🎖️\n\nWall facing Handstand Hold x60 sec"
+    )
+    dropped = (
+        "For time : \n10 Wall walk \n45m Handstand walk \n10 Wall walk \n\n"
+        "🪖 INTER + 🪖 80m sub 8min \n\nAccumulated 6 Reps / Movement \n"
+        "1/2 Pirouette from wall facing \n\n🎖️ INTER 🎖️\n\nWall facing Handstand Hold x60 sec"
+    )
+    blocks = [{"name": "EMF 60 - Handstand walk", "content": dropped, "instruction": ""}]
+    response = {"message": {"content": json.dumps({"blocks": blocks})}}
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", MagicMock(return_value=response))
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+
+    (block,) = extract_day_programming_from_text(source, "Sat", date(2026, 10, 10)).blocks
+    assert block.content == "For time :\n10 Wall walk\n45m Handstand walk\n10 Wall walk"
+    assert block.inter_plus == "Accumulated 6 Reps / Movement\n1/2 Pirouette from wall facing"
+    assert block.instruction == "INTER + 80m sub 8min\n\nRX - 120m Sub 8:00"
+
+
 def test_extract_no_recovery_when_all_titles_present(monkeypatch):
     import strivee_btwb.core.config as cfg
 

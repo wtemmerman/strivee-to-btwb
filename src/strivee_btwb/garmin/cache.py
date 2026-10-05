@@ -7,14 +7,14 @@ re-runnable against last week's real data without asking Garmin again.
 
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from ..core import config
 
 logger = logging.getLogger("garmin")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """Bump when the cached shape changes, so a stale file is re-fetched rather than
 silently mapped by code that expects different fields."""
 
@@ -32,6 +32,7 @@ def save_week(week_start: date, activities: list[dict]) -> Path:
             {
                 "schema_version": SCHEMA_VERSION,
                 "week_start": week_start.isoformat(),
+                "fetched_on": date.today().isoformat(),
                 "activities": activities,
             },
             indent=2,
@@ -43,7 +44,12 @@ def save_week(week_start: date, activities: list[dict]) -> Path:
 
 
 def load_week(week_start: date) -> list[dict] | None:
-    """Return a week's cached activities, or None when there is no usable cache."""
+    """Return a week's cached activities, or None when there is no usable cache.
+
+    Only a fetch made after the week's Sunday is usable. One made mid-week stays
+    incomplete forever, and the week being over by the time it is read does not
+    change that: Monday's empty file would otherwise answer for the whole week.
+    """
     path = _path(week_start)
     try:
         data = json.loads(path.read_text())
@@ -51,5 +57,7 @@ def load_week(week_start: date) -> list[dict] | None:
         return None
     if data.get("schema_version") != SCHEMA_VERSION:
         logger.info("Garmin cache %s is from an older schema — re-fetching", path.name)
+        return None
+    if date.fromisoformat(data["fetched_on"]) <= week_start + timedelta(days=6):
         return None
     return data["activities"]

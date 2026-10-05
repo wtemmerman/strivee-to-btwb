@@ -42,16 +42,15 @@ def _mondays_between(start: date, end: date) -> list[date]:
 def _garmin_activities(start: date, end: date, refetch: bool) -> list[dict]:
     """Fetch the window from Garmin a week at a time, reusing finished weeks.
 
-    A week that has not ended is never served from its cache: the file was written
-    mid-week, and Wednesday cannot know about Friday's run. Garmin is rate-limited,
-    so weeks that are over are read from disk instead of asked for again.
+    Garmin is rate-limited, so a week fetched after it ended is read from disk
+    instead of asked for again; anything else is fetched (see `load_week`).
     """
     client = None
     activities: list[dict] = []
     for monday in _mondays_between(start, end):
         sunday = monday + timedelta(days=6)
         cached = None if refetch else load_garmin_week(monday)
-        if cached is not None and sunday < date.today():
+        if cached is not None:
             logger.info("Week of %s — %d activities from cache", monday, len(cached))
             activities += cached
             continue
