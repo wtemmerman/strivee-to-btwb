@@ -103,6 +103,16 @@ def test_build_a_heavy_double_of_a_paused_lift():
     assert classic_sets(block) == ClassicSets("Pause Squat Clean", (2,), None, rep_max=True)
 
 
+def test_build_up_to_a_heavy_single():
+    """Real Wed 10-07: BTWB's AI stored "High Hang Snatch High Pull + High Hang Power Snatch"."""
+    block = _titled(
+        "EMF 60 - Snatch",
+        "In a 8min window\n\nBuild up to a heavy single Slow Pull Squat Snatch (5 sec floor to "
+        "hip)\n\nFROM THE GROUND",
+    )
+    assert classic_sets(block) == ClassicSets("Slow Pull Squat Snatch", (1,), None, rep_max=True)
+
+
 def test_touch_and_go_is_a_cue_not_part_of_the_name():
     block = _titled("EMF 60 : Power Clean", "5RM Power clean Touch and go")
     assert classic_sets(block) == ClassicSets("Power Clean", (5,), None, rep_max=True)

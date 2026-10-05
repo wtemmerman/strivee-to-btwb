@@ -28,7 +28,7 @@ _TARGET_1RM_RE = re.compile(
 _WINDOW_RE = re.compile(r"^\s*in\s+an?\s+\d+\s*min(?:ute)?s?\s+window\s*:?\s*$", re.IGNORECASE)
 _RM_LINE_RE = re.compile(r"^\s*(\d+)\s*RM\s+(.+?)\s*$", re.IGNORECASE)
 _BUILD_HEAVY_RE = re.compile(
-    r"^\s*build\s+(?:a|an)?\s*(?:new\s+)?heavy\s+(single|double|triple)\s*-?\s*(.+?)\s*$",
+    r"^\s*build\s+(?:up\s+to\s+)?(?:a|an)?\s*(?:new\s+)?heavy\s+(single|double|triple)\s*-?\s*(.+?)\s*$",
     re.IGNORECASE,
 )
 _HEAVY_REPS = {"single": 1, "double": 2, "triple": 3}
