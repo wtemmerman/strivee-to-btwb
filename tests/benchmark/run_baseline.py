@@ -1,8 +1,11 @@
 """Generate the accuracy + timing baseline from saved text-era captures.
 
-Re-parses every week that has .txt captures with the CURRENT analyser, refreshes
-the parsed/ cache (the committed cache may be from an older prompt), snapshots the
-analyse and format outputs under baselines/, and records per-stage timing.
+Re-parses every week that has .txt captures with the CURRENT analyser, snapshots
+the analyse and format outputs under baselines/, and records per-stage timing.
+
+It leaves parsed/ alone. The benchmark never reads it, and rewriting it made every
+formatted cache stale: the week being posted lost its level choices and any hand
+fix to its parse.
 
     python -m tests.benchmark.run_baseline
 
@@ -13,9 +16,7 @@ that speed changes leave these snapshots unchanged.
 
 import csv
 import logging
-from datetime import date
 
-from strivee_btwb.cache import save_day
 from strivee_btwb.core import config
 from strivee_btwb.core.log import setup
 from strivee_btwb.pipeline import clean_week
@@ -60,9 +61,6 @@ def main() -> None:
     timings: list[StageTiming] = []
     for ws in weeks:
         days, t_analyse = time_stage(analyse_week, ws, units=6, week=ws, stage="analyse")
-        # Refresh parsed/ with the current parser so the cache matches the snapshot.
-        for day in days:
-            save_day(day, date.fromisoformat(ws))
         week = _days_to_week(ws, days)
         save_baseline("analyse", ws, week)
         timings.append(t_analyse)
