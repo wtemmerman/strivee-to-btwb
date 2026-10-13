@@ -3,9 +3,10 @@
 from strivee_btwb.processing.btwb_movements import apply_movement_aliases
 
 
-def test_single_arm_handstand_hold_becomes_weight_shift():
+def test_single_arm_handstand_hold_keeps_its_strivee_wording():
+    """BTWB's AI refused the old "Weight Shift" rewrite every time (Sat 10-10, Sat 10-17)."""
     text = "Single arm Wall facing handstand Hold x15 sec / arm"
-    assert apply_movement_aliases(text) == "Wall Facing Handstand Hold Weight Shift x15 sec / arm"
+    assert apply_movement_aliases(text) == text
 
 
 def test_plain_wall_facing_handstand_hold_is_left_alone():
