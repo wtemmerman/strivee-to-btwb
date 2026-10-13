@@ -188,6 +188,16 @@ def test_several_back_off_lines_and_a_rest_range():
     assert classic_sets(block) == ClassicSets("Tempo Bench Press", (4, 4, 4), 90)
 
 
+def test_top_set_rest_range_posts_its_lower_bound():
+    """Real Tue 10-13: "Rest 2-3 Min" posted the back squat with rest as needed."""
+    block = _titled(
+        "EMF 60 - Back Squat",
+        "Week 6/15\n\nA. Top set\n1x3 RPE 7 - estimation : 82% 365 lb\n\nB. Back Off :\n"
+        "2x3 #90% of your today Top set\n- Rest 2-3 Min between sets -",
+    )
+    assert classic_sets(block) == ClassicSets("Back Squat", (3, 3, 3), 120)
+
+
 def test_lettered_top_set_and_back_off_without_tempo():
     """Real Jul-Aug shape: "A. Top Set / Build a set of N" then "B. Back Off / N Sets of R"."""
     block = _titled(
