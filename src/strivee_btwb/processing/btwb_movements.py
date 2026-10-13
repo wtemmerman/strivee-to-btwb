@@ -7,9 +7,12 @@ land as unrecognised text. Each entry below was confirmed against BTWB while
 posting a real week — add to it whenever BTWB fails to resolve a movement.
 
 Written as (pattern, replacement) rather than a dict because order matters: the
-most specific wording has to win. "Single arm Wall facing handstand Hold" must be
-rewritten before anything could touch the plain "Wall facing handstand Hold",
-which is already a BTWB movement and must be left alone.
+most specific wording has to win.
+
+An alias only helps if BTWB's AI generator accepts the result. "Single arm Wall
+facing handstand Hold" used to become "Wall Facing Handstand Hold Weight Shift",
+which the generator refused every time it was sent (Sat 10-10, Sat 10-17); the
+Strivee wording posts and reads back clean.
 """
 
 import re
@@ -18,8 +21,6 @@ import re
 # Qualifiers BTWB expresses as attributes rather than names — "Weighted", rep
 # counts, loads — are left in place around the movement.
 MOVEMENT_ALIASES: tuple[tuple[str, str], ...] = (
-    # 2026-08-18: BTWB has no single-arm variant; the weight-shift drill is it.
-    ("Single arm Wall facing handstand Hold", "Wall Facing Handstand Hold Weight Shift"),
     # 2026-08-19 / 2026-08-21: BTWB calls every eccentric RMU a "negative", with
     # no "strict" in the name. "Eccentric strict RMU" is the same movement.
     ("Negative strict Ring Muscle-up", "Negative Ring Muscle-up"),

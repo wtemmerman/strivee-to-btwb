@@ -41,9 +41,10 @@ _BUILD_A_SET_RE = re.compile(r"^\s*build\s+a\s+set\s+of\s+(\d+)\s*reps?\b", re.I
 # "2 Sets of 4 Reps @90% of your today 3 reps"
 _SETS_OF_REPS_RE = re.compile(r"^\s*(\d+)\s*sets?\s+of\s+(\d+)\s*reps?\b", re.IGNORECASE)
 # "- Rest 2min between sets -", "- Rest 1min30 between sets -"; a range ("1min30 -
-# 2min") keeps its first bound, the note carries the rest.
+# 2min", "2-3 Min") keeps its first bound, the note carries the rest.
 _REST_LEAD_RE = re.compile(
-    r"^\s*-?\s*rest\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])\s*(\d+)?", re.IGNORECASE
+    r"^\s*-?\s*rest\s+(\d+)(?:\s*-\s*\d+)?\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])\s*(\d+)?",
+    re.IGNORECASE,
 )
 _TEMPO_RE = re.compile(r"\btempo\b", re.IGNORECASE)
 _EMOM_RE = re.compile(
