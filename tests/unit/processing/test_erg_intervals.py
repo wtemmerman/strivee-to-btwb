@@ -19,6 +19,18 @@ def test_one_piece_per_set_with_its_rest():
     assert erg_intervals(block) == ErgIntervals("Bike Erg", (120,) * 4, 120)
 
 
+def test_minutes_and_seconds_with_a_cooldown_after_the_set():
+    """Real Tue 10-13: the cooldown read as part of the set, and BTWB's AI refused it."""
+    block = _block(
+        "EMF 60 - Bike erg",
+        "Week 6 - Threshold Day\n\nWarm-up\n\n8min Bike erg #Increasing Pace easy to FTP20 pace\n"
+        "30sec #FTP20 Pace / 30 sec easy\n\n- Rest 2Min and GO -\n\n8 sets of :\n"
+        "1min30 #93% of FTP20 262 W\n15 sec Full REST\n\n4 min Cooldown - Easy Pace\n\n"
+        "Total : 28 min",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (90,) * 8, 15)
+
+
 def test_pieces_without_rest_repeat_in_order():
     block = _block(
         "EMF RX - Bike erg",

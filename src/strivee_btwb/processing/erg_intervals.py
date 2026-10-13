@@ -25,8 +25,10 @@ _MOVEMENTS = [
 
 _SETS_HEADER_RE = re.compile(r"^\s*(\d+)\s*(?:sets?|rounds?)\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
 _TRAILING_SETS_RE = re.compile(r"^\s*x\s*(\d+)\s*(?:sets?|rounds?)\s*$", re.IGNORECASE)
+# "1min30" is a minute and a half: seconds written straight after the minutes.
 _DURATION_RE = re.compile(
-    r"^\s*(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])\s*(.*)$", re.IGNORECASE
+    r"^\s*(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])(\d{1,2}(?![\d%]))?\s*(.*)$",
+    re.IGNORECASE,
 )
 _IN_SET_REST_RE = re.compile(r"\brest\b|\brepos\b|r[ée]cup", re.IGNORECASE)
 _NO_REST_RE = re.compile(r"^\s*-?\s*no\s+rest\b", re.IGNORECASE)
@@ -66,10 +68,10 @@ def _durations(lines: list[str]) -> list[tuple[int, str]] | None:
     parsed = []
     for line in lines:
         m = _DURATION_RE.match(line)
-        label = m.group(3) if m else ""
+        label = m.group(4) if m else ""
         if not m or (label and not (_INTENSITY_RE.search(label) or _IN_SET_REST_RE.search(label))):
             return None
-        parsed.append((seconds(m.group(1), m.group(2)), m.group(3)))
+        parsed.append((seconds(m.group(1), m.group(2)) + int(m.group(3) or 0), label))
     return parsed
 
 
@@ -85,7 +87,7 @@ def _main_set(lines: list[str]) -> tuple[int, list[str], str | None] | None:
                 continue
             if _NO_REST_RE.match(line) or _REST_BETWEEN_RE.match(line):
                 return int(header.group(1)), body, line
-            if not _DURATION_RE.match(line):
+            if not _DURATION_RE.match(line) or COOLDOWN_RE.search(line):
                 break
             body.append(line)
         return int(header.group(1)), body, None
