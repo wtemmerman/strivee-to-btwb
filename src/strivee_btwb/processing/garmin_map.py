@@ -103,6 +103,35 @@ def _number(activity: dict, field: str) -> float:
 # ── Interval structure ────────────────────────────────────────────────────────
 
 
+def join_split_steps(laps: list[dict]) -> list[dict]:
+    """Rejoin the pieces auto-lap cut out of one prescribed effort.
+
+    Auto-lap keeps firing every kilometre inside a workout step, so a 1500m rep
+    arrives as a 1000m lap and a 500m lap. Both carry the step's ``wktStepIndex``,
+    which is what tells them apart from two reps: a repeat block puts its recovery
+    step between reps, so two reps never sit side by side under one step. Laps
+    without a step index were not run from a workout and are left as they are.
+    """
+    joined: list[dict] = []
+    for lap in laps:
+        previous = joined[-1] if joined else None
+        step = lap.get("wktStepIndex")
+        if (
+            previous is not None
+            and step is not None
+            and previous.get("wktStepIndex") == step
+            and previous.get("intensityType") == lap.get("intensityType")
+        ):
+            joined[-1] = {
+                **previous,
+                "distance": (previous.get("distance") or 0.0) + (lap.get("distance") or 0.0),
+                "duration": (previous.get("duration") or 0.0) + (lap.get("duration") or 0.0),
+            }
+            continue
+        joined.append(lap)
+    return joined
+
+
 def is_interval_session(laps: list[dict]) -> bool:
     """True when the laps read as repeated efforts, not one continuous run.
 
@@ -188,7 +217,7 @@ def _notes(activity: dict, movement: str) -> str:
 
 
 def _session(activity: dict, movement: str) -> CardioSession:
-    laps = activity.get("lapDTOs") or []
+    laps = join_split_steps(activity.get("lapDTOs") or [])
     intervals = work_intervals(laps) if is_interval_session(laps) else []
     return CardioSession(
         date=activity_date(activity),

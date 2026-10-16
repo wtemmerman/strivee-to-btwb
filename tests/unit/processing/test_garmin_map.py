@@ -324,3 +324,55 @@ def test_commutes_can_be_left_out_of_btwb_entirely():
 def test_runs_are_never_treated_as_commutes():
     sessions = sessions_from_activities([_activity(km=1.5)], min_bike_km=10, merge_commutes=False)
     assert len(sessions) == 1
+
+
+def _step_lap(intensity, distance, duration, step):
+    return {**_lap(intensity, distance, duration), "wktStepIndex": step}
+
+
+# 4 x 1500m off a workout, auto-lap still on: each rep reaches Garmin as 1000m + 500m.
+SPLIT_REP_LAPS = [
+    _step_lap("WARMUP", 1000, 381.2, 0),
+    _step_lap("WARMUP", 312, 117.7, 0),
+    *[
+        lap
+        for first, second, rest in [
+            (260.7, 125.4, 120.0),
+            (255.4, 132.8, 120.0),
+            (255.9, 133.0, 120.0),
+            (253.9, 130.3, 120.0),
+        ]
+        for lap in (
+            _step_lap("ACTIVE", 1000, first, 1),
+            _step_lap("ACTIVE", 500, second, 1),
+            _step_lap("REST", 300, rest, 2),
+        )
+    ],
+    _step_lap("RECOVERY", 1000, 326.1, 4),
+]
+
+
+def test_an_auto_lapped_rep_is_logged_as_the_one_effort_it_was():
+    (session,) = sessions_from_activities([_activity(laps=SPLIT_REP_LAPS)])
+    assert session.model == INTERVALS
+    assert [i.distance_m for i in session.intervals] == [1500] * 4
+    assert [round(i.duration_s, 1) for i in session.intervals] == [386.1, 388.2, 388.9, 384.2]
+    assert all(i.rest_s == 120.0 for i in session.intervals)
+    assert same_each_interval(session.intervals)
+
+
+def test_reps_with_rest_between_are_never_joined():
+    laps = [
+        _step_lap("ACTIVE", 500, 118.0, 1),
+        _step_lap("REST", 200, 80.0, 2),
+        _step_lap("ACTIVE", 500, 120.0, 1),
+        _step_lap("REST", 200, 80.0, 2),
+    ]
+    (session,) = sessions_from_activities([_activity(laps=laps)])
+    assert [i.distance_m for i in session.intervals] == [500, 500]
+
+
+def test_a_steady_workout_step_split_by_auto_lap_stays_one_continuous_run():
+    laps = [_step_lap("ACTIVE", 1000, 353.1, 0) for _ in range(6)]
+    (session,) = sessions_from_activities([_activity(laps=laps)])
+    assert session.model == SINGLE_DISTANCE
