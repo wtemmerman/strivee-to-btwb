@@ -105,3 +105,56 @@ def test_the_log_line_keeps_the_efforts_and_drops_the_shape_word():
 
 def test_a_description_with_nothing_but_a_shape_word_is_kept_as_is():
     assert cardio._one_line("Intervals") == "Intervals"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [(13.0, "13 secs"), (132.8, "2:13"), (260.7, "4:21"), (3725.0, "62:05")],
+)
+def test_times_are_compared_in_the_words_btwb_prints_them(seconds, expected):
+    assert cardio._btwb_clock(seconds) == expected
+
+
+def _built(description, result):
+    return {"description": description, "result": result}
+
+
+SPLIT_REPS = _session(
+    CardioInterval(1000, 260.7, None),
+    CardioInterval(500, 132.8, 120.0),
+)
+
+
+def test_an_entry_built_with_the_typed_times_passes():
+    cardio._check_built(
+        SPLIT_REPS,
+        _built("Intervals\nRun, 1000 m | 4:21\nRun, 500 m | 2:13", "Total Time : 51:07"),
+    )
+
+
+def test_a_minutes_box_that_did_not_take_stops_the_entry():
+    with pytest.raises(cardio.BTWBError, match="13 secs"):
+        cardio._check_built(
+            SPLIT_REPS,
+            _built("Intervals\nRun, 1000 m | 4:21\nRun, 500 m | 13 secs", "Total Time : 51:07"),
+        )
+
+
+def test_a_wrong_total_stops_the_entry():
+    with pytest.raises(cardio.BTWBError, match="Total Time"):
+        cardio._check_built(
+            SPLIT_REPS,
+            _built("Intervals\nRun, 1000 m | 4:21\nRun, 500 m | 2:13", "Total Time : 7"),
+        )
+
+
+def test_a_single_distance_is_checked_against_its_one_time():
+    session = CardioSession(
+        date=date(2026, 10, 11),
+        movement="Run",
+        model=SINGLE_DISTANCE,
+        title="La Prairie Course à pied",
+        distance_m=10010,
+        duration_s=3238,
+    )
+    cardio._check_built(session, _built("Interval\nRun, 10.01 km | 53:58", "Total Time : 53:58"))
