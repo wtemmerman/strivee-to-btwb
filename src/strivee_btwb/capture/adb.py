@@ -130,9 +130,14 @@ def find_strivee_package(serial: str | None = None) -> str:
 
 
 def launch_strivee(serial: str | None = None) -> None:
-    """Launch the Strivee app via Android monkey intent."""
+    """Start Strivee fresh, on its program page.
+
+    A plain launch resumes whatever screen the app was left on — one opened from a
+    notification (a member's score) had every day tab captured as that score page.
+    """
     package = find_strivee_package(serial)
     logger.info("Launching %s", package)
+    _adb(["shell", "am", "force-stop", package], serial)
     _adb(
         ["shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"],
         serial,
@@ -269,6 +274,19 @@ def navigate_to_week(target_week: date, serial: str | None = None) -> None:
     # capturing today's empty Sunday view in place of Monday). Wait for the new
     # week to finish rendering before the caller taps the first day.
     time.sleep(2.0)
+
+
+def ensure_program_page(serial: str | None = None) -> None:
+    """Refuse to capture unless Strivee shows its program page's LUN…DIM day tabs.
+
+    Any other screen still dumps text, and every day tab tapped on it is saved as
+    a plausible-looking but wrong capture.
+    """
+    labels = {text.strip().casefold() for text in _texts_from_dump(_ui_dump(serial))}
+    if not all(day.casefold() in labels for day in _WEEKDAYS_FR):
+        raise RuntimeError(
+            "Strivee is not on its program page (no LUN…DIM day tabs) — nothing captured"
+        )
 
 
 def scroll_to_top(serial: str | None = None, max_swipes: int = 8) -> None:

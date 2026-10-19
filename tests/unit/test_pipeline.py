@@ -839,6 +839,7 @@ def test_do_capture_success(monkeypatch, tmp_path):
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.ensure_program_page", MagicMock())
     monkeypatch.setattr(
         "strivee_btwb.pipeline.capture_day_as_text",
         lambda *a, **k: "EMF 60 : Snatch\nBuild to 1RM",
@@ -862,6 +863,26 @@ def test_do_capture_exits_when_strivee_fails(monkeypatch, tmp_path):
         do_capture(["Mon"], no_scrcpy=True)
 
 
+def test_do_capture_saves_nothing_off_the_program_page(monkeypatch, tmp_path):
+    import strivee_btwb.core.config as cfg
+
+    monkeypatch.setattr(cfg, "CAPTURES_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "ANDROID_SERIAL", None)
+    monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr(
+        "strivee_btwb.pipeline.ensure_program_page",
+        MagicMock(side_effect=RuntimeError("not on its program page")),
+    )
+    capture = MagicMock()
+    monkeypatch.setattr("strivee_btwb.pipeline.capture_day_as_text", capture)
+
+    with pytest.raises(SystemExit):
+        do_capture(["Mon"], no_scrcpy=True, ws=FIXTURE_WEEK)
+    capture.assert_not_called()
+    assert not (tmp_path / FIXTURE_WEEK.isoformat()).exists()
+
+
 def test_do_capture_exits_when_no_days_saved(monkeypatch, tmp_path):
     import strivee_btwb.core.config as cfg
 
@@ -871,6 +892,7 @@ def test_do_capture_exits_when_no_days_saved(monkeypatch, tmp_path):
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.ensure_program_page", MagicMock())
     monkeypatch.setattr(
         "strivee_btwb.pipeline.capture_day_as_text",
         MagicMock(side_effect=RuntimeError("adb error")),
@@ -1114,6 +1136,7 @@ def test_do_capture_scrcpy_not_found_logs_warning(monkeypatch, tmp_path, caplog)
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.ensure_program_page", MagicMock())
     monkeypatch.setattr(
         "strivee_btwb.pipeline.capture_day_as_text",
         lambda *a, **k: "some text",
@@ -1138,6 +1161,7 @@ def test_do_capture_terminates_scrcpy_after_success(monkeypatch, tmp_path):
     monkeypatch.setattr("strivee_btwb.pipeline.launch_strivee", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.navigate_to_week", MagicMock())
     monkeypatch.setattr("strivee_btwb.pipeline.scroll_to_top", MagicMock())
+    monkeypatch.setattr("strivee_btwb.pipeline.ensure_program_page", MagicMock())
     monkeypatch.setattr(
         "strivee_btwb.pipeline.capture_day_as_text",
         lambda *a, **k: "some text",

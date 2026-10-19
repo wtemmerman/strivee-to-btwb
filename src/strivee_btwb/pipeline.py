@@ -29,6 +29,7 @@ from .cache import (
 )
 from .capture import (
     capture_day_as_text,
+    ensure_program_page,
     launch_scrcpy,
     launch_strivee,
     navigate_to_week,
@@ -402,6 +403,13 @@ def do_capture(
         sys.exit(1)
 
     scroll_to_top(serial)  # also waits for the app to fully render after launch
+    try:
+        ensure_program_page(serial)
+    except RuntimeError as e:
+        logger.error("%s", e)
+        if scrcpy_proc:
+            scrcpy_proc.terminate()
+        sys.exit(1)
     navigate_to_week(ws, serial)
 
     logger.info("Capturing %d day(s) via UI text dump: %s", len(days), ", ".join(days))
