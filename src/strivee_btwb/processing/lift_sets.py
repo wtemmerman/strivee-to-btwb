@@ -36,6 +36,8 @@ _TOP_SET_RE = re.compile(r"^\s*(?:[A-Z]\.\s*)?top\s*set\b\s*[-:]?\s*$", re.IGNOR
 _BACK_OFF_RE = re.compile(r"^\s*(?:[A-Z]\.\s*)?back\s*off\b\s*[-:]?\s*$", re.IGNORECASE)
 # "1x4 RPE 9 (Target - 284.5 lb-303 lb)", "2x4 #90% of your today Top set"
 _SETS_BY_REPS_RE = re.compile(r"^\s*(\d+)\s*x\s*(\d+)\b", re.IGNORECASE)
+# Any set line, readable or not: "1xMax rep #90% of your today Top set".
+_SET_COUNT_LEAD_RE = re.compile(r"^\s*\d+\s*x", re.IGNORECASE)
 # "Build a set of 3 Reps RPE 6", "Build a set of 1Reps RPE 7"
 _BUILD_A_SET_RE = re.compile(r"^\s*build\s+a\s+set\s+of\s+(\d+)\s*reps?\b", re.IGNORECASE)
 # "2 Sets of 4 Reps @90% of your today 3 reps"
@@ -263,6 +265,10 @@ def _top_set_back_off(lines: list[str], block: ProgrammingBlock) -> ClassicSets 
         if found is None:
             if m := _REST_LEAD_RE.match(line):
                 rest = seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
+            # A back-off set this cannot read ("1xMax rep") would be posted as
+            # missing, along with the rest line after it.
+            elif _SET_COUNT_LEAD_RE.match(line):
+                return None
             break
         backoff.extend(found)
     if not top_reps or not backoff:

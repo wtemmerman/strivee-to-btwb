@@ -209,6 +209,19 @@ def test_lettered_top_set_and_back_off_without_tempo():
     assert classic_sets(block) == ClassicSets("Back Squat", (3, 4, 4, 4), 120)
 
 
+def test_a_max_rep_back_off_set_is_left_to_the_ai_path():
+    """Real Mon 10-19: previewed as "2 sets: 3, 3 reps, rest as needed" — the max-rep
+    set and the 1:30 rest after it were dropped. BTWB's Sets cannot mix the two."""
+    block = _titled(
+        "EMF 60 - Bench press",
+        "Week 7/15\n\nIntensification - Week 2/5\n\nA. Top set\n"
+        "1x3 RPE 8 - estimation : 85% 208 lb\n\nB. Back Off :\n"
+        "1x3 #90% of your today Top set\n1xMax rep #90% of your today Top set\n"
+        "- Rest 1Min30 between sets -",
+    )
+    assert classic_sets(block) is None
+
+
 def test_top_set_without_back_off_is_left_to_the_ai_path():
     block = _titled("EMF 60 - Bench press", "Top set -\n1x4 RPE 9\n\n- Rest 2 min between sets -")
     assert classic_sets(block) is None
