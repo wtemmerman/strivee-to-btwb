@@ -355,6 +355,28 @@ def _strip_foreign_lines(
     return trimmed if (trimmed or allow_empty) else content
 
 
+def _restore_source_titles(
+    blocks: list[ProgrammingBlock], titles: list[str]
+) -> list[ProgrammingBlock]:
+    """Give back its source title to a block the model renamed with a prefix.
+
+    The model has turned "Gymnastic Vaccin - OPTION" into "EMF 60 - Gymnastic
+    Vaccin - OPTION". Every later step finds a block's section by its title, so the
+    renamed block went unchecked and its title read as dropped — recovery then added
+    the same block a second time.
+    """
+    sources = {_norm_title(t): t for t in titles}
+
+    def restore(block: ProgrammingBlock) -> ProgrammingBlock:
+        name = _norm_title(block.name)
+        if name in sources:
+            return block
+        matches = [t for n, t in sources.items() if name.endswith(" " + n)]
+        return block.replace(name=matches[0]) if len(matches) == 1 else block
+
+    return [restore(b) for b in blocks]
+
+
 def _verify_against_source(
     blocks: list[ProgrammingBlock], text: str, day_label: str, model: str
 ) -> list[ProgrammingBlock]:
@@ -977,6 +999,7 @@ def extract_day_programming_from_text(
         logger.debug("%s: %d block(s) dropped by exclusion filter", day_label, excluded_count)
 
     expected_titles = count_block_titles(text)
+    blocks = _restore_source_titles(blocks, expected_titles)
 
     # Check what survived the parse before filling gaps: a block holding its
     # neighbour's workout still counts as "present", so this has to run before the

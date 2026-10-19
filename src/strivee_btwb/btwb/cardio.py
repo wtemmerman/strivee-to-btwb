@@ -96,6 +96,12 @@ def _clock_parts(seconds: float) -> tuple[str, str]:
     return str(total // 60), f"{total % 60:02d}"
 
 
+def _btwb_clock(seconds: float) -> str:
+    """A duration the way BTWB prints one it stores: "13 secs", "4:21", "62:05"."""
+    mins, secs = _clock_parts(seconds)
+    return f"{int(secs)} secs" if mins == "0" else f"{mins}:{secs}"
+
+
 def _fill_time(scope, mins: str, secs: str) -> None:
     scope.locator("input[placeholder='mins']").first.fill(mins)
     scope.locator("input[placeholder='secs']").first.fill(secs)
@@ -223,6 +229,27 @@ def _confirmation(page: Page, session: CardioSession) -> dict:
     }
 
 
+def _check_built(session: CardioSession, built: dict) -> None:
+    """Refuse an entry whose stored times differ from the ones that were typed.
+
+    A minutes box can silently not take: a 2:13 rep was once built as "13 secs",
+    and the read-back logged it as if nothing was wrong. The confirmation page is
+    the last point before saving, so a mismatch stops here with nothing written.
+    """
+    efforts = session.intervals if session.model == INTERVALS else [session]
+    expected = [_btwb_clock(e.duration_s) for e in efforts]
+    built_times = [
+        line.rsplit("|", 1)[-1].strip()
+        for line in built["description"].splitlines()[1:]
+        if "|" in line
+    ]
+    if built_times != expected:
+        raise BTWBError(f"BTWB built the efforts as {built_times}, not {expected} — nothing saved")
+    total = f"Total Time : {_btwb_clock(session.duration_s)}"
+    if built["result"] != total:
+        raise BTWBError(f"BTWB built {built['result']!r}, not {total!r} — nothing saved")
+
+
 def _raise_on_save_dialog(page: Page) -> None:
     alert = page.locator("#dialog-alert:visible")
     if alert.count():
@@ -336,6 +363,7 @@ def _log_one(page: Page, session: CardioSession, dry_run: bool) -> dict:
         _fill_single_distance(page, session)
     _fill_date_and_notes(page, session)
     built = _confirmation(page, session)
+    _check_built(session, built)
 
     result = {
         "date": session.date.isoformat(),

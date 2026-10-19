@@ -19,6 +19,7 @@ from strivee_btwb.capture.adb import (
     _texts_from_dump,
     _ui_dump,
     capture_day_as_text,
+    ensure_program_page,
     find_strivee_package,
     launch_strivee,
     navigate_to_day,
@@ -212,7 +213,49 @@ def test_launch_strivee_calls_adb(monkeypatch):
     monkeypatch.setattr("strivee_btwb.capture.adb.time.sleep", lambda _: None)
     with patch("strivee_btwb.capture.adb._adb", return_value=_fake_proc()) as mock_adb:
         launch_strivee()
-        mock_adb.assert_called_once()
+    commands = [c.args[0] for c in mock_adb.call_args_list]
+    # Stopped first: a plain launch resumes the screen the app was left on.
+    assert commands[0] == ["shell", "am", "force-stop", "com.strivee.app"]
+    assert commands[1][:3] == ["shell", "monkey", "-p"]
+
+
+# What the device showed on 2026-10-19: Strivee reopened on a member's score page.
+_SCORE_PAGE = [
+    "Aujourd'hui at 07:20",
+    "16:28",
+    "RX",
+    "Check  pour son WOD",
+    "Ajouter un commentaire",
+]
+_PROGRAM_PAGE = [
+    "EMF 60'",
+    "LUN",
+    "19",
+    "MAR",
+    "20",
+    "MER",
+    "21",
+    "JEU",
+    "22",
+    "VEN",
+    "23",
+    "SAM",
+    "24",
+    "DIM",
+    "25",
+    "Note des coach 📝 : OFF SEASON CYCLE",
+]
+
+
+def test_the_program_page_is_accepted(monkeypatch):
+    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: _xml(_PROGRAM_PAGE))
+    ensure_program_page()
+
+
+def test_any_other_screen_stops_the_capture(monkeypatch):
+    monkeypatch.setattr("strivee_btwb.capture.adb._ui_dump", lambda *_: _xml(_SCORE_PAGE))
+    with pytest.raises(RuntimeError, match="not on its program page"):
+        ensure_program_page()
 
 
 def test_take_screenshot_returns_image():

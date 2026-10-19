@@ -1,5 +1,6 @@
 from .adb import (
     capture_day_as_text,
+    ensure_program_page,
     launch_scrcpy,
     launch_strivee,
     navigate_to_week,
@@ -9,6 +10,7 @@ from .adb import (
 
 __all__ = [
     "capture_day_as_text",
+    "ensure_program_page",
     "launch_scrcpy",
     "launch_strivee",
     "navigate_to_week",

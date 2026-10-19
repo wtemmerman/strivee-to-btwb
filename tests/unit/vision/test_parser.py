@@ -16,6 +16,7 @@ from strivee_btwb.vision.parser import (
     _is_excluded,
     _recover_block,
     _resplit_trailing_coaching,
+    _restore_source_titles,
     _sanitize_json_strings,
     _validate_blocks,
     count_block_titles,
@@ -729,6 +730,42 @@ def test_extract_recovers_block_merged_into_excluded_neighbour(monkeypatch):
     names = [b.name for b in result.blocks]
     assert names == ["EMF 60 - Optional RUN"]  # Hebdomadaire excluded, Optional RUN recovered
     assert result.blocks[0].content == "45-60min Long Run"
+
+
+def test_a_block_the_model_renamed_with_a_prefix_is_not_posted_twice(monkeypatch):
+    """Real Tue 10-20 case: the model named the option "EMF 60 - Gymnastic Vaccin -
+    OPTION", recovery saw its title as dropped and added the block a second time."""
+    import strivee_btwb.core.config as cfg
+
+    source = (
+        "EMF 60 - Bike erg\n4 sets of :\n4min #95% of FTP20\nAjouter PRs manquants\n"
+        "Gymnastic Vaccin - OPTION\nGHD Sit-up\n4 sets of :\n16-22 Unbroken GHD Sit-up"
+    )
+    primary_json = json.dumps(
+        {
+            "blocks": [
+                {"name": "EMF 60 - Bike erg", "content": "4 sets of :\n4min #95% of FTP20"},
+                {
+                    "name": "EMF 60 - Gymnastic Vaccin - OPTION",
+                    "content": "GHD Sit-up\n4 sets of :\n16-22 Unbroken GHD Sit-up",
+                },
+            ]
+        }
+    )
+    chat = MagicMock(return_value={"message": {"content": primary_json}})
+    monkeypatch.setattr("strivee_btwb.core.llm.ollama.chat", chat)
+    monkeypatch.setattr(cfg, "EXCLUDED_BLOCKS", [])
+
+    result = extract_day_programming_from_text(source, "Tue", date(2026, 10, 20))
+
+    assert [b.name for b in result.blocks] == ["EMF 60 - Bike erg", "Gymnastic Vaccin - OPTION"]
+    assert chat.call_count == 1  # nothing looked dropped, so nothing was re-extracted
+
+
+def test_a_title_that_ends_two_source_titles_is_left_alone():
+    blocks = [ProgrammingBlock(name="EMF 60 - Back Squat", content="5x5")]
+    titles = ["Back Squat", "60 - Back Squat"]
+    assert _restore_source_titles(blocks, titles) == blocks
 
 
 def test_count_block_titles_counts_option_titles(monkeypatch):
