@@ -96,10 +96,20 @@ def _clock_parts(seconds: float) -> tuple[str, str]:
     return str(total // 60), f"{total % 60:02d}"
 
 
-def _btwb_clock(seconds: float) -> str:
-    """A duration the way BTWB prints one it stores: "13 secs", "4:21", "62:05"."""
-    mins, secs = _clock_parts(seconds)
-    return f"{int(secs)} secs" if mins == "0" else f"{mins}:{secs}"
+_BTWB_UNIT_RE = re.compile(r"^(\d+) (sec|min)s?$")
+
+
+def _btwb_seconds(text: str) -> int | None:
+    """Read back a duration the way BTWB prints one: "13 secs", "35 mins", "4:21"."""
+    unit = _BTWB_UNIT_RE.match(text)
+    if unit:
+        return int(unit.group(1)) * (60 if unit.group(2) == "min" else 1)
+    if re.fullmatch(r"\d+(:\d{2}){1,2}", text):
+        seconds = 0
+        for part in text.split(":"):
+            seconds = seconds * 60 + int(part)
+        return seconds
+    return None
 
 
 def _fill_time(scope, mins: str, secs: str) -> None:
@@ -237,17 +247,20 @@ def _check_built(session: CardioSession, built: dict) -> None:
     the last point before saving, so a mismatch stops here with nothing written.
     """
     efforts = session.intervals if session.model == INTERVALS else [session]
-    expected = [_btwb_clock(e.duration_s) for e in efforts]
+    expected = [":".join(_clock_parts(e.duration_s)) for e in efforts]
     built_times = [
         line.rsplit("|", 1)[-1].strip()
         for line in built["description"].splitlines()[1:]
         if "|" in line
     ]
-    if built_times != expected:
+    if [_btwb_seconds(t) for t in built_times] != [round(e.duration_s) for e in efforts]:
         raise BTWBError(f"BTWB built the efforts as {built_times}, not {expected} — nothing saved")
-    total = f"Total Time : {_btwb_clock(session.duration_s)}"
-    if built["result"] != total:
-        raise BTWBError(f"BTWB built {built['result']!r}, not {total!r} — nothing saved")
+    label, _, total = built["result"].partition(" : ")
+    if label != "Total Time" or _btwb_seconds(total) != round(session.duration_s):
+        raise BTWBError(
+            f"BTWB built {built['result']!r}, not a total of "
+            f"{':'.join(_clock_parts(session.duration_s))} — nothing saved"
+        )
 
 
 def _raise_on_save_dialog(page: Page) -> None:

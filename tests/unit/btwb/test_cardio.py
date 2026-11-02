@@ -108,11 +108,26 @@ def test_a_description_with_nothing_but_a_shape_word_is_kept_as_is():
 
 
 @pytest.mark.parametrize(
-    ("seconds", "expected"),
-    [(13.0, "13 secs"), (132.8, "2:13"), (260.7, "4:21"), (3725.0, "62:05")],
+    ("text", "seconds"),
+    [("13 secs", 13), ("1 min", 60), ("35 mins", 2100), ("2:13", 133), ("62:05", 3725)],
 )
-def test_times_are_compared_in_the_words_btwb_prints_them(seconds, expected):
-    assert cardio._btwb_clock(seconds) == expected
+def test_times_are_read_in_the_words_btwb_prints_them(text, seconds):
+    assert cardio._btwb_seconds(text) == seconds
+
+
+def test_a_whole_number_of_minutes_passes():
+    """Real 10-26 commute: BTWB prints 35:00 as "35 mins", and the check refused it."""
+    session = CardioSession(
+        date=date(2026, 10, 26),
+        movement="Bike",
+        model=SINGLE_DISTANCE,
+        title="Bike Commute",
+        distance_m=10140,
+        duration_s=2100,
+    )
+    cardio._check_built(
+        session, _built("Interval\nBike, 10.14 km | 35 mins", "Total Time : 35 mins")
+    )
 
 
 def _built(description, result):
