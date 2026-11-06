@@ -376,3 +376,45 @@ def test_a_steady_workout_step_split_by_auto_lap_stays_one_continuous_run():
     laps = [_step_lap("ACTIVE", 1000, 353.1, 0) for _ in range(6)]
     (session,) = sessions_from_activities([_activity(laps=laps)])
     assert session.model == SINGLE_DISTANCE
+
+
+# A 6-minute VMA test off a workout, as the watch recorded it on 2026-11-05:
+# auto-lap cut the warm-up into kilometres and the test into 1000m + 581m, and a
+# stray 3m lap followed once the workout had ended.
+VMA_TEST_LAPS = [
+    *[_step_lap("WARMUP", 1000, secs, 0) for secs in (351.0, 328.0, 342.0, 337.0, 309.0)],
+    _step_lap("WARMUP", 388, 133.0, 0),
+    _step_lap("ACTIVE", 1000, 229.0, 1),
+    _step_lap("ACTIVE", 581, 131.0, 1),
+    _step_lap("RECOVERY", 1000, 356.0, 2),
+    _step_lap("RECOVERY", 715, 244.0, 2),
+    _lap("ACTIVE", 3, 1.0),
+]
+
+
+def test_a_lone_hard_effort_keeps_its_own_time():
+    (session,) = sessions_from_activities([_activity(km=8.69, secs=2761.0, laps=VMA_TEST_LAPS)])
+    assert session.model == INTERVALS
+    assert [round(i.distance_m) for i in session.intervals] == [5388, 1581, 1715]
+    assert [round(i.duration_s) for i in session.intervals] == [1800, 360, 600]
+    assert {i.rest_s for i in session.intervals} == {None}
+    assert session.duration_s == 2761.0
+
+
+def test_a_zone_2_run_after_a_warm_up_stays_one_effort():
+    """Same WARMUP → ACTIVE → cool-down shape, but run at warm-up pace."""
+    laps = [
+        _step_lap("WARMUP", 804, 300.0, 0),
+        _step_lap("ACTIVE", 6775, 2398.0, 1),
+        _step_lap("COOLDOWN", 770, 290.0, 2),
+    ]
+    (session,) = sessions_from_activities([_activity(laps=laps)])
+    assert session.model == SINGLE_DISTANCE
+
+
+def test_a_lone_effort_without_a_warm_up_stays_one_effort():
+    """Nothing to measure it against — a run that is all effort is the effort."""
+    (session,) = sessions_from_activities(
+        [_activity(laps=[_step_lap("ACTIVE", 2000, 544.0, 0), _lap("ACTIVE", 7, 2.0)])]
+    )
+    assert session.model == SINGLE_DISTANCE
