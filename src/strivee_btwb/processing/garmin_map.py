@@ -57,6 +57,7 @@ beside the stale one instead of updating.
 
 ACTIVE = "ACTIVE"
 REST = "REST"
+WARMUP = "WARMUP"
 
 UNIFORM_TOLERANCE_M = 10.0
 """How far rep distances may spread and still count as "same each interval".
@@ -148,6 +149,54 @@ def is_interval_session(laps: list[dict]) -> bool:
     return len(efforts) >= 4 and max(e.get("distance") or 0.0 for e in efforts) < AUTO_LAP_M
 
 
+EFFORT_PACE_RATIO = 0.90
+"""How much faster than its warm-up a lone effort must run to be the session's point.
+
+A Zone 2 workout with a warm-up block has the same WARMUP → ACTIVE → cool-down
+shape as a VMA test or a 3000m at race pace, so only pace separates them. Zone 2
+runs sit within 3 to 5 % of their warm-up; the tests on record ran 15 to 32 % faster."""
+
+
+def _pace(laps: list[dict]) -> float | None:
+    distance = sum(lap.get("distance") or 0.0 for lap in laps)
+    duration = sum(lap.get("duration") or 0.0 for lap in laps)
+    return duration / distance if distance else None
+
+
+def is_single_effort(laps: list[dict]) -> bool:
+    """True when a workout is one hard effort framed by a warm-up — a test, not a jog.
+
+    Only laps carrying a ``wktStepIndex`` are read: the watch keeps lapping for a
+    few metres after the last step, and that stray ACTIVE lap is not a second effort.
+    """
+    steps = [lap for lap in laps if lap.get("wktStepIndex") is not None]
+    efforts = [lap for lap in steps if lap.get("intensityType") == ACTIVE]
+    warmups = [lap for lap in steps if lap.get("intensityType") == WARMUP]
+    if len(efforts) != 1 or not warmups:
+        return False
+    effort_pace, warmup_pace = _pace(efforts), _pace(warmups)
+    if effort_pace is None or warmup_pace is None:
+        return False
+    return effort_pace <= EFFORT_PACE_RATIO * warmup_pace
+
+
+def step_intervals(laps: list[dict]) -> list[CardioInterval]:
+    """Every workout step as its own row — warm-up, the effort, the cool-down.
+
+    BTWB's interval form holds no fewer than two rows, so a lone effort cannot go
+    in as one interval; logging the steps around it keeps the effort's own time on
+    the entry instead of averaging it into the whole run.
+    """
+    return [
+        CardioInterval(
+            distance_m=float(lap["distance"]),
+            duration_s=float(lap.get("duration") or 0.0),
+        )
+        for lap in laps
+        if lap.get("wktStepIndex") is not None and lap.get("distance")
+    ]
+
+
 def work_intervals(laps: list[dict]) -> list[CardioInterval]:
     """The work efforts of a rep session, each carrying the rest that followed it."""
     intervals = []
@@ -218,7 +267,12 @@ def _notes(activity: dict, movement: str) -> str:
 
 def _session(activity: dict, movement: str) -> CardioSession:
     laps = join_split_steps(activity.get("lapDTOs") or [])
-    intervals = work_intervals(laps) if is_interval_session(laps) else []
+    if is_interval_session(laps):
+        intervals = work_intervals(laps)
+    elif is_single_effort(laps):
+        intervals = step_intervals(laps)
+    else:
+        intervals = []
     return CardioSession(
         date=activity_date(activity),
         movement=movement,
