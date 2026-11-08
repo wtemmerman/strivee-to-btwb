@@ -58,11 +58,44 @@ def test_rest_between_sets_for_a_single_piece():
     assert erg_intervals(block) == ErgIntervals("Row", (180,) * 5, 60)
 
 
-def test_rest_between_sets_of_several_pieces_is_declined():
-    """BTWB holds one rest for all intervals — it cannot rest only between sets."""
+def test_pieces_resting_only_between_sets_post_one_interval_per_set():
+    """BTWB holds one rest for all intervals, so each set's pieces become one interval."""
     block = _block(
         "Bike erg",
         "3 sets of :\n3min #90% FTP20\n2min #70% FTP20\n- Rest 2min between sets -",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (300,) * 3, 120)
+
+
+def test_sets_named_by_length_with_a_full_rest_after():
+    """Real Tue 11-03: BTWB's AI was sent the block and it was entered by hand."""
+    block = _block(
+        "EMF 60 - Bike erg",
+        "Week 9 - Threshold Day\n\nWarm-up\n\n6min Bike erg #Increasing Pace easy to FTP20 pace\n"
+        "30 sec #FTP20 Pace / 30 sec easy\n30 sec #110% FTP20 Pace / 30 sec easy\n\n"
+        "- Rest 2Min and GO -\n\n2 sets of 8min :\n4min #93% of FTP20 262 W\n"
+        "4min #97% of FTP20 274 W\n- 1min30 Full REST between sets -\n\n"
+        "4 min Cooldown - Easy Pace\n\nTotal : 32min\n\nRPE 9",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (480,) * 2, 90)
+
+
+def test_a_walk_between_sets_is_the_rest():
+    """Real Thu 11-05: "1min marche entre les séries" was posted as no rest."""
+    block = _block(
+        "EMF 60 - Optional EF",
+        "Endurance FOCUS - 60min\n\n5min easy warm-up\n\n+\n3 sets of :\n15min RPE 5\n"
+        "- 1min marche entre les séries -\n+\n5min walk - cooldown",
+        "Objectif : Run - Endurance / Base aérobie ! (MAIS ça doit rester easy !)\n\nTOTAL - 57min",
+    )
+    assert erg_intervals(block) == ErgIntervals("Run", (900,) * 3, 60)
+
+
+def test_rest_between_sets_of_pieces_that_rest_in_the_set_is_declined():
+    """BTWB holds one rest for all intervals — it cannot rest both in and between sets."""
+    block = _block(
+        "Bike erg",
+        "3 sets of :\n3min #90% FTP20\n1min rest\n2min #70% FTP20\n- Rest 2min between sets -",
     )
     assert erg_intervals(block) is None
 
