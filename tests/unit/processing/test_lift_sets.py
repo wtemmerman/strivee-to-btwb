@@ -367,3 +367,41 @@ def test_with_pause_names_the_pause_variant():
     """A pause is a different BTWB movement, unlike an aid such as "with Abmat"."""
     assert btwb_movement_name("Squat Clean with pause @knee level") == "Pause Squat Clean"
     assert btwb_movement_name("Strict HSPU with Abmat") == "Strict Handstand Push-up"
+
+
+def test_a_cluster_posts_each_rep_as_a_single():
+    """Real Mon 11-02: BTWB's AI stored the strict press cluster as back squats."""
+    block = _titled(
+        "EMF 60 - Strict press",
+        "Strict Press - Cluster\n\n2 sets of :\n"
+        "1.1.1 Reps @95% of your heavy rep with pause (Week 4)\n"
+        "- Rest 20 sec between reps -\n- Rest 3Min30 between sets -\n\nNo pause",
+    )
+    assert classic_sets(block) == ClassicSets("Strict Press", (1,) * 6, None)
+
+
+def test_two_clusters_are_left_to_the_ai_path():
+    block = _titled(
+        "EMF 60 - Strict press",
+        "2 sets of :\n1.1.1 Reps @95%\n- Rest 2min between sets -\n1 sets of :\n2.2 Reps @90%",
+    )
+    assert classic_sets(block) is None
+
+
+def test_ranges_post_their_lower_bound_under_a_header_naming_the_movement():
+    """Real Mon 11-02: BTWB's AI stored the chest supported row as strict presses."""
+    block = _titled(
+        "EMF 60 - Chest Supported DB Row",
+        "Chest Supported DB Row (banc incliné 30-45°)\n\n3-4 sets of :\n"
+        "6-8 Reps - 1 sec hold en haut\n- rest 1min30 between sets -\n\n"
+        "Renforcement du pattern horizontal de tirage !\n\nPlus lourd que la semaine dernière !",
+    )
+    assert classic_sets(block) == ClassicSets("Chest Supported Dumbbell Row", (6, 6, 6), 90)
+
+
+def test_a_header_naming_another_movement_is_left_to_the_ai_path():
+    block = _titled(
+        "EMF 60 - Chest Supported DB Row",
+        "Seal Row\n\n3 sets of :\n8 Reps\n- rest 1min30 between sets -",
+    )
+    assert classic_sets(block) is None
