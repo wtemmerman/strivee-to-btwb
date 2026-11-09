@@ -58,7 +58,7 @@ from .processing.lift_sets import (
 )
 from .processing.movement_check import check_stored
 from .processing.plus_split import is_lead_in, split_plus_joins
-from .processing.scale import apply_scale
+from .processing.scale import apply_to_rx
 from .vision import count_block_titles, extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
@@ -224,9 +224,9 @@ class LevelChoiceNeededError(RuntimeError):
 
 
 def _level_prescription(block: ProgrammingBlock, level: str) -> str:
-    """What *level* of *block* posts, with a scale-only level applied to the RX workout."""
+    """What *level* of *block* posts, with a level published as only changes applied to RX."""
     text = block.level_text(level)
-    return text if level == RX else apply_scale(block.content, text) or text
+    return text if level == RX else apply_to_rx(block.content, text) or text
 
 
 def _ask_level(block: ProgrammingBlock, day: DayProgramming) -> str:
