@@ -91,6 +91,21 @@ def test_a_walk_between_sets_is_the_rest():
     assert erg_intervals(block) == ErgIntervals("Run", (900,) * 3, 60)
 
 
+def test_an_easy_piece_closing_each_set_is_its_rest():
+    """Real Fri 11-13: the easy piece was posted as work, four intervals and no rest."""
+    block = _block(
+        "EMF 60 - Bike erg",
+        "Bike Erg : Tempo\n\n8 min Warm-up increasing pace to 70% FTP20\n+\n2 sets of :\n"
+        "8min #85-88% FTP20 #85-90 RPM\n2min easy\n+\n5 min #70 to 40% FTP20\n\nTotal - 33 min",
+    )
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (480, 480), 120)
+
+
+def test_easy_pieces_throughout_a_set_are_all_work():
+    block = _block("Bike erg", "3 sets of :\n5min easy\n5min easy pace\n- no rest between sets -")
+    assert erg_intervals(block) == ErgIntervals("Bike Erg", (300, 300) * 3, 0)
+
+
 def test_rest_between_sets_of_pieces_that_rest_in_the_set_is_declined():
     """BTWB holds one rest for all intervals — it cannot rest both in and between sets."""
     block = _block(

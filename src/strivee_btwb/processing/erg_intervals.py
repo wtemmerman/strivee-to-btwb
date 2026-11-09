@@ -35,6 +35,9 @@ _DURATION_RE = re.compile(
     re.IGNORECASE,
 )
 _IN_SET_REST_RE = re.compile(r"\brest\b|\brepos\b|r[ée]cup", re.IGNORECASE)
+# "2min easy" closing a set of harder pieces is its recovery: Fri 11-13's "2 sets of :
+# 8min #85-88% FTP20 / 2min easy" is two 8-minute efforts with 2 minutes between.
+_EASY_ONLY_RE = re.compile(r"^\s*#?\s*(?:easy|recovery|r[ée]cup\w*)(?:\s+pace)?\s*$", re.IGNORECASE)
 _NO_REST_RE = re.compile(r"^\s*-?\s*no\s+rest\b", re.IGNORECASE)
 # "- Rest 2min between sets -", "- 1min30 Full REST between sets -", "- 1min marche
 # entre les séries -": a walk between sets is the rest BTWB holds.
@@ -205,7 +208,14 @@ def erg_intervals(block: ProgrammingBlock) -> ErgIntervals | None:
     if not movement or not found or not durations:
         return None
 
-    in_set_rest = durations.pop()[0] if _IN_SET_REST_RE.search(durations[-1][1]) else None
+    if _IN_SET_REST_RE.search(durations[-1][1]) or (
+        len(durations) > 1
+        and _EASY_ONLY_RE.match(durations[-1][1])
+        and not any(_EASY_ONLY_RE.match(label) for _, label in durations[:-1])
+    ):
+        in_set_rest: int | None = durations.pop()[0]
+    else:
+        in_set_rest = None
     if not durations or any(_IN_SET_REST_RE.search(label) for _, label in durations):
         return None
     work = tuple(secs for secs, _ in durations)
