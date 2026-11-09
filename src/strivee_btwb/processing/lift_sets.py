@@ -29,8 +29,22 @@ _REPS_LINE_RE = re.compile(
 # short rest between them.
 _CLUSTER_RE = re.compile(r"^\s*(\d+(?:\.\d+)+)\s*reps?\b", re.IGNORECASE)
 _CLUSTER_HEADER_RE = re.compile(r"[-:]\s*cluster\s*$", re.IGNORECASE)
-# "Plus lourd que la semaine dernière !": the coach talking, which the note carries.
-_EXCLAIMED_RE = re.compile(r"!\s*$")
+# "Plus lourd que la semaine dernière !", "Si c'est le cas, diminuez la charge.": the
+# coach talking, which the note carries.
+_SENTENCE_END_RE = re.compile(r"[!.]\s*$")
+# "Week 10/15", "Intensification - Week 5/5", "No tempo prescription": where the block
+# sits in the programme. A header naming a tempo does say which movement it is.
+_PROGRAMME_HEADER_RE = re.compile(
+    r"^(?!.*\btempo\b)\s*(?:[^\d-][^-]*-\s*)?week\s*\d+(?:\s*/\s*\d+)?\s*$"
+    r"|^\s*no\s+tempo(?:\s+prescription)?\s*$",
+    re.IGNORECASE,
+)
+# "2x3 @85% 395 lb": sets by reps at one % of 1RM, the load in pounds alongside.
+_SETS_AT_PERCENT_RE = re.compile(
+    r"^\s*(\d+)\s*x\s*(\d+)\s*(?:reps?)?\s*(?:[@#]\s*(\d+)\s*%(?:\s*(?:of\s+(?:your\s+)?)?1\s*RM)?"
+    r"(?:\s*\d+(?:[.,]\d+)?\s*(?:lbs?|kg))?)?\s*$",
+    re.IGNORECASE,
+)
 _TARGET_1RM_RE = re.compile(
     r"^\s*target\s+weight\s*:\s*[#@]?\s*(\d+)\s*%\s*(?:of\s+)?1\s*RM\b", re.IGNORECASE
 )
@@ -227,6 +241,25 @@ def _cluster(lines: list[str], block: ProgrammingBlock) -> ClassicSets | None:
     )
 
 
+def _sets_at_percent(lines: list[str], block: ProgrammingBlock) -> ClassicSets | None:
+    """ "2x3 @85% 395 lb / - rest 2min between sets" for the title's movement.
+
+    Real Tue 11-10 deadlift: BTWB's AI path was the only way in for it, and hand
+    plans were set for it two weeks running.
+    """
+    if len(lines) not in (1, 2) or not (m := _SETS_AT_PERCENT_RE.match(lines[0])):
+        return None
+    rest = _REST_RE.match(lines[1]) if len(lines) == 2 else None
+    if len(lines) == 2 and not rest:
+        return None
+    return ClassicSets(
+        movement=btwb_movement_name(_title_movement(block)),
+        reps=(int(m.group(2)),) * int(m.group(1)),
+        rest_seconds=_rest_seconds(rest) if rest else None,
+        percent_1rm=int(m.group(3)) if m.group(3) else None,
+    )
+
+
 def _emom_header(line: str) -> tuple[int, int, str] | None:
     """(seconds per set, sets, what follows on the line) for an EMOM or "Every" header."""
     if m := _EMOM_RE.match(line):
@@ -344,8 +377,10 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     movement ("6 Reps RPE 7") takes the title's.
     """
     lines = [line for line in block.content.splitlines() if line.strip()]
-    while lines and _EXCLAIMED_RE.search(lines[-1]) and not lines[-1].lstrip()[:1].isdigit():
+    while lines and _SENTENCE_END_RE.search(lines[-1]) and not lines[-1].lstrip()[:1].isdigit():
         lines.pop()
+    while lines and _PROGRAMME_HEADER_RE.match(lines[0]):
+        lines = lines[1:]
     # "Chest Supported DB Row (banc incliné 30-45°)" above the scheme only names it.
     if (
         len(lines) > 1
@@ -362,6 +397,7 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
         _cluster(lines, block)
         or _max_rep_sets(lines)
         or _weighted_sets(lines)
+        or _sets_at_percent(lines, block)
         or _emom(lines)
         or _top_set_back_off(lines, block)
         or _rep_max(lines)

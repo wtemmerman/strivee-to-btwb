@@ -405,3 +405,47 @@ def test_a_header_naming_another_movement_is_left_to_the_ai_path():
         "Seal Row\n\n3 sets of :\n8 Reps\n- rest 1min30 between sets -",
     )
     assert classic_sets(block) is None
+
+
+DEADLIFT_11_10 = (
+    "Week 10/15\n\nIntensification - Week 5/5\n\nNo tempo prescription\n\n2x3 @85% 395 lb\n"
+    "- rest 2min between sets\n\nOn ne va pas chercher lourd cette semaine ! Ça commençait à "
+    "peser la semaine dernière et l'objectif n'est pas d'aller chercher un 1RM.\n\n"
+    "Pas plus haut que RPE 8 ! Si c'est le cas, diminuez la charge."
+)
+
+
+def test_sets_at_a_percent_under_programme_headers_and_above_coaching():
+    """Real Tue 11-10, as the model left it: plans were set by hand two weeks running."""
+    block = _titled("EMF 60 - Deadlift", DEADLIFT_11_10)
+    assert classic_sets(block) == ClassicSets("Deadlift", (3, 3), 120, percent_1rm=85)
+
+
+def test_a_percent_range_or_a_second_scheme_line_stays_on_the_ai_path():
+    assert classic_sets(_titled("EMF 60 - Deadlift", "2x3 @80-85%\n- rest 2min -")) is None
+    assert (
+        classic_sets(
+            _titled("EMF 60 - Deadlift", "1x3 @85% 395 lb\n1x2 @88% 409 lb\n- rest 2min -")
+        )
+        is None
+    )
+
+
+def test_a_header_naming_a_tempo_still_names_the_movement():
+    block = _titled(
+        "EMF 60 - Back Squat",
+        "Tempo - Week 3/5\n\nA. Top set\n1x4 RPE 8\n\n"
+        "B. Back Off :\n2x4 #90% of your today Top set",
+    )
+    plan = classic_sets(block)
+    assert plan is not None and plan.movement == "Tempo Back Squat"
+
+
+def test_no_tempo_prescription_is_not_a_tempo():
+    block = _titled(
+        "EMF 60 - Deadlift",
+        "No tempo prescription\n\nA. Top set\n1x3 RPE 8\n\n"
+        "B. Back Off :\n2x3 #90% of your today Top set",
+    )
+    plan = classic_sets(block)
+    assert plan is not None and plan.movement == "Deadlift"
