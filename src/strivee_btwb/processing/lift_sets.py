@@ -12,16 +12,39 @@ from ..core.models import AlternatingEmom, ClassicSets, ProgrammingBlock
 from .plus_split import unsplit_name
 from .timing import clock, seconds
 
-_SETS_HEADER_RE = re.compile(r"^\s*(\d+)\s*sets?\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
+# A range ("3-4 sets of :", "6-8 Reps") posts its lower bound, as a rest range does.
+_SETS_HEADER_RE = re.compile(r"^\s*(\d+)(?:\s*-\s*\d+)?\s*sets?\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
 _MAX_REP_RE = re.compile(r"^\s*max\s*reps?\s+(.+?)\s*$", re.IGNORECASE)
 # A rest range ("Rest 2-3 min") posts its lower bound: BTWB holds one rest, and the
 # note opens with the range as written.
 _REST_RE = re.compile(
-    r"^\s*-?\s*rest\s+(\d+)(?:\s*-\s*\d+)?\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])"
+    r"^\s*-?\s*rest\s+(\d+)(?:\s*-\s*\d+)?\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])(\d{1,2})?"
     r"(?:\s+between\s+sets?)?\s*-?\s*$",
     re.IGNORECASE,
 )
-_REPS_LINE_RE = re.compile(r"^\s*(\d+)\s*reps?\s+(.+?)(?:\s+tempo\s+(\w+))?\s*$", re.IGNORECASE)
+_REPS_LINE_RE = re.compile(
+    r"^\s*(\d+)(?:\s*-\s*\d+)?\s*reps?\s+(.+?)(?:\s+tempo\s+(\w+))?\s*$", re.IGNORECASE
+)
+# "1.1.1 Reps @95% of your heavy rep": a cluster, each number a rep and the dots the
+# short rest between them.
+_CLUSTER_RE = re.compile(r"^\s*(\d+(?:\.\d+)+)\s*reps?\b", re.IGNORECASE)
+_CLUSTER_HEADER_RE = re.compile(r"[-:]\s*cluster\s*$", re.IGNORECASE)
+# "Plus lourd que la semaine dernière !", "Si c'est le cas, diminuez la charge.": the
+# coach talking, which the note carries.
+_SENTENCE_END_RE = re.compile(r"[!.]\s*$")
+# "Week 10/15", "Intensification - Week 5/5", "No tempo prescription": where the block
+# sits in the programme. A header naming a tempo does say which movement it is.
+_PROGRAMME_HEADER_RE = re.compile(
+    r"^(?!.*\btempo\b)\s*(?:[^\d-][^-]*-\s*)?week\s*\d+(?:\s*/\s*\d+)?\s*$"
+    r"|^\s*no\s+tempo(?:\s+prescription)?\s*$",
+    re.IGNORECASE,
+)
+# "2x3 @85% 395 lb": sets by reps at one % of 1RM, the load in pounds alongside.
+_SETS_AT_PERCENT_RE = re.compile(
+    r"^\s*(\d+)\s*x\s*(\d+)\s*(?:reps?)?\s*(?:[@#]\s*(\d+)\s*%(?:\s*(?:of\s+(?:your\s+)?)?1\s*RM)?"
+    r"(?:\s*\d+(?:[.,]\d+)?\s*(?:lbs?|kg))?)?\s*$",
+    re.IGNORECASE,
+)
 _TARGET_1RM_RE = re.compile(
     r"^\s*target\s+weight\s*:\s*[#@]?\s*(\d+)\s*%\s*(?:of\s+)?1\s*RM\b", re.IGNORECASE
 )
@@ -102,6 +125,7 @@ _ABBREVIATIONS = {
     "dus": "Double Unders",
     "rmu": "Ring Muscle-up",
     "bmu": "Bar Muscle-up",
+    "db": "Dumbbell",
 }
 
 
@@ -144,8 +168,14 @@ def _agrees_with_title(movement_text: str, block: ProgrammingBlock) -> bool:
     "Clean" and "2-pause Squat clean" agree; "Back Squat" and "3RM en 4 semaines"
     — a programme header read as a rep max — do not, and the block is left alone.
     """
-    read, title = _squashed(btwb_movement_name(movement_text)), _squashed(_title_movement(block))
+    read = _squashed(btwb_movement_name(movement_text))
+    title = _squashed(btwb_movement_name(_title_movement(block)))
     return bool(read and title) and (read in title or title in read)
+
+
+def _rest_seconds(rest: re.Match[str]) -> int:
+    """A rest line's time: its minutes or seconds, and seconds written after minutes."""
+    return seconds(rest.group(1), rest.group(2)) + int(rest.group(3) or 0)
 
 
 def _max_rep_sets(lines: list[str]) -> ClassicSets | None:
@@ -159,7 +189,7 @@ def _max_rep_sets(lines: list[str]) -> ClassicSets | None:
     return ClassicSets(
         movement=btwb_movement_name(movement.group(1)),
         reps=(None,) * int(header.group(1)),
-        rest_seconds=seconds(rest.group(1), rest.group(2)) if rest else None,
+        rest_seconds=_rest_seconds(rest) if rest else None,
     )
 
 
@@ -185,8 +215,48 @@ def _weighted_sets(lines: list[str]) -> ClassicSets | None:
     return ClassicSets(
         movement=f"Tempo {movement}" if reps.group(3) else movement,
         reps=(int(reps.group(1)),) * int(header.group(1)),
-        rest_seconds=seconds(rest.group(1), rest.group(2)),
+        rest_seconds=_rest_seconds(rest),
         percent_1rm=int(target.group(1)) if target else None,
+    )
+
+
+def _cluster(lines: list[str], block: ProgrammingBlock) -> ClassicSets | None:
+    """ "[<Movement> - Cluster] / N sets of : / 1.1.1 Reps @95% … / - Rest … -" as singles.
+
+    BTWB's AI stored the 10-26 and 11-02 strict press clusters as back squats. Each
+    rep of a cluster is a set in BTWB's Sets; the load (a % of some heavy rep) and
+    the two rests — between reps and between sets — have no field and stay in the
+    note. Any further line that opens with a number is more than one cluster.
+    """
+    if lines and _CLUSTER_HEADER_RE.search(lines[0]):
+        lines = lines[1:]
+    if len(lines) < 2:
+        return None
+    header, cluster = _SETS_HEADER_RE.match(lines[0]), _CLUSTER_RE.match(lines[1])
+    if not header or not cluster or any(line.lstrip()[:1].isdigit() for line in lines[2:]):
+        return None
+    reps = tuple(int(r) for r in cluster.group(1).split(".")) * int(header.group(1))
+    return ClassicSets(
+        movement=btwb_movement_name(_title_movement(block)), reps=reps, rest_seconds=None
+    )
+
+
+def _sets_at_percent(lines: list[str], block: ProgrammingBlock) -> ClassicSets | None:
+    """ "2x3 @85% 395 lb / - rest 2min between sets" for the title's movement.
+
+    Real Tue 11-10 deadlift: BTWB's AI path was the only way in for it, and hand
+    plans were set for it two weeks running.
+    """
+    if len(lines) not in (1, 2) or not (m := _SETS_AT_PERCENT_RE.match(lines[0])):
+        return None
+    rest = _REST_RE.match(lines[1]) if len(lines) == 2 else None
+    if len(lines) == 2 and not rest:
+        return None
+    return ClassicSets(
+        movement=btwb_movement_name(_title_movement(block)),
+        reps=(int(m.group(2)),) * int(m.group(1)),
+        rest_seconds=_rest_seconds(rest) if rest else None,
+        percent_1rm=int(m.group(3)) if m.group(3) else None,
     )
 
 
@@ -264,7 +334,7 @@ def _top_set_back_off(lines: list[str], block: ProgrammingBlock) -> ClassicSets 
         found = _set_reps(line, _SETS_BY_REPS_RE) or _set_reps(line, _SETS_OF_REPS_RE)
         if found is None:
             if m := _REST_LEAD_RE.match(line):
-                rest = seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
+                rest = _rest_seconds(m)
             # A back-off set this cannot read ("1xMax rep") would be posted as
             # missing, along with the rest line after it.
             elif _SET_COUNT_LEAD_RE.match(line):
@@ -307,12 +377,27 @@ def classic_sets(block: ProgrammingBlock) -> ClassicSets | None:
     movement ("6 Reps RPE 7") takes the title's.
     """
     lines = [line for line in block.content.splitlines() if line.strip()]
+    while lines and _SENTENCE_END_RE.search(lines[-1]) and not lines[-1].lstrip()[:1].isdigit():
+        lines.pop()
+    while lines and _PROGRAMME_HEADER_RE.match(lines[0]):
+        lines = lines[1:]
+    # "Chest Supported DB Row (banc incliné 30-45°)" above the scheme only names it.
+    if (
+        len(lines) > 1
+        and _SETS_HEADER_RE.match(lines[1])
+        and not lines[0].lstrip()[:1].isdigit()
+        and _agrees_with_title(lines[0], block)
+    ):
+        lines = lines[1:]
     if len(lines) > 1 and (m := _REPS_LINE_RE.match(lines[1])):
-        if not btwb_movement_name(m.group(2)):
+        # "8 Reps - 1 sec hold en haut": what follows the reps is a cue.
+        if not btwb_movement_name(m.group(2)) or m.group(2).startswith("-"):
             lines[1] = f"{m.group(1)} Reps {_title_movement(block)}"
     plan = (
-        _max_rep_sets(lines)
+        _cluster(lines, block)
+        or _max_rep_sets(lines)
         or _weighted_sets(lines)
+        or _sets_at_percent(lines, block)
         or _emom(lines)
         or _top_set_back_off(lines, block)
         or _rep_max(lines)

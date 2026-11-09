@@ -311,6 +311,18 @@ def test_select_levels_menu_skips_absent_levels(monkeypatch):
     assert block.level == INTER
 
 
+def test_select_levels_applies_a_level_published_as_only_a_scale_line(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "2")
+    block = ProgrammingBlock(
+        name="WOD",
+        content="3 rounds of :\n50m Farmer Carry\n10-6 Bar Muscle-up",
+        inter="Scale - 6 Bar muscle-up -> 3 Bar Muscle-up -> 8 Burpees bar muscle-up",
+    )
+    chosen = select_levels(_make_week(_make_day(blocks=[block]))).days[0].blocks[0]
+    assert chosen.content == "3 rounds of :\n50m Farmer Carry\n3 Bar Muscle-up"
+    assert chosen.level == INTER
+
+
 def test_select_levels_menu_shows_what_differs(monkeypatch, capsys):
     """Levels sharing an opening would otherwise print identical menu lines."""
     monkeypatch.setattr("builtins.input", lambda _prompt: "")

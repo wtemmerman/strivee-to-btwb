@@ -58,6 +58,7 @@ from .processing.lift_sets import (
 )
 from .processing.movement_check import check_stored
 from .processing.plus_split import is_lead_in, split_plus_joins
+from .processing.scale import apply_to_rx
 from .vision import count_block_titles, extract_day_programming_from_text
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,12 @@ class LevelChoiceNeededError(RuntimeError):
     """A multi-level block has no cached level choice and nobody can be asked."""
 
 
+def _level_prescription(block: ProgrammingBlock, level: str) -> str:
+    """What *level* of *block* posts, with a level published as only changes applied to RX."""
+    text = block.level_text(level)
+    return text if level == RX else apply_to_rx(block.content, text) or text
+
+
 def _ask_level(block: ProgrammingBlock, day: DayProgramming) -> str:
     """Prompt for which published level of *block* to post; RX on a bare Enter."""
     levels = block.available_levels()
@@ -229,7 +236,7 @@ def _ask_level(block: ProgrammingBlock, day: DayProgramming) -> str:
 
     # Levels usually open with the work everyone does, which would make every menu
     # line read the same. Show only what differs.
-    bodies = [block.level_text(lv).splitlines() for lv in levels]
+    bodies = [_level_prescription(block, lv).splitlines() for lv in levels]
     lead = _shared_lead(bodies)
     if lead:
         print("    every level starts with:")
@@ -278,7 +285,7 @@ def select_levels(week: WeeklyProgramming) -> WeeklyProgramming:
                 blocks.append(block)
                 continue
             level = _ask_level(block, day)
-            blocks.append(block.replace(content=block.level_text(level), level=level))
+            blocks.append(block.replace(content=_level_prescription(block, level), level=level))
         days.append(DayProgramming(date=day.date, day_label=day.day_label, blocks=blocks))
     return WeeklyProgramming(week_start=week.week_start, days=days)
 

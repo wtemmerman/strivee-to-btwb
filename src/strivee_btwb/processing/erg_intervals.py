@@ -23,7 +23,11 @@ _MOVEMENTS = [
     ("Run", re.compile(r"\brun(?:ning)?\b|\bcourse\b|\bfooting\b", re.IGNORECASE)),
 ]
 
-_SETS_HEADER_RE = re.compile(r"^\s*(\d+)\s*(?:sets?|rounds?)\s*(?:of)?\s*:?\s*$", re.IGNORECASE)
+# "2 sets of 8min :" names each set's length too; the pieces under it say the same.
+_SETS_HEADER_RE = re.compile(
+    r"^\s*(\d+)\s*(?:sets?|rounds?)\s*(?:of)?\s*(?:\d+\s*min(?:ute)?s?)?\s*:?\s*$",
+    re.IGNORECASE,
+)
 _TRAILING_SETS_RE = re.compile(r"^\s*x\s*(\d+)\s*(?:sets?|rounds?)\s*$", re.IGNORECASE)
 # "1min30" is a minute and a half: seconds written straight after the minutes.
 _DURATION_RE = re.compile(
@@ -31,11 +35,18 @@ _DURATION_RE = re.compile(
     re.IGNORECASE,
 )
 _IN_SET_REST_RE = re.compile(r"\brest\b|\brepos\b|r[ée]cup", re.IGNORECASE)
+# "2min easy" closing a set of harder pieces is its recovery: Fri 11-13's "2 sets of :
+# 8min #85-88% FTP20 / 2min easy" is two 8-minute efforts with 2 minutes between.
+_EASY_ONLY_RE = re.compile(r"^\s*#?\s*(?:easy|recovery|r[ée]cup\w*)(?:\s+pace)?\s*$", re.IGNORECASE)
 _NO_REST_RE = re.compile(r"^\s*-?\s*no\s+rest\b", re.IGNORECASE)
+# "- Rest 2min between sets -", "- 1min30 Full REST between sets -", "- 1min marche
+# entre les séries -": a walk between sets is the rest BTWB holds.
 _REST_BETWEEN_RE = re.compile(
-    r"^\s*-?\s*rest\s+(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z]).*\bbetween\b",
+    r"^\s*-?\s*(?:rest\s+)?(\d+)\s*(min(?:ute)?s?|'|sec(?:ond)?s?|s)(?![a-z])(\d{1,2}(?!\d))?"
+    r"(?:\s*(?:full\s+)?(?:rest|repos|r[ée]cup\w*|marche|walk))?.*\b(?:between|entre)\b",
     re.IGNORECASE,
 )
+_REST_WORD_RE = re.compile(r"\brest\b|\brepos\b|r[ée]cup|\bmarche\b|\bwalk\b", re.IGNORECASE)
 # What follows the time on an erg line is an intensity. Anything else ("Max strict
 # HSPU") means this is not an erg set, whatever the block mentions elsewhere.
 _INTENSITY_RE = re.compile(
@@ -85,7 +96,9 @@ def _main_set(lines: list[str]) -> tuple[int, list[str], str | None] | None:
         for line in lines[start + 1 :]:
             if not line.strip():
                 continue
-            if _NO_REST_RE.match(line) or _REST_BETWEEN_RE.match(line):
+            if _NO_REST_RE.match(line) or (
+                _REST_BETWEEN_RE.match(line) and _REST_WORD_RE.search(line)
+            ):
                 return int(header.group(1)), body, line
             if not _DURATION_RE.match(line) or COOLDOWN_RE.search(line):
                 break
@@ -105,21 +118,27 @@ def _between_sets_rest(rest_line: str | None) -> int | None:
     if rest_line and _NO_REST_RE.match(rest_line):
         return 0
     if rest_line and (m := _REST_BETWEEN_RE.match(rest_line)):
-        return seconds(m.group(1), m.group(2))
+        return seconds(m.group(1), m.group(2)) + int(m.group(3) or 0)
     return None
 
 
-def _one_rest(work: int, in_set_rest: int | None, between: int | None) -> int | None:
-    """The single rest BTWB can hold for a set of *work* pieces, or None if there is none.
+def _intervals(
+    work: tuple[int, ...], sets: int, in_set_rest: int | None, between: int | None
+) -> tuple[tuple[int, ...], int] | None:
+    """(intervals, the one rest BTWB holds after each) for *sets* of *work*, or None.
 
     BTWB takes one rest for every interval, so the set must rest the same after
-    each piece of work: either one piece per set, or no rest at all.
+    each piece of work: one piece per set, no rest at all, or pieces back to back
+    with a rest only between sets — each set is then one interval, and the note
+    keeps the pieces' intensities.
     """
-    if work == 1:
+    if len(work) == 1:
         if in_set_rest is not None and between not in (None, in_set_rest):
             return None
-        return in_set_rest if in_set_rest is not None else (between or 0)
-    return None if in_set_rest or between else 0
+        return work * sets, in_set_rest if in_set_rest is not None else (between or 0)
+    if in_set_rest:
+        return None
+    return ((sum(work),) * sets, between) if between else (work * sets, 0)
 
 
 # "3 x (20 sec Bike erg #HARD PACE - 40 sec # Recovery Pace)": work then recovery,
@@ -189,17 +208,21 @@ def erg_intervals(block: ProgrammingBlock) -> ErgIntervals | None:
     if not movement or not found or not durations:
         return None
 
-    in_set_rest = durations.pop()[0] if _IN_SET_REST_RE.search(durations[-1][1]) else None
+    if _IN_SET_REST_RE.search(durations[-1][1]) or (
+        len(durations) > 1
+        and _EASY_ONLY_RE.match(durations[-1][1])
+        and not any(_EASY_ONLY_RE.match(label) for _, label in durations[:-1])
+    ):
+        in_set_rest: int | None = durations.pop()[0]
+    else:
+        in_set_rest = None
     if not durations or any(_IN_SET_REST_RE.search(label) for _, label in durations):
         return None
-    rest = _one_rest(len(durations), in_set_rest, _between_sets_rest(found[2]))
-    if rest is None:
+    work = tuple(secs for secs, _ in durations)
+    plan = _intervals(work, found[0], in_set_rest, _between_sets_rest(found[2]))
+    if plan is None:
         return None
-    return ErgIntervals(
-        movement=movement,
-        intervals=tuple(secs for secs, _ in durations) * found[0],
-        rest_seconds=rest,
-    )
+    return ErgIntervals(movement=movement, intervals=plan[0], rest_seconds=plan[1])
 
 
 def describe(plan: ErgIntervals) -> str:
