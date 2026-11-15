@@ -449,3 +449,23 @@ def test_no_tempo_prescription_is_not_a_tempo():
     )
     plan = classic_sets(block)
     assert plan is not None and plan.movement == "Deadlift"
+
+
+def test_a_reps_line_at_one_percent_of_1rm_under_a_deload_header():
+    """Real Wed 11-18: back squat and deadlift plans were set by hand, as was Tue's bench."""
+    block = _titled(
+        "EMF 60 - Back Squat",
+        "Week 11/15\n\nDELOAD\n\n2 sets of :\n3 Reps Back Squat @75% 273.5 lb\n"
+        "- Rest 2min between sets -",
+    )
+    assert classic_sets(block) == ClassicSets("Back Squat", (3, 3), 120, percent_1rm=75)
+
+
+def test_a_reps_line_percent_of_another_rm_stays_on_the_ai_path():
+    """Real Tue 11-17 weighted pull-up: a % of last week's 3RM has no BTWB field."""
+    block = _titled(
+        "EMF 60 - Weighted pull-up",
+        "2 sets of :\n3 Reps Weighted pull-up @80% of your 3RM (last week)\n"
+        "- Rest 2min between sets -",
+    )
+    assert classic_sets(block) is None
