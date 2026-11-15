@@ -66,3 +66,44 @@ def test_a_one_line_level_that_is_not_only_counted_rx_movements_is_left_as_publi
     assert apply_to_rx(HALF_JACKIE, "400/300m Row - 20 Wall ball") is None
     assert apply_to_rx(HALF_JACKIE, "Same as RX - lighter thrusters") is None
     assert apply_to_rx(HALF_JACKIE, "20 Thruster #15/10kg") is None
+
+
+SHORT_WOD_11_17 = (
+    "AMRAP 8min :\n12/9 Calories Bike erg\n10 KB Swing #24/16kg\n8 Toes to bar\n\n"
+    "RX - Target : 4+ rounds"
+)
+
+
+def test_a_load_alone_changes_the_load_of_the_line_it_names():
+    """Real Tue 11-17: INTER+ was "Same as RX - KB #20/12kg" and was written out by hand."""
+    assert apply_to_rx(SHORT_WOD_11_17, "Same as RX - KB #20/12kg") == (
+        "AMRAP 8min :\n12/9 Calories Bike erg\n10 KB Swing #20/12kg\n8 Toes to bar\n"
+    )
+
+
+def test_a_shortened_name_and_a_new_movement_in_place_are_swapped_in():
+    """Real Tue 11-17: INTER shortens "Calories Bike erg" and swaps toes to bar by position."""
+    assert apply_to_rx(
+        SHORT_WOD_11_17, "10/7 Cal Bike - 10 KB Swing #16/12kg - 8 Hanging knee raise"
+    ) == ("AMRAP 8min :\n10/7 Cal Bike erg\n10 KB Swing #16/12kg\n8 Hanging knee raise\n")
+
+
+def test_a_new_movement_needs_every_piece_in_its_rx_place():
+    assert apply_to_rx(SHORT_WOD_11_17, "8 Hanging knee raise - 10 KB Swing #16/12kg") is None
+    assert (
+        apply_to_rx(SHORT_WOD_11_17, "10 KB Swing - 10/7 Cal Bike - 8 Hanging knee raise") is None
+    )
+    assert apply_to_rx(SHORT_WOD_11_17, "Same as RX - 8 Hanging knee raise") is None
+
+
+def test_a_chain_to_another_movement_replaces_the_line_outright():
+    assert apply_to_rx("For time :\n5 Rope climb", "Scale - 5 Rope climb -> 10 Rope pull") == (
+        "For time :\n10 Rope pull"
+    )
+
+
+def test_a_sets_header_is_not_a_movement():
+    assert apply_to_rx(
+        "3 sets of :\n30 Double under\n8 Chest to bar pull-up",
+        "20 Double under - 3 Butterfly Chest to bar pull-up",
+    ) == ("3 sets of :\n20 Double under\n3 Butterfly Chest to bar pull-up")
