@@ -1261,3 +1261,32 @@ def test_clean_drops_the_week_header_that_leaks_into_a_note():
     """Real 08-10 run note: the app's "EMF 60'" and day tabs under the coaching."""
     text = "Objectif : endurance !\n\nEMF 60'\nLUN\n10\nMAR\n11\nDIM\n16"
     assert _clean_block_text(text) == "Objectif : endurance !"
+
+
+FRIDAY_BIKE_11_20 = (
+    "Bike Erg : Endurance Fondamentale\n\nPAS DE ZONE 2 CETTE SEMAINE\n\n"
+    "On garde uniquement le Friday Sport Simulation aujourd'hui.\n\n"
+    "Si vous avez vraiment besoin de bouger : 15-20min très easy max (marche, vélo "
+    "tranquille), mais ce n'est pas obligatoire !"
+)
+
+
+def _parse_one(monkeypatch, content: str):
+    block = json.dumps({"blocks": [{"name": "EMF 60 - Bike erg", "content": content}]})
+    monkeypatch.setattr(
+        "strivee_btwb.core.llm.ollama.chat", lambda **_: {"message": {"content": block}}
+    )
+    monkeypatch.setattr("strivee_btwb.core.config.EXCLUDED_BLOCKS", [])
+    return extract_day_programming_from_text(
+        f"EMF 60 - Bike erg\n{content}", "Fri", date(2026, 11, 20)
+    )
+
+
+def test_extract_drops_a_session_that_is_off_this_week(monkeypatch):
+    """Real Fri 11-20: the Zone 2 block said only that there was none this week."""
+    assert _parse_one(monkeypatch, FRIDAY_BIKE_11_20).blocks == []
+
+
+def test_extract_keeps_a_session_that_mentions_this_week(monkeypatch):
+    content = "PAS DE TEMPO CETTE SEMAINE\n\n3 sets of :\n5 Reps Back Squat\n- Rest 2min -"
+    assert [b.name for b in _parse_one(monkeypatch, content).blocks] == ["EMF 60 - Bike erg"]

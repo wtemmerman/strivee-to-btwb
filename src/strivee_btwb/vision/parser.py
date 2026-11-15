@@ -984,6 +984,21 @@ def _recover_block(text: str, title: str, model: str) -> ProgrammingBlock | None
     )
 
 
+# "PAS DE ZONE 2 CETTE SEMAINE": in a week Strivee drops a session, the block keeps
+# its title and says so where the workout would be.
+_CANCELLED_RE = re.compile(
+    r"^\s*(?:pas\s+de\b.*\bcette\s+semaine|no\b.*\bthis\s+week)\b", re.IGNORECASE
+)
+
+
+def _is_cancelled(block: ProgrammingBlock) -> bool:
+    """Whether *block* only says its session is off this week — nothing in it is counted."""
+    lines = [line for line in block.content.splitlines() if line.strip()]
+    return any(_CANCELLED_RE.match(line) for line in lines) and not any(
+        line.lstrip()[:1].isdigit() for line in lines
+    )
+
+
 def extract_day_programming_from_text(
     text: str,
     day_label: str,
@@ -1083,7 +1098,12 @@ def extract_day_programming_from_text(
         cleaned.append(_extract_levels(b.replace(content=content, instruction=instruction)))
     blocks = _restore_dropped_advice(cleaned, text)
 
-    if len(blocks) < len(expected_titles):
+    cancelled = [b for b in blocks if _is_cancelled(b)]
+    for b in cancelled:
+        logger.info("%s: '%s' is off this week — not posted", day_label, b.name)
+    blocks = [b for b in blocks if b not in cancelled]
+
+    if len(blocks) + len(cancelled) < len(expected_titles):
         logger.warning(
             "%s: extracted %d block(s) but the source has %d EMF block title(s) — "
             "the model may have dropped a block. Source titles: %s",
