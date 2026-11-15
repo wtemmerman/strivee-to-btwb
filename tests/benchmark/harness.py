@@ -370,6 +370,9 @@ def _load_numbers(text: str) -> set[str]:
     The #NN% -> @NN% normalisation matches the formatter's own post-processing.
     """
     norm = re.sub(r"#(\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?)%", r"@\1%", text)
+    # "75% 1RM" names what the percent is of; its 1 is no load. Classic Sets plans
+    # say it of every percent, and Strivee often leaves it implied.
+    norm = re.sub(r"%\s*(?:of\s+(?:your\s+)?)?1\s*RM\b", "%", norm, flags=re.IGNORECASE)
     nums: set[str] = set()
     for pat in (
         r"(\d+(?:\.\d+)?)\s*%",

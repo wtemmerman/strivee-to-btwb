@@ -32,17 +32,22 @@ _CLUSTER_HEADER_RE = re.compile(r"[-:]\s*cluster\s*$", re.IGNORECASE)
 # "Plus lourd que la semaine dernière !", "Si c'est le cas, diminuez la charge.": the
 # coach talking, which the note carries.
 _SENTENCE_END_RE = re.compile(r"[!.]\s*$")
-# "Week 10/15", "Intensification - Week 5/5", "No tempo prescription": where the block
+# "Week 10/15", "Intensification - Week 5/5", "No tempo prescription", "DELOAD": where the block
 # sits in the programme. A header naming a tempo does say which movement it is.
 _PROGRAMME_HEADER_RE = re.compile(
     r"^(?!.*\btempo\b)\s*(?:[^\d-][^-]*-\s*)?week\s*\d+(?:\s*/\s*\d+)?\s*$"
-    r"|^\s*no\s+tempo(?:\s+prescription)?\s*$",
+    r"|^\s*no\s+tempo(?:\s+prescription)?\s*$|^\s*deload(?:\s+week)?\s*$",
     re.IGNORECASE,
 )
 # "2x3 @85% 395 lb": sets by reps at one % of 1RM, the load in pounds alongside.
 _SETS_AT_PERCENT_RE = re.compile(
     r"^\s*(\d+)\s*x\s*(\d+)\s*(?:reps?)?\s*(?:[@#]\s*(\d+)\s*%(?:\s*(?:of\s+(?:your\s+)?)?1\s*RM)?"
     r"(?:\s*\d+(?:[.,]\d+)?\s*(?:lbs?|kg))?)?\s*$",
+    re.IGNORECASE,
+)
+# "3 Reps Bench Press @75% 183.5 lb": the reps line's own % of 1RM.
+_AT_PERCENT_RE = re.compile(
+    r"\s*[@#]\s*(\d+)\s*%(?:\s*(?:of\s+(?:your\s+)?)?1\s*RM)?(?:\s*\d+(?:[.,]\d+)?\s*(?:lbs?|kg))?\s*$",
     re.IGNORECASE,
 )
 _TARGET_1RM_RE = re.compile(
@@ -194,7 +199,8 @@ def _max_rep_sets(lines: list[str]) -> ClassicSets | None:
 
 
 def _weighted_sets(lines: list[str]) -> ClassicSets | None:
-    """ "N sets of : / R Reps <movement> [Tempo 31X1] / - Rest X - / Target weight : #P% 1RM"."""
+    """ "N sets of : / R Reps <movement> [@P% load] [Tempo 31X1] / - Rest X -", then
+    optionally "Target weight : #P% 1RM"."""
     if len(lines) not in (3, 4):
         return None
     header, reps, rest = (
@@ -205,18 +211,22 @@ def _weighted_sets(lines: list[str]) -> ClassicSets | None:
     target = _TARGET_1RM_RE.match(lines[3]) if len(lines) == 4 else None
     if not header or not reps or not rest or (len(lines) == 4 and not target):
         return None
-    # A load on the reps line ("@75-80% of your 1RM") is a range or a reference BTWB's
-    # one % per set cannot hold; the AI path keeps it in the workout.
-    if "%" in reps.group(2):
+    movement_text = reps.group(2)
+    at = _AT_PERCENT_RE.search(movement_text)
+    if at:
+        movement_text = movement_text[: at.start()]
+    # Any other load on the reps line ("@75-80% of your 1RM") is a range or a
+    # reference BTWB's one % per set cannot hold; the AI path keeps it in the workout.
+    if "%" in movement_text or (at and target):
         return None
-    movement = btwb_movement_name(reps.group(2))
+    movement = btwb_movement_name(movement_text)
     if not movement:
         return None
     return ClassicSets(
         movement=f"Tempo {movement}" if reps.group(3) else movement,
         reps=(int(reps.group(1)),) * int(header.group(1)),
         rest_seconds=_rest_seconds(rest),
-        percent_1rm=int(target.group(1)) if target else None,
+        percent_1rm=int(percent.group(1)) if (percent := target or at) else None,
     )
 
 
