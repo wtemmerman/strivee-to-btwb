@@ -17,6 +17,7 @@ from json_repair import repair_json
 from ..core import config
 from ..core.llm import chat_json
 from ..core.models import INTER, INTER_PLUS, RX, DayProgramming, ProgrammingBlock
+from ..processing.scale import apply_to_rx
 from ..prompts import load
 
 logger = logging.getLogger("vision")
@@ -654,6 +655,41 @@ def _levels_from_content(content: str, fields: dict[str, str], advice: list[str]
             fields[level] = f"{shared}\n{found[level]}".strip() if shared else found[level]
 
 
+# "INTER + - Same as RX - KB #20/12kg", "INTER - 10/7 Cal Bike - 10 KB Swing #16/12kg - 8
+# Hanging knee raise": one level per line, its value what differs from RX.
+_LEVEL_VALUE_RE = re.compile(
+    rf"^\s*(?:EMF\s*[-:]?\s*)?(?P<levels>{_LEVEL_TOKEN})(?![A-Za-z])\s*[-\u2013:]\s*(?P<value>\S.*?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _levels_from_change_lines(content: str, fields: dict[str, str]) -> str:
+    """Lift stacked "INTER - <changes>" lines out of *content*; return what is left.
+
+    Real Tue 11-17: the levels sat one per line under the RX workout, which no
+    header split reads, so all three were posted as RX. A line only moves when its
+    value applies to the RX workout as changes, and then every such line must:
+    one that doesn't leaves the layout to the other passes. The RX line stays — it
+    carries RX's target, and applying a level drops it.
+    """
+    lines = content.splitlines()
+    values = {
+        i: (_header_levels(m.group("levels"))[0], m.group("value"))
+        for i, line in enumerate(lines)
+        if (m := _LEVEL_VALUE_RE.match(line))
+    }
+    scaled = {i: (level, value) for i, (level, value) in values.items() if level != RX}
+    if not scaled:
+        return content
+    rx = "\n".join(line for i, line in enumerate(lines) if i not in scaled)
+    if any(apply_to_rx(rx, value) is None for _level, value in scaled.values()):
+        return content
+    for level, value in scaled.values():
+        if not fields[level].strip():
+            fields[level] = value
+    return rx
+
+
 def _levels_from_instruction(instruction: str, fields: dict[str, str]) -> str:
     """Fill *fields* from level sections folded into instruction; return what's left."""
     preamble, sections = _split_level_sections(instruction)
@@ -767,8 +803,9 @@ def _extract_levels(block: ProgrammingBlock) -> ProgrammingBlock:
     content would drop the block entirely.
     """
     fields = {RX: block.content, INTER_PLUS: block.inter_plus, INTER: block.inter}
+    fields[RX] = _levels_from_change_lines(block.content, fields)
     advice: list[str] = []
-    _levels_from_content(block.content, fields, advice)
+    _levels_from_content(fields[RX], fields, advice)
     instruction = _levels_from_instruction(block.instruction, fields)
     # Strivee writes the coaching for a level inside that level's own section, so
     # it arrives glued to the prescription — and would be posted AS the workout

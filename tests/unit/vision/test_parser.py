@@ -345,6 +345,31 @@ def test_extract_levels_keeps_stacked_inline_loads():
     assert r.available_levels() == [RX]
 
 
+SHORT_WOD_11_17 = (
+    "AMRAP 8min :\n12/9 Calories Bike erg\n10 KB Swing #24/16kg\n8 Toes to bar\n\n"
+    "RX - Target : 4+ rounds\nINTER + - Same as RX - KB #20/12kg\n"
+    "INTER - 10/7 Cal Bike - 10 KB Swing #16/12kg - 8 Hanging knee raise"
+)
+
+
+def test_extract_levels_lifts_stacked_change_lines():
+    """Real Tue 11-17: one level per line under RX, each only what differs from it."""
+    r = _extract_levels(ProgrammingBlock(name="EMF 60 - Short WOD", content=SHORT_WOD_11_17))
+    assert r.content == (
+        "AMRAP 8min :\n12/9 Calories Bike erg\n10 KB Swing #24/16kg\n8 Toes to bar\n\n"
+        "RX - Target : 4+ rounds"
+    )
+    assert r.inter_plus == "Same as RX - KB #20/12kg"
+    assert r.inter == "10/7 Cal Bike - 10 KB Swing #16/12kg - 8 Hanging knee raise"
+
+
+def test_extract_levels_keeps_change_lines_when_one_does_not_apply():
+    content = SHORT_WOD_11_17.replace("8 Hanging knee raise", "lighter swings")
+    r = _extract_levels(ProgrammingBlock(name="A", content=content))
+    assert r.content == content
+    assert r.available_levels() == [RX]
+
+
 def test_extract_levels_lone_targeted_line_is_not_a_split():
     """One level line followed by coaching names a single level — nothing to split."""
     content = "For time :\n21 DB bench press\n\nINTER - #2x15/ 2x10kg\nAdaptez la charge !"
