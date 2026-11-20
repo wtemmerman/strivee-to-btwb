@@ -372,6 +372,13 @@ def test_reps_with_rest_between_are_never_joined():
     assert [i.distance_m for i in session.intervals] == [500, 500]
 
 
+def test_the_stray_lap_after_the_last_step_is_not_a_rep():
+    """Real 11-20: the watch logged 1.9 m after the cool-down, flagged ACTIVE, with no step."""
+    laps = [*SPLIT_REP_LAPS[:8], {**_lap("ACTIVE", 1.9, 0.7), "wktStepIndex": None}]
+    (session,) = sessions_from_activities([_activity(laps=laps)])
+    assert [i.distance_m for i in session.intervals] == [1500, 1500]
+
+
 def test_a_steady_workout_step_split_by_auto_lap_stays_one_continuous_run():
     laps = [_step_lap("ACTIVE", 1000, 353.1, 0) for _ in range(6)]
     (session,) = sessions_from_activities([_activity(laps=laps)])
