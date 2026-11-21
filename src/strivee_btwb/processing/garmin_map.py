@@ -198,10 +198,17 @@ def step_intervals(laps: list[dict]) -> list[CardioInterval]:
 
 
 def work_intervals(laps: list[dict]) -> list[CardioInterval]:
-    """The work efforts of a rep session, each carrying the rest that followed it."""
+    """The work efforts of a rep session, each carrying the rest that followed it.
+
+    In a structured workout, an ACTIVE lap outside every step is the watch lapping
+    on for a few metres after the last one (see `is_single_effort`), not a rep.
+    """
+    structured = any(lap.get("wktStepIndex") is not None for lap in laps)
     intervals = []
     for index, lap in enumerate(laps):
         if lap.get("intensityType") != ACTIVE:
+            continue
+        if structured and lap.get("wktStepIndex") is None:
             continue
         following = laps[index + 1] if index + 1 < len(laps) else None
         rest = (
